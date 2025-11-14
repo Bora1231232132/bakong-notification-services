@@ -4,15 +4,16 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig(({ mode }) => {
   // Get the directory where this config file is located
-  const __dirname = fileURLToPath(new URL('.', import.meta.url))
-  // Load env file based on `mode` in the config directory
-  const env = loadEnv(mode, __dirname, '')
+  const root = fileURLToPath(new URL('.', import.meta.url))
+  // Load env file based on `mode` - use root directory for env files
+  const env = loadEnv(mode, root, '')
 
   // Default values for development
   const frontendPort = parseInt(env.VITE_FRONTEND_PORT || '3000', 10)
   const apiBaseUrl = env.VITE_API_BASE_URL || 'http://localhost:4005'
 
   return {
+    root: root,
     plugins: [vue()],
     resolve: {
       alias: {
