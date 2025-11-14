@@ -27,9 +27,14 @@ RUN npm run build
 
 # Copy frontend source code (exclude node_modules and dist to avoid conflicts)
 WORKDIR /app
-# Use .dockerignore or copy selectively - copy everything except node_modules and dist
+# Copy frontend files but preserve the workspace structure
 COPY apps/frontend/. ./apps/frontend/
 RUN rm -rf ./apps/frontend/node_modules ./apps/frontend/dist || true
+
+# Reinstall dependencies to ensure frontend-specific deps are available
+# This ensures all dependencies including @vitejs/plugin-vue are properly linked
+WORKDIR /app
+RUN npm install --legacy-peer-deps
 
 # Build the application (ensure we're in the frontend directory)
 WORKDIR /app/apps/frontend
