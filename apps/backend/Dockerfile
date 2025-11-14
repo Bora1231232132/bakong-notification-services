@@ -8,6 +8,21 @@ COPY package*.json ./
 COPY package-lock.json ./
 COPY apps/backend/package*.json ./apps/backend/
 COPY apps/backend/package-lock.json ./apps/backend/
+COPY apps/packages/shared/package*.json ./apps/packages/shared/
+
+# Install dependencies at root level (handles npm workspaces)
+RUN npm ci
+
+# Copy shared package source files
+COPY apps/packages/shared ./apps/packages/shared
+
+# Build shared package first (backend depends on it)
+WORKDIR /opt/bk_notification_service/apps/packages/shared
+RUN npm run build
+
+# Copy backend source files
+WORKDIR /opt/bk_notification_service
+COPY apps/backend ./apps/backend
 
 # Build backend
 WORKDIR /opt/bk_notification_service/apps/backend
