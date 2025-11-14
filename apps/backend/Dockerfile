@@ -7,7 +7,6 @@ WORKDIR /opt/bk_notification_service
 COPY package*.json ./
 COPY package-lock.json ./
 COPY apps/backend/package*.json ./apps/backend/
-COPY apps/backend/package-lock.json ./apps/backend/
 COPY apps/packages/shared/package*.json ./apps/packages/shared/
 
 # Copy TypeScript config files
