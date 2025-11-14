@@ -5,28 +5,32 @@ WORKDIR /app
 
 # Copy root package files for workspace setup
 COPY package*.json ./
+COPY package-lock.json ./
 
 # Copy root tsconfig.json (needed by shared package)
 COPY tsconfig.json ./
 
-# Copy frontend package files first
+# Copy shared package files
+COPY apps/packages/shared/package*.json ./apps/packages/shared/
+
+# Copy frontend package files
 COPY apps/frontend/package*.json ./apps/frontend/
 
-# Install all dependencies (including dev dependencies for build)
-# Handle both cases: with and without package-lock.json
+# Install workspace dependencies at root level
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+# Copy shared package source and build it
+COPY apps/packages/shared/tsconfig.json ./apps/packages/shared/
+COPY apps/packages/shared/src ./apps/packages/shared/src
+WORKDIR /app/apps/packages/shared
+RUN npm run build
+
+# Copy frontend source code
+WORKDIR /app
+COPY apps/frontend ./apps/frontend
+
+# Build the application (ensure we're in the frontend directory)
 WORKDIR /app/apps/frontend
-RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
-
-# Copy shared package AFTER npm install
-# Vite error shows it's looking for /app/apps/packages/shared/src
-# This means vite resolves '../packages/shared' from /app/apps/frontend as /app/apps/packages/shared
-# So we need to place it there
-COPY apps/packages/shared /app/apps/packages/shared
-
-# Copy frontend source code (this needs to happen after npm install to preserve node_modules)
-COPY apps/frontend .
-
-# Build the application
 RUN npm run build
 
 # Production stage
