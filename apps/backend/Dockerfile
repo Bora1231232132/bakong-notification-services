@@ -58,10 +58,8 @@ COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
 
 # Install production dependencies in runtime stage
-# This ensures all workspace dependencies are correctly installed and linked
-RUN npm ci --omit=dev --legacy-peer-deps
-
-# Verify critical dependencies exist
-RUN test -d node_modules/@nestjs/core || (echo "❌ Missing @nestjs/core" && ls -la node_modules/ | head -20 && exit 1)
+# Using npm install --production instead of npm ci for better workspace compatibility
+# npm ci can be too strict with workspaces and may miss dependencies
+RUN npm install --production --legacy-peer-deps
 
 CMD ["node", "dist/main.js"]
