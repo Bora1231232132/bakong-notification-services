@@ -58,10 +58,12 @@ COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./app
 COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 
 # Copy node_modules from builder (has all dependencies installed)
-# Then prune dev dependencies to reduce image size
+# In npm workspaces, dependencies are hoisted to root node_modules by default
+# Copy root node_modules which contains all workspace dependencies
 COPY --from=builder /opt/bk_notification_service/node_modules ./node_modules
 
-# Remove dev dependencies to reduce image size
-RUN npm prune --production
+# Note: We keep all dependencies (including dev) to ensure workspace structure works correctly
+# npm prune --production can break workspace symlinks and cause MODULE_NOT_FOUND errors
+# The image will be larger (~200-300MB more) but functional and reliable
 
 CMD ["node", "dist/main.js"]
