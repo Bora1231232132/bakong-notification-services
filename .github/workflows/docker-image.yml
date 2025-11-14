@@ -1,0 +1,23 @@
+name: Docker Image (GHCR Test)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test GHCR Push
+    uses: national-bank-of-cambodia/bakong-workflows/.github/workflows/docker-image-multistage.yml@main
+    with:
+      docker-registry: ghcr.io
+      docker-namespace: "/${{ github.repository_owner }}"
+      docker-name: "notification-services"
+      set: |
+        backend.tags=ghcr.io/${{ github.repository_owner }}/notification-services-backend:${{ github.sha }}
+        frontend.tags=ghcr.io/${{ github.repository_owner }}/notification-services-frontend:${{ github.sha }}
+    secrets:
+      DOCKER_REGISTRY_USERNAME: ${{ github.actor }}
+      DOCKER_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

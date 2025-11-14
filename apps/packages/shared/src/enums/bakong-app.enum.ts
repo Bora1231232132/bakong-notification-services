@@ -1,0 +1,5 @@
+export enum BakongApp {
+  BAKONG = 'BAKONG',
+  BAKONG_TOURIST = 'BAKONG_TOURIST',
+  BAKONG_JUNIOR = 'BAKONG_JUNIOR',
+}

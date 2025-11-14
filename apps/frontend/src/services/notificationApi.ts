@@ -1,0 +1,436 @@
+﻿import { api, uploadApi } from './api'
+import { TimezoneUtils } from '@bakong/shared'
+
+export interface CreateTemplateRequest {
+  imageId?: string
+  platforms: string[]
+  sendType: string
+  sendInterval?: {
+    cron: string
+    startAt: string
+    endAt: string
+  }
+  isSent: boolean
+  sendSchedule?: string
+  translations: {
+    language: string
+    title: string
+    content: string
+    image?: string
+    linkPreview?: string
+  }[]
+  notificationType?: string
+  categoryType?: string
+  priority?: number
+}
+
+export interface Notification {
+  author: any
+  image: string
+  id: number | string
+  type: string
+  title: string
+  description: string
+  content: string
+  status: string
+  date: string
+  createdAt?: Date
+  templateId?: number
+  isSent?: boolean
+  sendSchedule?: string
+  sendType?: string
+  sendInterval?: number | { cron: string; startAt: string; endAt: string }
+  lastSentAt?: Date
+  nextSendAt?: Date
+  accountId?: string
+  fcmToken?: string
+  firebaseMessageId?: number
+  sendCount?: number
+  templateStartAt?: string
+  templateEndAt?: string
+}
+
+enum NotificationType {
+  FLASH_NOTIFICATION = 'FLASH_NOTIFICATION',
+  ANNOUNCEMENT = 'ANNOUNCEMENT',
+  NOTIFICATION = 'NOTIFICATION',
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface NotificationFilters {
+  page?: number
+  pageSize?: number
+  status?: string
+  type?: string
+  search?: string
+  language?: string
+}
+
+const toCambodiaTime = (utcDate: Date | string): Date => {
+  return TimezoneUtils.toCambodiaTime(utcDate)
+}
+
+const formatNotificationDate = (date: Date | string): string => {
+  const cambodiaDate = toCambodiaTime(date)
+  return cambodiaDate.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+const mapBackendStatusToFrontend = (backendStatus: string): string => {
+  switch (backendStatus) {
+    case 'SENT':
+      return 'published'
+    case 'SCHEDULED':
+      return 'scheduled'
+    case 'INTERVALED':
+      return 'scheduled'
+    case 'ERROR':
+      return 'draft'
+    default:
+      return 'draft'
+  }
+}
+
+const getAuthorName = (template: any): string => {
+  if (template.publishedBy) {
+    return template.publishedBy
+  }
+  if (template.updatedBy) {
+    return template.updatedBy
+  }
+  if (template.createdBy) {
+    return template.createdBy
+  }
+  return 'System'
+}
+
+export const notificationApi = {
+  async getAllNotifications(
+    filters: NotificationFilters = {},
+  ): Promise<PaginatedResponse<Notification>> {
+    try {
+      const response = await api.get('/api/v1/template', {
+        params: {
+          page: filters.page || 1,
+          size: filters.pageSize || 100,
+          language: filters.language || 'KM',
+          format: 'notification',
+          isAscending: false,
+        },
+      })
+
+      if (response.status === 304) {
+        return {
+          data: [],
+          total: 0,
+          page: 1,
+          pageSize: 100,
+          totalPages: 0,
+        }
+      }
+
+      let notifications = []
+      let meta = null
+
+      if (response.data && Array.isArray(response.data)) {
+        notifications = response.data
+
+        meta = {
+          page: filters.page || 1,
+          size: filters.pageSize || 100,
+          itemCount: notifications.length,
+          pageCount: 1,
+          totalCount: notifications.length,
+          hasPreviousPage: false,
+          hasNextPage: false,
+        }
+      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        notifications = response.data.data
+        meta = response.data.meta
+      } else if (response.data?.data?.data && Array.isArray(response.data.data.data)) {
+        notifications = response.data.data.data
+        meta = response.data.data.meta
+      } else if (!response.data) {
+        return {
+          data: [],
+          total: 0,
+          page: 1,
+          pageSize: 100,
+          totalPages: 0,
+        }
+      } else {
+        throw new Error('Invalid response format from backend')
+      }
+
+      const mappedNotifications = notifications.map((notification: any) => {
+        return {
+          id: notification.id,
+          author: notification.author,
+          title: notification.title,
+          description: notification.description,
+          content: notification.content,
+          image: notification.image,
+          date: notification.date,
+          status: notification.status,
+          type: notification.type,
+          createdAt: notification.createdAt,
+          templateId: notification.templateId,
+          isSent: notification.isSent,
+          sendType: notification.sendType,
+          scheduledTime: notification.scheduledTime,
+          language: notification.language,
+        }
+      })
+
+      return {
+        data: mappedNotifications,
+        total: meta?.total || mappedNotifications.length,
+        page: meta?.page || 1,
+        pageSize: meta?.pageSize || 100,
+        totalPages: meta?.totalPages || 1,
+      }
+    } catch (error: any) {
+      console.error('Error fetching notifications:', error)
+
+      if (error.response?.status === 401) {
+        console.log('User does not have permission to view notifications')
+        return {
+          data: [],
+          total: 0,
+          page: 1,
+          pageSize: 100,
+          totalPages: 0,
+        }
+      }
+
+      throw error
+    }
+  },
+
+  async getNotifications(
+    filters: NotificationFilters = {},
+  ): Promise<PaginatedResponse<Notification>> {
+    try {
+      const response = await api.get('/api/v1/template/all')
+      if (Array.isArray(response.data)) {
+        const notifications = response.data
+          .map((template: any) => {
+            const translation = template.translations?.[0]
+            if (!translation) return null
+
+            return {
+              id: template.templateId || template.id,
+              author: getAuthorName(template),
+              title: translation.title,
+              description: translation.content,
+              content: translation.content,
+              image: translation.image ? `/api/v1/image/${translation.image.fileId}` : '',
+              linkPreview: translation.linkPreview,
+              date: template.date,
+              status: mapBackendStatusToFrontend(template.isSent ? 'SENT' : 'SCHEDULED'),
+              type: template.notificationType,
+              createdAt: template.createdAt,
+              templateId: template.templateId || template.id,
+              isSent: template.isSent,
+              sendType: template.sendType,
+            }
+          })
+          .filter(Boolean)
+
+        let filteredNotifications = notifications.filter((n) => n !== null) as Notification[]
+        if (filters.status) {
+          filteredNotifications = filteredNotifications.filter((n) => n.status === filters.status)
+        }
+        if (filters.type) {
+          filteredNotifications = filteredNotifications.filter((n) => n.type === filters.type)
+        }
+        if (filters.search) {
+          const searchLower = filters.search.toLowerCase()
+          filteredNotifications = filteredNotifications.filter(
+            (n) =>
+              n.title.toLowerCase().includes(searchLower) ||
+              n.description.toLowerCase().includes(searchLower) ||
+              n.type.toLowerCase().includes(searchLower),
+          )
+        }
+
+        const page = filters.page || 1
+        const pageSize = filters.pageSize || 10
+        const startIndex = (page - 1) * pageSize
+        const endIndex = startIndex + pageSize
+        const paginatedData = filteredNotifications.slice(startIndex, endIndex)
+
+        return {
+          data: paginatedData,
+          total: filteredNotifications.length,
+          page,
+          pageSize,
+          totalPages: Math.ceil(filteredNotifications.length / pageSize),
+        }
+      }
+
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 0,
+      }
+    } catch (error: any) {
+      console.error('Error fetching notifications:', error)
+      throw error
+    }
+  },
+
+  async getNotificationById(id: number): Promise<Notification> {
+    const response = await api.get(`/api/v1/template/${id}`)
+    const template = response.data
+
+    const translation = template.translations?.[0]
+
+    return {
+      id: template.id,
+      type: template.notificationType || template.categoryType || NotificationType.ANNOUNCEMENT,
+      title: translation?.title || 'Notification',
+      description: translation?.content || 'No content available',
+      content: translation?.content || 'No content available',
+      status: template.isSent ? 'SENT' : 'SCHEDULED',
+      date: template.date,
+      createdAt: template.createdAt,
+      templateId: template.id,
+      isSent: template.isSent,
+      sendSchedule: template.sendSchedule,
+      author: getAuthorName(template),
+      image: '',
+    }
+  },
+
+  async createNotification(notification: Omit<Notification, 'id'>): Promise<Notification> {
+    const response = await api.post('/api/v1/template/create', notification)
+    return response.data
+  },
+
+  async createTemplate(templateData: CreateTemplateRequest): Promise<any> {
+    try {
+      const response = await api.post('/api/v1/template/create', templateData)
+      return response.data
+    } catch (error) {
+      console.error('Error creating template:', error)
+      throw error
+    }
+  },
+
+  async uploadImage(file: File): Promise<string> {
+    try {
+      const formData = new FormData()
+      formData.append('files', file)
+
+      const response = await uploadApi.post('/api/v1/image/upload', formData)
+
+      return response.data.data.fileId || response.data.data.files?.[0]?.fileId
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      throw error
+    }
+  },
+
+  async uploadImages(
+    items: { file: File; language?: string }[] | File[],
+  ): Promise<{ language?: string; fileId: string; mimeType: string; originalFileName: string }[]> {
+    try {
+      const formData = new FormData()
+      const normalized: { file: File; language?: string }[] =
+        Array.isArray(items) && (items as any[])[0] && (items as any[])[0].file
+          ? (items as any)
+          : (items as File[]).map((f) => ({ file: f }))
+
+      const languages: string[] = []
+      normalized.forEach((item) => {
+        formData.append('files', item.file)
+        if (item.language) languages.push(item.language)
+      })
+      if (languages.length) {
+        formData.append('languages', JSON.stringify(languages))
+      }
+
+      const response = await uploadApi.post('/api/v1/image/upload', formData)
+
+      return (
+        response.data.data.files ||
+        (response.data.data.fileId
+          ? [
+              {
+                language: languages[0],
+                fileId: response.data.data.fileId,
+                mimeType: normalized[0].file.type,
+                originalFileName: normalized[0].file.name,
+              },
+            ]
+          : [])
+      )
+    } catch (error) {
+      console.error('Error uploading images:', error)
+      throw error
+    }
+  },
+
+  async updateNotification(id: number, notification: Partial<Notification>): Promise<Notification> {
+    const response = await api.put(`/api/v1/template/${id}`, notification)
+    return response.data
+  },
+
+  async deleteNotification(id: number): Promise<void> {
+    await api.post(`/api/v1/template/${id}/remove`)
+  },
+
+  async sendNotificationNow(id: number): Promise<void> {
+    await api.post(`/api/v1/template/${id}/send-now`)
+  },
+
+  async sendNotification(
+    templateId: number,
+    language: string = 'KM',
+    notificationType?: string,
+  ): Promise<any> {
+    try {
+      const payload: any = {
+        language: language,
+        templateId: templateId,
+      }
+
+      if (notificationType) {
+        payload.notificationType = notificationType
+      }
+
+      const response = await api.post('/api/v1/notification/send', payload)
+      return response.data
+    } catch (error) {
+      console.error(`Error sending notification with templateId ${templateId}:`, error)
+      throw error
+    }
+  },
+
+  async scheduleNotification(id: number, scheduleTime: string): Promise<void> {
+    await api.post(`/api/v1/template/${id}/schedule`, { scheduleTime })
+  },
+
+  async updateTemplate(id: number, templateData: CreateTemplateRequest): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/update`, templateData)
+      return response.data
+    } catch (error) {
+      console.error(`Error updating template ${id}:`, error)
+      throw error
+    }
+  },
+}

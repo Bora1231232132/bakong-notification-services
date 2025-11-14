@@ -1,0 +1,5 @@
+export enum SendType {
+  SEND_NOW = 'SEND_NOW',
+  SEND_SCHEDULE = 'SEND_SCHEDULE',
+  SEND_INTERVAL = 'SEND_INTERVAL',
+}
