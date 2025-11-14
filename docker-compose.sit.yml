@@ -26,9 +26,14 @@ services:
 
   # Backend API Service
   backend:
+    # Option 1: Build locally (works immediately, no registry needed)
     build:
       context: .
       dockerfile: ./apps/backend/Dockerfile
+    # Option 2: Use pre-built image from GHCR (faster, requires image to exist)
+    # Get commit SHA from GitHub Actions build, then use:
+    # image: ghcr.io/stheany/notification-services-backend:YOUR_COMMIT_SHA
+    # When switching to Bakong account, change 'stheany' to new org/username
     container_name: bakong-notification-services-api-sit
     ports:
       - "4002:8080"
@@ -39,6 +44,10 @@ services:
       - POSTGRES_USER=bkns_sit
       - POSTGRES_PASSWORD=0101bkns_sit
       - API_PORT=8080
+      # ⚠️ SERVER CONFIG: Update when switching to different server
+      # Current: sit-bk-notifi-service (10.20.6.57)
+      # CORS_ORIGIN uses IP for browser access compatibility
+      # API_BASE_URL/HOSTING_BASE_URL can use hostname or IP
       - API_BASE_URL=http://10.20.6.57:4002
       - HOSTING_BASE_URL=http://10.20.6.57:4002
       - NODE_ENV=staging
@@ -57,9 +66,14 @@ services:
 
   # Frontend Service
   frontend:
+    # Option 1: Build locally (works immediately, no registry needed)
     build:
       context: .
       dockerfile: ./apps/frontend/Dockerfile
+    # Option 2: Use pre-built image from GHCR (faster, requires image to exist)
+    # Get commit SHA from GitHub Actions build, then use:
+    # image: ghcr.io/stheany/notification-services-frontend:YOUR_COMMIT_SHA
+    # When switching to Bakong account, change 'stheany' to new org/username
     container_name: bakong-notification-services-frontend-sit
     ports:
       - "8090:80"

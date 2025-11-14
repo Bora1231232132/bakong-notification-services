@@ -57,8 +57,8 @@ COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./app
 # Copy built backend dist
 COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 
-# Install dependencies (remove --production for testing, add back for production)
+# Install production dependencies only (excludes dev dependencies for smaller image)
 # Use npm install instead of npm ci for better workspace compatibility
-RUN npm install
+RUN npm install --production
 
 CMD ["node", "dist/main.js"]
