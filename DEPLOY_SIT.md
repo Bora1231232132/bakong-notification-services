@@ -60,12 +60,13 @@ rm -f dev.config.js
    - **Copy the token immediately** (you won't see it again!)
 
 2. **On the server, use the token:**
+
    ```bash
    cd ~/bakong-notification-services
-   
+
    # Update remote URL to use token
    git remote set-url origin https://YOUR_TOKEN@github.com/stheany/bakong-notification-services.git
-   
+
    # Or use token when pulling (replace YOUR_TOKEN with your actual token)
    git pull https://YOUR_TOKEN@github.com/stheany/bakong-notification-services.git develop
    ```
@@ -73,6 +74,7 @@ rm -f dev.config.js
 #### Option B: Use SSH Keys (More Secure)
 
 1. **Generate SSH key on server:**
+
    ```bash
    ssh-keygen -t ed25519 -C "sit-server@bakong"
    # Press Enter to accept default location
@@ -80,6 +82,7 @@ rm -f dev.config.js
    ```
 
 2. **Copy public key:**
+
    ```bash
    cat ~/.ssh/id_ed25519.pub
    ```
@@ -102,12 +105,14 @@ rm -f dev.config.js
 If you can't set up authentication, you can manually transfer files:
 
 **On your Windows machine:**
+
 ```powershell
 # Create a zip of the project (excluding node_modules, .git, etc.)
 # Or use SCP to copy specific files
 ```
 
 **On the server:**
+
 ```bash
 # Extract and replace files
 # Then rebuild Docker images
@@ -162,12 +167,12 @@ docker compose -f docker-compose.sit.yml logs backend
 
 Once the containers are running, you can access your application:
 
-| Service           | URL                                  | Description         |
-|-------------------|--------------------------------------|---------------------|
-| **Frontend Dashboard** | `http://10.20.6.57:8090`             | Main application UI |
-| **Backend API**   | `http://10.20.6.57:4002`             | API endpoint        |
-| **Health Check**  | `http://10.20.6.57:4002/health`      | Service health check |
-| **Database**      | `10.20.6.57:5434`                    | PostgreSQL (internal access from other containers) |
+| Service                | URL                             | Description                                        |
+| ---------------------- | ------------------------------- | -------------------------------------------------- |
+| **Frontend Dashboard** | `http://10.20.6.57:8090`        | Main application UI                                |
+| **Backend API**        | `http://10.20.6.57:4002`        | API endpoint                                       |
+| **Health Check**       | `http://10.20.6.57:4002/health` | Service health check                               |
+| **Database**           | `10.20.6.57:5434`               | PostgreSQL (internal access from other containers) |
 
 ---
 
@@ -203,6 +208,7 @@ docker ps
 ```
 
 **Alternative: If Docker is installed but docker-compose is not, try:**
+
 ```bash
 # Newer Docker versions use "docker compose" (without hyphen)
 docker compose -f docker-compose.sit.yml up -d --build
@@ -258,12 +264,14 @@ netstat -tulpn | grep -E '4002|8090|5434'
 ## 📝 Quick Reference
 
 **Windows (PowerShell/Git Bash):**
+
 ```powershell
 # Username: dev, Password: dev
 ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no dev@10.20.6.57
 ```
 
 **Ubuntu Server (after SSH):**
+
 ```bash
 cd ~/bakong-notification-services
 
@@ -292,4 +300,3 @@ docker compose -f docker-compose.sit.yml up -d --build
 4. **Docker:** Make sure Docker and Docker Compose are installed on Ubuntu server
 
 5. **Permissions:** You may need to use `sudo` for docker commands until you add user to docker group
-
