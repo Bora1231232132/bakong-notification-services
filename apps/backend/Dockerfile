@@ -57,8 +57,11 @@ COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./app
 # Copy built backend dist
 COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 
-# Install production dependencies only (excludes dev dependencies for smaller image)
-# Use npm install instead of npm ci for better workspace compatibility
-RUN npm install --production
+# Copy node_modules from builder (has all dependencies installed)
+# Then prune dev dependencies to reduce image size
+COPY --from=builder /opt/bk_notification_service/node_modules ./node_modules
+
+# Remove dev dependencies to reduce image size
+RUN npm prune --production
 
 CMD ["node", "dist/main.js"]
