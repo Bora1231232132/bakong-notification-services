@@ -25,9 +25,11 @@ COPY apps/packages/shared/src ./apps/packages/shared/src
 WORKDIR /app/apps/packages/shared
 RUN npm run build
 
-# Copy frontend source code
+# Copy frontend source code (exclude node_modules and dist to avoid conflicts)
 WORKDIR /app
-COPY apps/frontend ./apps/frontend
+# Use .dockerignore or copy selectively - copy everything except node_modules and dist
+COPY apps/frontend/. ./apps/frontend/
+RUN rm -rf ./apps/frontend/node_modules ./apps/frontend/dist || true
 
 # Build the application (ensure we're in the frontend directory)
 WORKDIR /app/apps/frontend

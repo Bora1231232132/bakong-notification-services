@@ -3,14 +3,18 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, process.cwd(), '')
+  // Get the directory where vite.config.ts is located
+  const configDir = fileURLToPath(new URL('.', import.meta.url))
+  
+  // Load env file based on `mode` in the config directory.
+  const env = loadEnv(mode, configDir, '')
 
   // Default values for development
   const frontendPort = parseInt(env.VITE_FRONTEND_PORT || '3000', 10)
   const apiBaseUrl = env.VITE_API_BASE_URL || 'http://localhost:4005'
 
   return {
+    root: configDir,
     plugins: [vue()],
     resolve: {
       alias: {
