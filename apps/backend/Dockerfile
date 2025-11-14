@@ -40,9 +40,25 @@ RUN npm run build
 FROM node:20-alpine
 
 WORKDIR /opt/bk_notification_service
-COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
-COPY apps/backend/package*.json ./
 
-RUN npm ci --omit=dev
+# Copy root package files for workspace setup
+COPY package*.json ./
+COPY package-lock.json ./
+
+# Copy backend package files
+COPY apps/backend/package*.json ./apps/backend/
+
+# Copy shared package files (needed for @bakong/shared dependency)
+COPY apps/packages/shared/package*.json ./apps/packages/shared/
+
+# Copy built shared package dist (backend depends on it)
+COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
+
+# Copy built backend dist
+COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
+
+# Install dependencies (remove --production for testing, add back for production)
+# Use npm install instead of npm ci for better workspace compatibility
+RUN npm install
 
 CMD ["node", "dist/main.js"]
