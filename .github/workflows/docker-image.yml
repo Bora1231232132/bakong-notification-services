@@ -42,3 +42,4 @@ jobs:
             backend.tags=ghcr.io/${{ github.repository_owner }}/notification-services-backend:${{ github.sha }}
             frontend.tags=ghcr.io/${{ github.repository_owner }}/notification-services-frontend:${{ github.sha }}
           push: true
+        
