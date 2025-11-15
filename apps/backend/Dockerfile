@@ -62,7 +62,9 @@ COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./app
 RUN test -d node_modules/@nestjs/core || test -d apps/backend/node_modules/@nestjs/core \
   || (echo "❌ Missing @nestjs/core in both root and backend node_modules" && exit 1)
 
-# Healthcheck (optional)
-HEALTHCHECK CMD node -e "require('http').get('http://localhost:4005/health', r => process.exit(0)).on('error', e => process.exit(1))" || exit 1
+# Healthcheck - backend runs on port 8080 inside container
+# Health endpoint is at /api/v1/health or /api/v1/management/healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/api/v1/health', (r) => { if (r.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1))"
 
 CMD ["node", "dist/main.js"]
