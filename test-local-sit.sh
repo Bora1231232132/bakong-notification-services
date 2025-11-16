@@ -50,16 +50,50 @@ else
   echo -e "${YELLOW}⚠ validate-deployment.sh not found, skipping validation${NC}"
 fi
 
-# Step 2: Stop any existing containers
-echo -e "\n${BLUE}Step 2: Cleaning up old containers...${NC}"
+# Step 2: Check for port conflicts
+echo -e "\n${BLUE}Step 2: Checking for port conflicts...${NC}"
+REQUIRED_PORTS=(4002 8090 5434)
+PORT_CONFLICTS=()
+
+for port in "${REQUIRED_PORTS[@]}"; do
+  # Check if port is in use by Docker containers
+  if docker ps --format "{{.Ports}}" | grep -q ":$port->" || \
+     (netstat -an 2>/dev/null | grep -q ":$port " && ! docker ps --format "{{.Ports}}" | grep -q ":$port->"); then
+    # Check if it's our own container
+    if ! docker ps --format "{{.Names}}" | grep -q "bakong-notification-services.*-sit"; then
+      PORT_CONFLICTS+=("$port")
+    fi
+  fi
+done
+
+if [ ${#PORT_CONFLICTS[@]} -gt 0 ]; then
+  echo -e "${YELLOW}⚠️  Port conflicts detected:${NC}"
+  for port in "${PORT_CONFLICTS[@]}"; do
+    echo -e "${YELLOW}   Port $port is already in use${NC}"
+    docker ps --format "table {{.Names}}\t{{.Ports}}" | grep ":$port" || true
+  done
+  echo -e "${YELLOW}   Stopping conflicting containers...${NC}"
+  # Try to stop containers using these ports
+  for port in "${PORT_CONFLICTS[@]}"; do
+    CONFLICTING_CONTAINERS=$(docker ps --format "{{.Names}}" --filter "publish=$port" 2>/dev/null || \
+                            docker ps --format "{{.Names}}" | xargs -I {} sh -c "docker port {} 2>/dev/null | grep -q ':$port->' && echo {}" || true)
+    if [ -n "$CONFLICTING_CONTAINERS" ]; then
+      echo "$CONFLICTING_CONTAINERS" | xargs docker stop 2>/dev/null || true
+    fi
+  done
+  sleep 2
+fi
+
+# Step 3: Stop any existing SIT containers
+echo -e "\n${BLUE}Step 3: Cleaning up old SIT containers...${NC}"
 echo -e "${YELLOW}   Note: Keeping database volume for faster startup${NC}"
 echo -e "${YELLOW}   (Remove '-v' from 'down' command if you need fresh database)${NC}"
 docker compose -f docker-compose.sit.yml down 2>/dev/null || true
 docker compose -f docker-compose.yml down 2>/dev/null || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
 
-# Step 3: Build images
-echo -e "\n${BLUE}Step 3: Building Docker images with SIT configuration...${NC}"
+# Step 4: Build images
+echo -e "\n${BLUE}Step 4: Building Docker images with SIT configuration...${NC}"
 docker compose -f docker-compose.sit.yml build --no-cache
 if [ $? -eq 0 ]; then
   echo -e "${GREEN}✓ Build successful${NC}"
@@ -68,8 +102,8 @@ else
   exit 1
 fi
 
-# Step 4: Start services
-echo -e "\n${BLUE}Step 4: Starting services...${NC}"
+# Step 5: Start services
+echo -e "\n${BLUE}Step 5: Starting services...${NC}"
 docker compose -f docker-compose.sit.yml up -d
 if [ $? -eq 0 ]; then
   echo -e "${GREEN}✓ Services started${NC}"
@@ -78,8 +112,8 @@ else
   exit 1
 fi
 
-# Step 5: Wait for database
-echo -e "\n${BLUE}Step 5: Waiting for database to be ready...${NC}"
+# Step 6: Wait for database
+echo -e "\n${BLUE}Step 6: Waiting for database to be ready...${NC}"
 echo -e "${YELLOW}⏳ This may take 2-5 minutes on first run (database initialization)...${NC}"
 echo -e "${YELLOW}   Subsequent runs will be much faster.${NC}"
 
@@ -131,8 +165,8 @@ else
   exit 1
 fi
 
-# Step 6: Wait for backend
-echo -e "\n${BLUE}Step 6: Waiting for backend to be ready...${NC}"
+# Step 7: Wait for backend
+echo -e "\n${BLUE}Step 7: Waiting for backend to be ready...${NC}"
 MAX_ATTEMPTS=30
 ATTEMPT=0
 BACKEND_READY=false
@@ -157,8 +191,8 @@ else
   exit 1
 fi
 
-# Step 7: Test API endpoints
-echo -e "\n${BLUE}Step 7: Testing API endpoints...${NC}"
+# Step 8: Test API endpoints
+echo -e "\n${BLUE}Step 8: Testing API endpoints...${NC}"
 
 # Test health endpoint
 HEALTH_RESPONSE=$(curl -s http://localhost:4002/api/v1/health)
@@ -178,8 +212,8 @@ else
   echo -e "${YELLOW}⚠ Management healthcheck returned unexpected response${NC}"
 fi
 
-# Step 8: Check frontend
-echo -e "\n${BLUE}Step 8: Checking frontend...${NC}"
+# Step 9: Check frontend
+echo -e "\n${BLUE}Step 9: Checking frontend...${NC}"
 FRONTEND_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8090 || echo "000")
 if [ "$FRONTEND_CODE" = "200" ]; then
   echo -e "${GREEN}✓ Frontend is accessible (HTTP $FRONTEND_CODE)${NC}"
@@ -188,8 +222,8 @@ else
   docker compose -f docker-compose.sit.yml logs frontend | tail -20
 fi
 
-# Step 9: Verify environment variables
-echo -e "\n${BLUE}Step 9: Verifying environment variables...${NC}"
+# Step 10: Verify environment variables
+echo -e "\n${BLUE}Step 10: Verifying environment variables...${NC}"
 CORS_ORIGIN=$(docker compose -f docker-compose.sit.yml exec -T backend printenv CORS_ORIGIN 2>/dev/null || echo "NOT SET")
 API_BASE_URL=$(docker compose -f docker-compose.sit.yml exec -T backend printenv API_BASE_URL 2>/dev/null || echo "NOT SET")
 NODE_ENV=$(docker compose -f docker-compose.sit.yml exec -T backend printenv NODE_ENV 2>/dev/null || echo "NOT SET")
@@ -210,8 +244,8 @@ else
   echo -e "${YELLOW}⚠ API_BASE_URL may not match server configuration${NC}"
 fi
 
-# Step 10: Check container status
-echo -e "\n${BLUE}Step 10: Container status...${NC}"
+# Step 11: Check container status
+echo -e "\n${BLUE}Step 11: Container status...${NC}"
 docker compose -f docker-compose.sit.yml ps
 
 # Summary
