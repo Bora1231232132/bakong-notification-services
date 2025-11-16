@@ -40,10 +40,9 @@ RUN npm run build
 
 # Build backend
 WORKDIR /opt/bk_notification_service/apps/backend
-RUN npm run build
-# Run fix-paths.js explicitly to ensure it runs (in case npm script fails silently)
-# The script includes its own verification and will exit with error if paths remain
-RUN node fix-paths.js
+# Build without fix-paths.js (we'll use runtime resolver instead - faster!)
+RUN tsc -p tsconfig.json && tsc-alias -p tsconfig.json
+# Note: We skip fix-paths.js here - runtime-path-resolver.js will handle src/ paths at runtime
 
 # -----------------------------------------------------
 # 🚀 Stage 2 — Runtime
