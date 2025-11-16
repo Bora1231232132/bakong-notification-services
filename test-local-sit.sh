@@ -50,38 +50,44 @@ else
   echo -e "${YELLOW}⚠ validate-deployment.sh not found, skipping validation${NC}"
 fi
 
-# Step 2: Check for port conflicts
+# Step 2: Check for port conflicts (informational only - don't auto-stop)
 echo -e "\n${BLUE}Step 2: Checking for port conflicts...${NC}"
 REQUIRED_PORTS=(4002 8090 5434)
 PORT_CONFLICTS=()
+CONFLICTING_CONTAINERS_LIST=()
 
 for port in "${REQUIRED_PORTS[@]}"; do
   # Check if port is in use by Docker containers
-  if docker ps --format "{{.Ports}}" | grep -q ":$port->" || \
-     (netstat -an 2>/dev/null | grep -q ":$port " && ! docker ps --format "{{.Ports}}" | grep -q ":$port->"); then
-    # Check if it's our own container
-    if ! docker ps --format "{{.Names}}" | grep -q "bakong-notification-services.*-sit"; then
+  CONTAINERS_USING_PORT=$(docker ps --format "{{.Names}}\t{{.Ports}}" | grep ":$port->" | awk '{print $1}' || true)
+  
+  if [ -n "$CONTAINERS_USING_PORT" ]; then
+    # Check if it's our own SIT container (which is OK)
+    if ! echo "$CONTAINERS_USING_PORT" | grep -q "bakong-notification-services.*-sit"; then
       PORT_CONFLICTS+=("$port")
+      CONFLICTING_CONTAINERS_LIST+=("$CONTAINERS_USING_PORT")
     fi
   fi
 done
 
 if [ ${#PORT_CONFLICTS[@]} -gt 0 ]; then
-  echo -e "${YELLOW}⚠️  Port conflicts detected:${NC}"
-  for port in "${PORT_CONFLICTS[@]}"; do
-    echo -e "${YELLOW}   Port $port is already in use${NC}"
-    docker ps --format "table {{.Names}}\t{{.Ports}}" | grep ":$port" || true
+  echo -e "${RED}⚠️  Port conflicts detected!${NC}"
+  echo -e "${YELLOW}   The following ports are already in use by other containers:${NC}"
+  for i in "${!PORT_CONFLICTS[@]}"; do
+    port="${PORT_CONFLICTS[$i]}"
+    container="${CONFLICTING_CONTAINERS_LIST[$i]}"
+    echo -e "${YELLOW}   Port $port: $container${NC}"
   done
-  echo -e "${YELLOW}   Stopping conflicting containers...${NC}"
-  # Try to stop containers using these ports
-  for port in "${PORT_CONFLICTS[@]}"; do
-    CONFLICTING_CONTAINERS=$(docker ps --format "{{.Names}}" --filter "publish=$port" 2>/dev/null || \
-                            docker ps --format "{{.Names}}" | xargs -I {} sh -c "docker port {} 2>/dev/null | grep -q ':$port->' && echo {}" || true)
-    if [ -n "$CONFLICTING_CONTAINERS" ]; then
-      echo "$CONFLICTING_CONTAINERS" | xargs docker stop 2>/dev/null || true
-    fi
+  echo ""
+  echo -e "${YELLOW}   Please manually stop these containers before running the test:${NC}"
+  for container in "${CONFLICTING_CONTAINERS_LIST[@]}"; do
+    echo -e "${YELLOW}     docker stop $container${NC}"
   done
-  sleep 2
+  echo ""
+  echo -e "${RED}   Exiting to prevent breaking other containers.${NC}"
+  echo -e "${YELLOW}   After stopping the conflicting containers, run this script again.${NC}"
+  exit 1
+else
+  echo -e "${GREEN}✓ No port conflicts detected${NC}"
 fi
 
 # Step 3: Stop any existing SIT containers
