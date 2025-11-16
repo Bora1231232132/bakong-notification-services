@@ -27,10 +27,12 @@ RUN npm ci --legacy-peer-deps \
   && cd apps/backend && npm ci --legacy-peer-deps
 
 # -----------------------------------------------------
-# Copy full source
+# Copy full source (including fix-paths.js)
 # -----------------------------------------------------
 COPY apps/backend ./apps/backend
 COPY apps/packages/shared ./apps/packages/shared
+# Ensure fix-paths.js is executable
+RUN chmod +x apps/backend/fix-paths.js || true
 
 # Build shared first
 WORKDIR /opt/bk_notification_service/apps/packages/shared
@@ -39,9 +41,12 @@ RUN npm run build
 # Build backend
 WORKDIR /opt/bk_notification_service/apps/backend
 RUN npm run build
-# Verify no src/ paths remain (fix-paths.js should have fixed them)
+# Run fix-paths.js explicitly to ensure it runs (in case npm script fails silently)
+RUN node fix-paths.js || (echo "⚠️ fix-paths.js failed or had errors" && exit 1)
+# Verify no src/ paths remain
 RUN if grep -r "require(['\"]src/" dist/ 2>/dev/null | head -1; then \
-      echo "❌ ERROR: src/ paths still exist after build!"; \
+      echo "❌ ERROR: src/ paths still exist after fix-paths.js!"; \
+      echo "Sample of remaining paths:"; \
       grep -r "require(['\"]src/" dist/ 2>/dev/null | head -5; \
       exit 1; \
     else \
