@@ -41,7 +41,8 @@ RUN npm run build
 # Build backend
 WORKDIR /opt/bk_notification_service/apps/backend
 # Build without fix-paths.js (we'll use runtime resolver instead - faster!)
-RUN tsc -p tsconfig.json && tsc-alias -p tsconfig.json
+# Use npm exec to run tsc and tsc-alias (more reliable than npx in Alpine)
+RUN npm exec -- tsc -p tsconfig.json && npm exec -- tsc-alias -p tsconfig.json
 # Note: We skip fix-paths.js here - runtime-path-resolver.js will handle src/ paths at runtime
 
 # -----------------------------------------------------
@@ -61,11 +62,11 @@ COPY apps/packages/shared/package*.json ./apps/packages/shared/
 COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
 
-# Copy ALL node_modules from builder (includes all dependencies properly resolved)
-# This ensures workspace dependencies are correctly hoisted and available
+# Copy node_modules from builder (already built for Alpine Linux, much faster than reinstalling)
+# Both stages use node:20-alpine, so native modules are compatible
 COPY --from=builder /opt/bk_notification_service/node_modules ./node_modules
 COPY --from=builder /opt/bk_notification_service/apps/backend/node_modules ./apps/backend/node_modules
-# Note: Shared package node_modules not needed (it's a workspace package, only dist is needed)
+# Note: Copying is much faster than reinstalling, and native modules work since both stages use the same base image
 
 # Don't prune - it can remove required dependencies in workspace setups
 # Instead, verify critical dependencies exist
