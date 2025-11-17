@@ -67,22 +67,24 @@ COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
 
 # Install production dependencies (rebuilds native modules like bcrypt for correct architecture)
-# This ensures native modules are compiled correctly for the runtime environment
-RUN npm ci --legacy-peer-deps --omit=dev \
-  && cd apps/backend && npm ci --legacy-peer-deps --omit=dev \
-  && cd ../packages/shared && npm ci --legacy-peer-deps --omit=dev || true
+# In workspace setup, install at root first to handle workspace dependencies
+RUN npm ci --legacy-peer-deps --omit=dev || true
+# Then install backend dependencies (workspace dependencies should be available)
+RUN cd apps/backend && npm ci --legacy-peer-deps --omit=dev
+# Install shared package dependencies if needed
+RUN cd apps/packages/shared && npm ci --legacy-peer-deps --omit=dev || true
 
-# Remove build dependencies to reduce image size (keep only runtime dependencies)
-RUN apk del python3 make g++
-
-# Don't prune - it can remove required dependencies in workspace setups
-# Instead, verify critical dependencies exist
+# Verify critical dependencies exist before removing build tools
 RUN test -d node_modules/@nestjs/core || test -d apps/backend/node_modules/@nestjs/core \
   || (echo "❌ Missing @nestjs/core - checking locations..." && \
       echo "Root node_modules:" && ls -la node_modules/@nestjs 2>/dev/null || echo "  Not in root" && \
       echo "Backend node_modules:" && ls -la apps/backend/node_modules/@nestjs 2>/dev/null || echo "  Not in backend" && \
       echo "All @nestjs locations:" && find . -type d -name "@nestjs" 2>/dev/null | head -10 && \
       exit 1)
+
+# Remove build dependencies to reduce image size (keep only runtime dependencies)
+# Note: Native modules are already compiled, so build tools are no longer needed
+RUN apk del python3 make g++
 
 # Healthcheck - backend runs on port 8080 inside container
 # Health endpoint is at /api/v1/health or /api/v1/management/healthcheck
