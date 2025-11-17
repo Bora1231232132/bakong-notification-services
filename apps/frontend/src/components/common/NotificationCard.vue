@@ -50,11 +50,11 @@
               </button>
               <button class="edit-button" @click="handleEditClick(notification)">
                 <span>Edit</span>
-                <img src="/src/assets/image/edit.png" alt="Edit" class="button-icon" />
+                <img src="@/assets/image/edit.png" alt="Edit" class="button-icon" />
               </button>
               <button class="delete-button" @click="handleDeleteClick(notification)">
                 <span>Delete</span>
-                <img src="/src/assets/image/trash-can.png" alt="Delete" class="button-icon" />
+                <img src="@/assets/image/trash-can.png" alt="Delete" class="button-icon" />
               </button>
             </div>
           </div>

@@ -61,7 +61,7 @@
           <div v-else-if="filteredNotifications.length === 0" class="empty-state">
             <div class="empty-state-container">
               <img
-                src="/src/assets/image/jomreadsur.png"
+                src="@/assets/image/jomreadsur.png"
                 alt="Empty State"
                 class="image-empty-state"
               />

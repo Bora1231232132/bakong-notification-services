@@ -25,7 +25,7 @@
           </el-button>
           <div class="user-avatar">
             <img
-              src="/src/assets/image/avatar.png"
+              src="@/assets/image/avatar.png"
               alt="User Avatar"
               class="user-image"
               @click="handleGoToSettings"
@@ -38,7 +38,7 @@
     <div class="sidebar">
       <div class="sidebar-header">
         <div class="logo">
-          <img src="/src/assets/image/NBC-logo.png" alt="NBC Logo" class="logo-image" />
+          <img src="@/assets/image/NBC-logo.png" alt="NBC Logo" class="logo-image" />
         </div>
       </div>
       <nav class="sidebar-nav">
@@ -49,7 +49,7 @@
             :class="{ active: $route.name === 'home' }"
             @click="$router.push('/')"
           >
-            <img src="/src/assets/image/home.jpg" alt="Home" class="nav-icon" />
+            <img src="@/assets/image/home.jpg" alt="Home" class="nav-icon" />
             <span>Home</span>
           </div>
         </div>
@@ -60,7 +60,7 @@
             :class="{ active: $route.name === 'schedule' }"
             @click="$router.push('/schedule')"
           >
-            <img src="/src/assets/image/calendar--heat-map.jpg" alt="Schedule" class="nav-icon" />
+            <img src="@/assets/image/calendar--heat-map.jpg" alt="Schedule" class="nav-icon" />
             <span>Schedule</span>
           </div>
         </div>
@@ -71,7 +71,7 @@
             :class="{ active: $route.name === 'templates' }"
             @click="$router.push('/templates')"
           >
-            <img src="/src/assets/image/type-pattern.jpg" alt="Type" class="nav-icon" />
+            <img src="@/assets/image/type-pattern.jpg" alt="Type" class="nav-icon" />
             <span>Type</span>
           </div>
         </div>
@@ -83,7 +83,7 @@
             :class="{ active: $route.name === 'insight' }"
             @click="handleInsightClick"
           >
-            <img src="/src/assets/image/chart--bar-target.jpg" alt="Insight" class="nav-icon" />
+            <img src="@/assets/image/chart--bar-target.jpg" alt="Insight" class="nav-icon" />
             <span>Insight</span>
           </div>
           <div
@@ -91,7 +91,7 @@
             :class="{ active: $route.name === 'settings' }"
             @click="$router.push('/settings')"
           >
-            <img src="/src/assets/image/settings_16.jpg" alt="Setting" class="nav-icon" />
+            <img src="@/assets/image/settings_16.jpg" alt="Setting" class="nav-icon" />
             <span>Setting</span>
           </div>
         </div>
