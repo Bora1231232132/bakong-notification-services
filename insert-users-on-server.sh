@@ -135,6 +135,24 @@ ON CONFLICT (username) DO UPDATE SET
     "updatedAt" = EXCLUDED."updatedAt",
     "deletedAt" = NULL;
 
+
+-- 
+INSERT INTO public."user" (username, password, "displayName", role, "failLoginAttempt", "createdAt", "updatedAt", "deletedAt") 
+VALUES (
+    'Sorya Phoeun',
+    '\$2b\$10\$KXqEgbKH0pKbYTZ9jKFVgOhiUQLOsdcaOpEXjKWdqBh70lua2YIEG',
+    'Sorya Phoeun',
+    'ADMIN_USER',
+    0,
+    NOW(),
+    NOW(),
+    NULL
+)
+ON CONFLICT (username) DO UPDATE SET
+    "displayName" = EXCLUDED."displayName",
+    role = EXCLUDED.role,
+    "updatedAt" = EXCLUDED."updatedAt";
+
 -- Insert So Theany
 INSERT INTO public."user" (username, password, "displayName", role, "failLoginAttempt", "createdAt", "updatedAt", "deletedAt") 
 VALUES (
