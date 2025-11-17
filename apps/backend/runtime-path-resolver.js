@@ -8,39 +8,42 @@ const Module = require('module');
 const path = require('path');
 const fs = require('fs');
 
-// Store original require
-const originalRequire = Module.prototype.require;
+// Store original _resolveFilename
+const originalResolveFilename = Module._resolveFilename;
 
-// Override require to handle src/ paths
-Module.prototype.require = function(id) {
+// Override _resolveFilename to handle src/ paths at module resolution time
+Module._resolveFilename = function(request, parent, isMain, options) {
   // If the module ID starts with 'src/', resolve it to the correct dist/ path
-  if (id.startsWith('src/')) {
-    // Get the calling file's directory
-    const callingFile = this.filename || __filename;
-    const callingDir = path.dirname(callingFile);
-    
+  if (request.startsWith('src/')) {
     // Convert src/... to dist/... (since dist mirrors src structure)
-    const distPath = id.replace(/^src\//, 'dist/');
+    const distPath = request.replace(/^src\//, 'dist/');
     
-    // Resolve the actual file path
-    const resolvedPath = path.resolve(callingDir, distPath);
+    // Resolve from the working directory (where the app runs from)
+    const workingDir = process.cwd();
+    const resolvedPath = path.resolve(workingDir, distPath);
     
-    // Try with .js extension
+    // Try with .js extension first
     let finalPath = resolvedPath + '.js';
-    if (!fs.existsSync(finalPath)) {
-      // Try without extension
-      finalPath = resolvedPath;
-      if (!fs.existsSync(finalPath)) {
-        // Fall back to original require (will show proper error)
-        return originalRequire.call(this, id);
-      }
+    if (fs.existsSync(finalPath)) {
+      return finalPath;
     }
     
-    // Use the resolved path
-    return originalRequire.call(this, finalPath);
+    // Try without extension
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
+    }
+    
+    // Try as a directory with index.js
+    const indexPath = path.resolve(resolvedPath, 'index.js');
+    if (fs.existsSync(indexPath)) {
+      return indexPath;
+    }
+    
+    // Log warning if file not found (for debugging)
+    console.warn(`⚠️  Runtime resolver: Could not resolve '${request}' to '${resolvedPath}'`);
   }
   
   // For all other requires, use original behavior
-  return originalRequire.call(this, id);
+  return originalResolveFilename.call(this, request, parent, isMain, options);
 };
 
