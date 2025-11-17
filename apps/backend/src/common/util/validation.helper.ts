@@ -96,6 +96,7 @@ export class ValidationHelper {
       case ErrorCode.FAILED_AUTHENTICATION:
       case ErrorCode.JWT_EXPIRE:
       case ErrorCode.NO_PERMISSION:
+      case ErrorCode.INVALID_USERNAME_OR_PASSWORD:
         return 401
 
       case ErrorCode.API_NOT_FOUND:
