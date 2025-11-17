@@ -58,7 +58,7 @@ services:
       - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
       - ./apps/backend/env.staging:/opt/bk_notification_service/env.staging:ro
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/api/v1/health', (r) => { if (r.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

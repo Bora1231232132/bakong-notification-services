@@ -13,6 +13,8 @@ import { UserModule } from './user/user.module'
 import { ImageModule } from './image/image.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ConfigService } from '../common/services/config.service'
+import { AppController } from '../app.controller'
+import { AppService } from '../app.service'
 
 @Module({
   imports: [
@@ -25,8 +27,10 @@ import { ConfigService } from '../common/services/config.service'
     TemplateModule,
     ImageModule,
   ],
+  controllers: [AppController],
   providers: [
     ConfigService,
+    AppService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
