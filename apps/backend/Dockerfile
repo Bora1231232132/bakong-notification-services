@@ -40,10 +40,11 @@ RUN npm run build
 
 # Build backend
 WORKDIR /opt/bk_notification_service/apps/backend
-# Build without fix-paths.js (we'll use runtime resolver instead - faster!)
+# Build TypeScript and fix paths
 # Use npm exec to run tsc and tsc-alias (more reliable than npx in Alpine)
 RUN npm exec -- tsc -p tsconfig.json && npm exec -- tsc-alias -p tsconfig.json
-# Note: We skip fix-paths.js here - runtime-path-resolver.js will handle src/ paths at runtime
+# Fix remaining src/ paths that tsc-alias might have missed
+RUN node fix-paths.js
 
 # -----------------------------------------------------
 # 🚀 Stage 2 — Runtime
