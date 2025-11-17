@@ -67,21 +67,17 @@ COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
 
 # Install production dependencies (rebuilds native modules like bcrypt for correct architecture)
-# Install backend dependencies first (this will also install workspace dependencies)
-WORKDIR /opt/bk_notification_service/apps/backend
-RUN npm ci --legacy-peer-deps --omit=dev
-# Install root dependencies if package.json exists (for workspace setup)
+# Install at root first to handle workspace dependencies correctly
 WORKDIR /opt/bk_notification_service
-RUN if [ -f package.json ]; then npm ci --legacy-peer-deps --omit=dev || true; fi
-# Install shared package dependencies if needed
-RUN cd apps/packages/shared && npm ci --legacy-peer-deps --omit=dev || true
+RUN npm ci --legacy-peer-deps --omit=dev --workspace=apps/backend --workspace=apps/packages/shared || \
+    (echo "Workspace install failed, trying individual installs..." && \
+     cd apps/backend && npm ci --legacy-peer-deps --omit=dev && \
+     cd ../packages/shared && npm ci --legacy-peer-deps --omit=dev || true)
 
-# Verify critical dependencies can be loaded (more reliable than directory check)
-# This works even if dependencies are hoisted in workspace setup
-# Set NODE_PATH to include both root and backend node_modules for verification
+# Verify @nestjs/core is actually installed and can be required
 WORKDIR /opt/bk_notification_service
 RUN NODE_PATH=/opt/bk_notification_service/node_modules:/opt/bk_notification_service/apps/backend/node_modules:$NODE_PATH \
-  node -e "try { require('@nestjs/core'); console.log('✅ @nestjs/core found'); } catch(e) { console.warn('⚠️  Warning: @nestjs/core not found during build check, but may be available at runtime'); console.warn('   Error:', e.message); }" || true
+  node -e "try { const core = require('@nestjs/core'); console.log('✅ @nestjs/core found, version:', core.VERSION || 'unknown'); } catch(e) { console.error('❌ @nestjs/core NOT FOUND - this will cause runtime errors!'); console.error('   Error:', e.message); console.error('   Searching for @nestjs...'); require('child_process').exec('find . -name \"@nestjs\" -type d 2>/dev/null | head -5', (err, stdout) => { console.log(stdout || '  No @nestjs directories found'); process.exit(1); }); }"
 
 # Remove build dependencies to reduce image size (keep only runtime dependencies)
 # Note: Native modules are already compiled, so build tools are no longer needed
