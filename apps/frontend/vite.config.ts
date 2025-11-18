@@ -13,6 +13,7 @@ export default defineConfig(() => {
 
   return {
     root: root,
+    publicDir: 'public',
     plugins: [vue()],
     resolve: {
       alias: {
