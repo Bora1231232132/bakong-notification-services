@@ -49,10 +49,10 @@ ENV VITE_BASE_URL=${VITE_BASE_URL}
 
 WORKDIR /app/apps/frontend
 # Verify public folder exists before build
-RUN ls -la public/ || echo "Public folder check"
-RUN npm run build
+RUN echo "=== Checking public folder ===" && ls -la public/ && echo "=== Public folder contents above ==="
+RUN echo "=== Starting Vite build ===" && npm run build
 # Verify the file was copied to dist after build
-RUN ls -la dist/ | grep -i nbc || echo "NBC-logo.png not found in dist"
+RUN echo "=== Checking dist folder ===" && ls -la dist/ && echo "=== Looking for NBC-logo.png ===" && (ls -la dist/NBC-logo.png || echo "ERROR: NBC-logo.png NOT FOUND in dist!")
 
 # Production stage
 FROM nginx:alpine
