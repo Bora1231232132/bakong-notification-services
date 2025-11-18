@@ -74,6 +74,8 @@ dist
 # Gatsby files
 .cache/
 public
+# Exception: Track frontend public folder (contains static assets like favicon)
+!apps/frontend/public/
 
 # Storybook build outputs
 .out
