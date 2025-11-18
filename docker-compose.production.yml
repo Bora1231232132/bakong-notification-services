@@ -43,14 +43,14 @@ services:
       - POSTGRES_PASSWORD=010110bkns
       - API_PORT=8080
       # ⚠️ SERVER CONFIG: Update when switching to different server
-      # Current: prod-bk-notifi-service (10.20.6.58)
-      # You can use hostname or IP - hostname is recommended
-      # Hostname: prod-bk-notifi-service
-      # IP: 10.20.6.58
-      - API_BASE_URL=https://prod-bk-notifi-service:8080
-      - HOSTING_BASE_URL=https://prod-bk-notifi-service:8080
+      # Supports both HTTPS domain and HTTP IP for flexibility
+      # CORS_ORIGIN supports comma-separated values for multiple origins
+      # API_BASE_URL/HOSTING_BASE_URL use HTTPS domain (primary)
+      # Production: prod-bakong-notification.nbc.gov.kh (10.20.6.58)
+      - API_BASE_URL=https://prod-bakong-notification.nbc.gov.kh
+      - HOSTING_BASE_URL=https://prod-bakong-notification.nbc.gov.kh
       - NODE_ENV=production
-      - CORS_ORIGIN=https://prod-bk-notifi-service
+      - CORS_ORIGIN=https://prod-bakong-notification.nbc.gov.kh,http://10.20.6.58
       - LOG_LEVEL=warn
       - API_JWT_KEY=010110bkns
       - TYPEORM_SYNCHRONIZE=true
@@ -69,6 +69,11 @@ services:
     build:
       context: .
       dockerfile: ./apps/frontend/Dockerfile
+      args:
+        # Empty string uses relative URLs - automatically matches page protocol (HTTP/HTTPS)
+        VITE_API_BASE_URL: ""
+        VITE_FRONTEND_PORT: 3000
+        VITE_BASE_URL: /
     # Option 2: Use pre-built image from GHCR (recommended for production - faster, consistent)
     # Get commit SHA from GitHub Actions build, then use:
     # image: ghcr.io/stheany/notification-services-frontend:YOUR_COMMIT_SHA
