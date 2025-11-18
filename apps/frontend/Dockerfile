@@ -48,7 +48,11 @@ ENV VITE_FRONTEND_PORT=${VITE_FRONTEND_PORT}
 ENV VITE_BASE_URL=${VITE_BASE_URL}
 
 WORKDIR /app/apps/frontend
+# Verify public folder exists before build
+RUN ls -la public/ || echo "Public folder check"
 RUN npm run build
+# Verify the file was copied to dist after build
+RUN ls -la dist/ | grep -i nbc || echo "NBC-logo.png not found in dist"
 
 # Production stage
 FROM nginx:alpine
