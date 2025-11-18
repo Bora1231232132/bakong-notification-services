@@ -28,7 +28,10 @@ RUN npm run build
 # Copy frontend source code (exclude node_modules and dist to avoid conflicts)
 WORKDIR /app
 # Copy frontend files but preserve the workspace structure
+# Explicitly ensure public folder is copied
 COPY apps/frontend/. ./apps/frontend/
+# Verify public folder was copied
+RUN ls -la apps/frontend/ | grep public || echo "WARNING: public folder not found after COPY"
 RUN rm -rf ./apps/frontend/node_modules ./apps/frontend/dist || true
 
 # Reinstall dependencies to ensure frontend-specific deps are available
@@ -48,8 +51,8 @@ ENV VITE_FRONTEND_PORT=${VITE_FRONTEND_PORT}
 ENV VITE_BASE_URL=${VITE_BASE_URL}
 
 WORKDIR /app/apps/frontend
-# Verify public folder exists before build
-RUN echo "=== Checking public folder ===" && ls -la public/ && echo "=== Public folder contents above ==="
+# Verify public folder exists before build (use || true to not fail if missing)
+RUN echo "=== Checking public folder ===" && (ls -la public/ || echo "ERROR: public folder does not exist!") && echo "=== Public folder contents above ==="
 RUN echo "=== Starting Vite build ===" && npm run build
 # Verify the file was copied to dist after build
 RUN echo "=== Checking dist folder ===" && ls -la dist/ && echo "=== Looking for NBC-logo.png ===" && (ls -la dist/NBC-logo.png || echo "ERROR: NBC-logo.png NOT FOUND in dist!")
