@@ -76,31 +76,52 @@ BEGIN
         ALTER TABLE image ALTER COLUMN "fileId" SET NOT NULL;
         ALTER TABLE image ADD CONSTRAINT "UQ_dc68de0aaebfd1036f21e679aec" UNIQUE ("fileId");
         
-        -- Step 9: Convert template_translation.imageId from UUID to VARCHAR (if needed)
-        DO $$
-        DECLARE
-            trans_col_type TEXT;
-        BEGIN
-            SELECT data_type INTO trans_col_type
-            FROM information_schema.columns
-            WHERE table_schema = 'public' 
-              AND table_name = 'template_translation' 
-              AND column_name = 'imageId';
-            
-            IF trans_col_type = 'uuid' THEN
-                RAISE NOTICE 'Converting template_translation.imageId from UUID to VARCHAR(255)...';
-                ALTER TABLE template_translation ALTER COLUMN "imageId" TYPE VARCHAR(255) USING "imageId"::text;
-            END IF;
-        END $$;
-        
-        -- Step 10: Recreate the foreign key constraint (now pointing to VARCHAR column)
+        RAISE NOTICE '✅ Successfully converted image.fileId from UUID to VARCHAR(255)';
+    ELSE
+        RAISE WARNING 'Unknown column type: %. Manual intervention may be required.', col_type;
+    END IF;
+END $$;
+
+-- Convert template_translation.imageId from UUID to VARCHAR (if needed)
+-- This must be done AFTER image.fileId conversion and BEFORE recreating FK
+DO $$
+DECLARE
+    trans_col_type TEXT;
+BEGIN
+    SELECT data_type INTO trans_col_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public' 
+      AND table_name = 'template_translation' 
+      AND column_name = 'imageId';
+    
+    IF trans_col_type = 'uuid' THEN
+        RAISE NOTICE 'Converting template_translation.imageId from UUID to VARCHAR(255)...';
+        ALTER TABLE template_translation ALTER COLUMN "imageId" TYPE VARCHAR(255) USING "imageId"::text;
+        RAISE NOTICE '✅ Successfully converted template_translation.imageId to VARCHAR(255)';
+    ELSIF trans_col_type IS NULL THEN
+        RAISE NOTICE 'Column template_translation.imageId does not exist.';
+    ELSE
+        RAISE NOTICE 'Column template_translation.imageId is already type: %', trans_col_type;
+    END IF;
+END $$;
+
+-- Recreate the foreign key constraint (now both columns are VARCHAR)
+DO $$
+BEGIN
+    -- Check if FK already exists
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'FK_d871aa842216b0708829b76233b'
+        AND table_schema = 'public'
+        AND table_name = 'template_translation'
+    ) THEN
+        RAISE NOTICE 'Recreating foreign key constraint...';
         ALTER TABLE template_translation 
         ADD CONSTRAINT "FK_d871aa842216b0708829b76233b" 
         FOREIGN KEY ("imageId") REFERENCES image("fileId") ON DELETE SET NULL;
-        
-        RAISE NOTICE '✅ Successfully converted fileId from UUID to VARCHAR(255)';
+        RAISE NOTICE '✅ Foreign key constraint recreated successfully';
     ELSE
-        RAISE WARNING 'Unknown column type: %. Manual intervention may be required.', col_type;
+        RAISE NOTICE 'Foreign key constraint already exists.';
     END IF;
 END $$;
 
