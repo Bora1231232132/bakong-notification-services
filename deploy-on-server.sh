@@ -13,10 +13,10 @@ echo "📥 Pulling latest code..."
 git fetch origin
 git reset --hard origin/develop
 
-# Run database migration to fix NULL fileId values
+# Run database migration to convert fileId from UUID to VARCHAR
 echo "🔄 Running database migration..."
-if [ -f "apps/backend/scripts/fix-null-fileid.sql" ]; then
-    docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/fix-null-fileid.sql || echo "⚠️  Migration warning (may be normal if no NULL values exist)"
+if [ -f "apps/backend/scripts/convert-fileid-to-varchar.sql" ]; then
+    docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/convert-fileid-to-varchar.sql || echo "⚠️  Migration warning (may be normal if column already converted)"
 else
     echo "⚠️  Migration script not found, skipping..."
 fi
