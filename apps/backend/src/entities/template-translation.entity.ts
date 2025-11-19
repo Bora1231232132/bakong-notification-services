@@ -34,7 +34,7 @@ export class TemplateTranslation {
   @Column({ type: 'text', nullable: false, default: '' })
   content?: string
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   imageId?: string
 
   @ManyToOne(() => Image, { nullable: true, onDelete: 'SET NULL' })
