@@ -60,16 +60,43 @@ BEGIN
         SET "fileId_temp" = uuid_generate_v4()::text
         WHERE "fileId_temp" IS NULL;
         
-        -- Step 4: Drop the old column and constraint
+        -- Step 4: Drop foreign key constraint first (it depends on the unique constraint)
+        ALTER TABLE template_translation DROP CONSTRAINT IF EXISTS "FK_d871aa842216b0708829b76233b";
+        
+        -- Step 5: Drop the unique constraint
         ALTER TABLE image DROP CONSTRAINT IF EXISTS "UQ_dc68de0aaebfd1036f21e679aec";
+        
+        -- Step 6: Drop the old column
         ALTER TABLE image DROP COLUMN "fileId";
         
-        -- Step 5: Rename temp column to fileId
+        -- Step 7: Rename temp column to fileId
         ALTER TABLE image RENAME COLUMN "fileId_temp" TO "fileId";
         
-        -- Step 6: Add NOT NULL constraint and unique constraint
+        -- Step 8: Add NOT NULL constraint and unique constraint
         ALTER TABLE image ALTER COLUMN "fileId" SET NOT NULL;
         ALTER TABLE image ADD CONSTRAINT "UQ_dc68de0aaebfd1036f21e679aec" UNIQUE ("fileId");
+        
+        -- Step 9: Convert template_translation.imageId from UUID to VARCHAR (if needed)
+        DO $$
+        DECLARE
+            trans_col_type TEXT;
+        BEGIN
+            SELECT data_type INTO trans_col_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' 
+              AND table_name = 'template_translation' 
+              AND column_name = 'imageId';
+            
+            IF trans_col_type = 'uuid' THEN
+                RAISE NOTICE 'Converting template_translation.imageId from UUID to VARCHAR(255)...';
+                ALTER TABLE template_translation ALTER COLUMN "imageId" TYPE VARCHAR(255) USING "imageId"::text;
+            END IF;
+        END $$;
+        
+        -- Step 10: Recreate the foreign key constraint (now pointing to VARCHAR column)
+        ALTER TABLE template_translation 
+        ADD CONSTRAINT "FK_d871aa842216b0708829b76233b" 
+        FOREIGN KEY ("imageId") REFERENCES image("fileId") ON DELETE SET NULL;
         
         RAISE NOTICE '✅ Successfully converted fileId from UUID to VARCHAR(255)';
     ELSE
