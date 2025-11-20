@@ -8,6 +8,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Go up 2 levels: scripts -> backend -> project root
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "⚠️  WARNING: This will REPLACE all production data with SIT data!"
@@ -51,8 +52,17 @@ echo ""
 if [ -z "$SIT_CONTAINER" ]; then
   echo "⚠️  SIT database container not found - starting it now..."
   echo ""
-  cd "$PROJECT_ROOT"
-  docker-compose -f docker-compose.sit.yml up -d db
+  # Use absolute path for docker-compose file
+  DOCKER_COMPOSE_SIT="$PROJECT_ROOT/docker-compose.sit.yml"
+  if [ ! -f "$DOCKER_COMPOSE_SIT" ]; then
+    echo "❌ docker-compose.sit.yml not found at: $DOCKER_COMPOSE_SIT"
+    echo "   PROJECT_ROOT: $PROJECT_ROOT"
+    echo "   Current directory: $(pwd)"
+    exit 1
+  fi
+  cd "$PROJECT_ROOT" || exit 1
+  # Use absolute path for -f flag
+  docker-compose -f "$DOCKER_COMPOSE_SIT" up -d db
   sleep 15
   
   # Try to find it again
