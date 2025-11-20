@@ -44,12 +44,27 @@ fi
 
 echo ""
 echo "🔍 Step 2: Checking Production database container..."
-PROD_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db$|.*_bakong-notification-services-db$" | head -1)
+# Check both running and stopped containers for production DB
+PROD_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -E "bakong-notification-services-db$|.*_bakong-notification-services-db$" | grep -v "sit" | head -1)
 
 if [ -z "$PROD_CONTAINER" ]; then
   echo "❌ Production database container not found!"
+  echo ""
+  echo "💡 Available containers:"
+  docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+  echo ""
+  echo "⚠️  Please start production database:"
+  echo "    docker-compose -f docker-compose.production.yml up -d db"
   exit 1
 fi
+
+# Check if it's running
+if ! docker ps --format '{{.Names}}' | grep -q "^${PROD_CONTAINER}$"; then
+  echo "⚠️  Production database is stopped - starting it..."
+  docker start "$PROD_CONTAINER"
+  sleep 10
+fi
+
 echo "✅ Production database container: $PROD_CONTAINER"
 
 echo ""
