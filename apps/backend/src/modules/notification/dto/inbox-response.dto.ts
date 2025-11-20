@@ -13,6 +13,7 @@ export interface NotificationData {
   language: string
   notificationType: string
   categoryType: string
+  bakongPlatform?: string
   createdDate: string
   timestamp: string
   title: string
@@ -32,6 +33,7 @@ export class InboxResponseDto implements NotificationData {
   linkPreview: string
   notificationType: string
   categoryType: string
+  bakongPlatform?: string
   createdDate: string
   timestamp: string
   sendCount?: number
@@ -57,6 +59,7 @@ export class InboxResponseDto implements NotificationData {
     this.language = language
     this.notificationType = data.template?.notificationType || NotificationType.ANNOUNCEMENT
     this.categoryType = data.template?.categoryType || CategoryType.NEWS
+    this.bakongPlatform = data.template?.bakongPlatform
 
     this.createdDate = DateFormatter.formatDateByLanguage(data.createdAt, language)
     this.timestamp = data.createdAt.toISOString()
@@ -94,8 +97,13 @@ export class InboxResponseDto implements NotificationData {
     notifications: NotificationData[],
     message: string,
     pagination?: PaginationMeta,
+    userBakongPlatform?: string,
   ) {
-    return this.getResponse(notifications, message, pagination)
+    const response = this.getResponse(notifications, message, pagination)
+    if (userBakongPlatform && response.data && typeof response.data === 'object' && 'notifications' in response.data) {
+      (response.data as any).userBakongPlatform = userBakongPlatform
+    }
+    return response
   }
 
   static buildBaseNotificationData(
@@ -112,6 +120,7 @@ export class InboxResponseDto implements NotificationData {
       language: translation.language,
       notificationType: template.notificationType,
       categoryType: template.categoryType,
+      bakongPlatform: template.bakongPlatform,
       createdDate: DateFormatter.formatDateByLanguage(template.createdAt, language as Language),
       timestamp: new Date().toISOString(),
       title: translation.title,

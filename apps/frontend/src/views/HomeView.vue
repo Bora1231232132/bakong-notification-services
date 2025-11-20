@@ -95,7 +95,7 @@ import { Tabs } from '@/components/common'
 import { notificationApi } from '@/services/notificationApi'
 import type { Notification } from '@/types/notification'
 import { ElNotification } from 'element-plus'
-import { NotificationType, formatNotificationType } from '@/utils/helpers'
+import { NotificationType, formatNotificationType, formatBakongApp, getFormattedPlatformName, getNoUsersAvailableMessage } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
 
@@ -762,6 +762,36 @@ const handlePublishNotification = async (notification: Notification) => {
         notification.type,
       )
 
+      // Check if error response (no users found)
+      if (result?.responseCode !== 0 || result?.errorCode !== 0) {
+        const errorMessage = result?.responseMessage || result?.message || 'Failed to publish notification'
+        
+        // Get platform name from response data or notification
+        const platformName = getFormattedPlatformName({
+          platformName: result?.data?.platformName,
+          bakongPlatform: result?.data?.bakongPlatform,
+          notification: notification as any,
+        })
+        
+        ElNotification({
+          title: 'Info',
+          message: errorMessage.includes('No users found') 
+            ? getNoUsersAvailableMessage(platformName)
+            : errorMessage,
+          type: 'info',
+          duration: 3000,
+          dangerouslyUseHTMLString: true,
+        })
+        // Keep in draft tab
+        activeTab.value = 'draft'
+        cachedNotifications = null
+        cacheTimestamp = 0
+        clearCacheFromStorage()
+        await fetchNotifications(true)
+        applyFilters()
+        return
+      }
+
       ElNotification({
         title: 'Success',
         message: `Notification published successfully!`,
@@ -780,14 +810,43 @@ const handlePublishNotification = async (notification: Notification) => {
       await fetchNotifications(true)
       applyFilters()
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to publish notification:', error)
-    ElNotification({
-      title: 'Error',
-      message: 'Failed to publish notification',
-      type: 'error',
-      duration: 2000,
-    })
+    const errorMessage = error?.response?.data?.responseMessage || 
+                        error?.response?.data?.message || 
+                        error?.message || 
+                        'Failed to publish notification'
+    
+    // Check if it's a "no users" error
+    if (errorMessage.includes('NO_USERS_FOR_BAKONG_PLATFORM') || errorMessage.includes('No users found for')) {
+      // Get platform name from error response data or notification
+      const platformName = getFormattedPlatformName({
+        platformName: error?.response?.data?.data?.platformName,
+        bakongPlatform: error?.response?.data?.data?.bakongPlatform,
+        notification: notification as any,
+      })
+      
+      ElNotification({
+        title: 'Info',
+        message: getNoUsersAvailableMessage(platformName),
+        type: 'info',
+        duration: 3000,
+        dangerouslyUseHTMLString: true,
+      })
+      activeTab.value = 'draft'
+      cachedNotifications = null
+      cacheTimestamp = 0
+      clearCacheFromStorage()
+      await fetchNotifications(true)
+      applyFilters()
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: errorMessage,
+        type: 'error',
+        duration: 2000,
+      })
+    }
   } finally {
     publishingNotifications.delete(key)
   }

@@ -12,7 +12,7 @@ import {
 import { Type, Transform } from 'class-transformer'
 import { SendType } from '@bakong/shared'
 import { TemplateTranslationDto } from './template-translation.dto'
-import { CategoryType, NotificationType, Platform } from '@bakong/shared'
+import { CategoryType, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class SendIntervalDto {
@@ -97,4 +97,14 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsNumber()
   priority?: number
+
+  @IsOptional()
+  @IsEnum(BakongApp)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return ValidationHelper.normalizeEnum(value)
+    }
+    return value
+  })
+  bakongPlatform?: BakongApp
 }

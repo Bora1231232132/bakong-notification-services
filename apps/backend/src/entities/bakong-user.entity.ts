@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
+import { BakongApp } from '@bakong/shared'
 
 @Entity({ name: 'bakong_user' })
 export class BakongUser {
@@ -27,6 +28,10 @@ export class BakongUser {
 
   @Column({ nullable: true, length: 2 })
   language?: string
+
+  @Column({ nullable: true, type: 'enum', enum: BakongApp })
+  @Index()
+  bakongPlatform?: BakongApp
 
   @CreateDateColumn({ nullable: false, type: 'timestamp' })
   @Index()

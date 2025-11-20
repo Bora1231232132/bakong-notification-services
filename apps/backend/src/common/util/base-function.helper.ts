@@ -79,6 +79,7 @@ export class BaseFunctionHelper {
         participantCode: updateData.participantCode,
         platform: this.normalizePlatform(updateData.platform),
         language: this.normalizeLanguage(updateData.language),
+        bakongPlatform: updateData.bakongPlatform,
       })
       if (changed) user = await this.bkUserRepo.save(user)
       return { isNewUser, savedUser: user }
@@ -90,6 +91,7 @@ export class BaseFunctionHelper {
       participantCode: updateData.participantCode,
       platform: this.normalizePlatform(updateData.platform),
       language: this.normalizeLanguage(updateData.language),
+      bakongPlatform: updateData.bakongPlatform,
     })
     const savedUser = await this.bkUserRepo.save(created)
     return { isNewUser, savedUser }

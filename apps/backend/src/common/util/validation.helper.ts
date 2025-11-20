@@ -430,6 +430,11 @@ export class ValidationHelper {
       hasChanges = true
     }
 
+    if (updates.bakongPlatform !== undefined && user.bakongPlatform !== updates.bakongPlatform) {
+      user.bakongPlatform = updates.bakongPlatform
+      hasChanges = true
+    }
+
     return hasChanges
   }
 

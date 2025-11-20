@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer'
-import { IsString, IsOptional, IsNumber, Min, Max } from 'class-validator'
-import { Language, Platform } from '@bakong/shared'
+import { IsString, IsOptional, IsNumber, Min, Max, IsEnum } from 'class-validator'
+import { Language, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class NotificationInboxDto {
@@ -48,4 +48,14 @@ export class NotificationInboxDto {
   @Max(100)
   @Transform(({ value }) => parseInt(value) || 10)
   size?: number = 10
+
+  @IsOptional()
+  @IsEnum(BakongApp)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return ValidationHelper.normalizeEnum(value)
+    }
+    return value
+  })
+  bakongPlatform?: BakongApp
 }

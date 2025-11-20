@@ -18,6 +18,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'language_enum') THEN
         CREATE TYPE language_enum AS ENUM ('EN', 'KM', 'JP');
     END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bakong_platform_enum') THEN
+        CREATE TYPE bakong_platform_enum AS ENUM ('BAKONG', 'BAKONG_TOURIST', 'BAKONG_JUNIOR');
+    END IF;
 END$$;
 
 -- Grant privileges to bkns_dev user (created by Docker via POSTGRES_USER)
@@ -65,6 +69,7 @@ CREATE TABLE IF NOT EXISTS image (
 CREATE TABLE IF NOT EXISTS template (
     id SERIAL PRIMARY KEY,
     platforms VARCHAR(255),
+    "bakongPlatform" bakong_platform_enum,
     "sendType" send_type_enum DEFAULT 'SEND_NOW',
     "notificationType" VARCHAR(50),
     "categoryType" VARCHAR(50),
@@ -118,6 +123,7 @@ CREATE INDEX IF NOT EXISTS "IDX_bakong_user_accountId" ON bakong_user("accountId
 CREATE INDEX IF NOT EXISTS "IDX_bakong_user_platform" ON bakong_user(platform);
 CREATE INDEX IF NOT EXISTS "IDX_template_sendType" ON template("sendType");
 CREATE INDEX IF NOT EXISTS "IDX_template_isSent" ON template("isSent");
+CREATE INDEX IF NOT EXISTS "IDX_template_bakongPlatform" ON template("bakongPlatform");
 CREATE INDEX IF NOT EXISTS "IDX_template_translation_templateId" ON template_translation("templateId");
 CREATE INDEX IF NOT EXISTS "IDX_template_translation_language" ON template_translation(language);
 CREATE INDEX IF NOT EXISTS "IDX_user_username" ON "user"(username);

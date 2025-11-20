@@ -30,6 +30,7 @@ export enum ErrorCode {
   INVALID_FCM_TOKEN = 28,
   TEMPLATE_SEND_SCHEDULE_IN_PAST = 29,
   TEMPLATE_SEND_INTERVAL_INVAILD_DURATION = 30,
+  NO_USERS_FOR_BAKONG_PLATFORM = 31,
 }
 
 export enum ResponseMessage {
@@ -68,6 +69,7 @@ export enum ResponseMessage {
   INVALID_FCM_TOKEN = 'Invalid FCM token',
   TEMPLATE_SEND_SCHEDULE_IN_PAST = 'Template schedule cannot be in the past',
   TEMPLATE_SEND_INTERVAL_INVAILD_DURATION = 'Template send interval duration is invalid',
+  NO_USERS_FOR_BAKONG_PLATFORM = 'No users found for this Bakong platform. Please ensure there are registered users for this platform before sending notifications.',
 }
 
 export enum HttpStatus {

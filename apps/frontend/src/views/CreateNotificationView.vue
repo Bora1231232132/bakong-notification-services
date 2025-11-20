@@ -316,6 +316,7 @@ import {
   formatNotificationType,
   formatPlatform,
   formatCategoryType,
+  getNoUsersAvailableMessage,
 } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import {
@@ -487,7 +488,7 @@ const loadNotificationData = async () => {
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
     formData.categoryType = mapTypeToCategoryType(template.categoryType) || CategoryType.OTHER
-    formData.platform = BakongApp.BAKONG
+    formData.platform = (template.bakongPlatform as BakongApp) || BakongApp.BAKONG
 
     if (template.sendSchedule) {
       formData.scheduleEnabled = true
@@ -649,7 +650,7 @@ const handlePublishNow = async () => {
     message: isEditMode.value
       ? 'Please wait while we update your notification'
       : 'Please wait while we create your notification',
-    type: 'info',
+    type: 'warning',
     duration: 0,
   })
 
@@ -823,6 +824,7 @@ const handlePublishNow = async () => {
 
     const templateData: CreateTemplateRequest = {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],
+      bakongPlatform: formData.platform,
       sendType: sendType,
       isSent: isSent,
       translations: translations,
@@ -848,7 +850,20 @@ const handlePublishNow = async () => {
 
     loadingNotification.close()
 
-    if (redirectTab === 'scheduled') {
+    // Check if saved as draft due to no users
+    if (result?.data?.savedAsDraftNoUsers) {
+      // Format platform name using helper function
+      const platformName = formatBakongApp(formData.platform)
+      
+      ElNotification({
+        title: 'Info',
+        message: getNoUsersAvailableMessage(platformName),
+        type: 'info',
+        duration: 3000,
+        dangerouslyUseHTMLString: true,
+      })
+      redirectTab = 'draft'
+    } else if (redirectTab === 'scheduled') {
       ElNotification({
         title: 'Success',
         message: isEditMode.value
@@ -921,7 +936,7 @@ const handleSaveDraft = async () => {
     message: isEditMode.value
       ? 'Please wait while we update your notification'
       : 'Please wait while we save your notification',
-    type: 'info',
+    type: 'warning',
     duration: 0,
   })
 
@@ -1060,6 +1075,7 @@ const handleSaveDraft = async () => {
     }
     const templateData: CreateTemplateRequest = {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],
+      bakongPlatform: formData.platform,
       sendType: SendType.SEND_NOW,
       isSent: false,
       translations: translations,

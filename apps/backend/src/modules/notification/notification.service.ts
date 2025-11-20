@@ -67,6 +67,7 @@ export class NotificationService implements OnModuleInit {
 
   async sendWithTemplate(template: Template): Promise<number> {
     console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
+    console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
 
     if (!template.translations?.length) {
       console.warn('⚠️ [sendWithTemplate] No translations found for template:', template.id)
@@ -96,8 +97,23 @@ export class NotificationService implements OnModuleInit {
       normalized: normalizedPlatforms,
     })
 
-    const users = await this.bkUserRepo.find()
+    let users = await this.bkUserRepo.find()
     console.log('📤 [sendWithTemplate] Total users in database:', users.length)
+
+    // Filter by bakongPlatform if template has it
+    if (template.bakongPlatform) {
+      const beforeCount = users.length
+      users = users.filter(user => user.bakongPlatform === template.bakongPlatform)
+      console.log(`📤 [sendWithTemplate] Filtered by bakongPlatform (${template.bakongPlatform}): ${beforeCount} → ${users.length} users`)
+      
+      // Check if no users found for this bakongPlatform
+      if (users.length === 0) {
+        const platformName = template.bakongPlatform === 'BAKONG_TOURIST' ? 'Bakong Tourist' 
+          : template.bakongPlatform === 'BAKONG_JUNIOR' ? 'Bakong Junior' 
+          : 'Bakong'
+        throw new Error(`No users found for ${platformName} app. Please ensure there are registered users for this platform before sending notifications.`)
+      }
+    }
 
     const targetsAllPlatforms = normalizedPlatforms.includes('ALL')
     console.log('📤 [sendWithTemplate] Targeting ALL platforms?', targetsAllPlatforms)
@@ -184,6 +200,7 @@ export class NotificationService implements OnModuleInit {
   async sendNow(dto: SentNotificationDto, req?: any) {
     try {
       if (dto.notificationId) {
+        // Mobile app fetching specific notification (e.g., after clicking flash notification)
         const notification = await this.notiRepo.findOne({
           where: { id: dto.notificationId },
           relations: ['template', 'template.translations'],
@@ -192,6 +209,25 @@ export class NotificationService implements OnModuleInit {
 
         if (notification.template && !notification.template.translations) {
           notification.template.translations = []
+        }
+
+        // Get user's bakongPlatform from database
+        if (dto.accountId) {
+          const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+          if (user && user.bakongPlatform && notification.template.bakongPlatform) {
+            if (user.bakongPlatform !== notification.template.bakongPlatform) {
+              // User's platform doesn't match template's platform
+              return BaseResponseDto.error({
+                errorCode: ErrorCode.TEMPLATE_NOT_FOUND,
+                message: 'Notification not found for this Bakong platform',
+                data: { 
+                  notificationId: dto.notificationId,
+                  userPlatform: user.bakongPlatform,
+                  templatePlatform: notification.template.bakongPlatform
+                },
+              })
+            }
+          }
         }
 
         const trans = this.templateService.findBestTranslation(notification.template, dto.language)
@@ -222,7 +258,43 @@ export class NotificationService implements OnModuleInit {
       if (!translationValidation.isValid) throw new Error(translationValidation.errorMessage)
       const translation = translationValidation.translation
 
-      const allUsers = await this.bkUserRepo.find()
+      let allUsers = await this.bkUserRepo.find()
+      console.log('📤 [sendNow] Total users in database:', allUsers.length)
+      
+      // Filter by bakongPlatform if template has it
+      if (template.bakongPlatform) {
+        const beforeCount = allUsers.length
+        allUsers = allUsers.filter(user => user.bakongPlatform === template.bakongPlatform)
+        console.log(`📤 [sendNow] Filtered by bakongPlatform (${template.bakongPlatform}): ${beforeCount} → ${allUsers.length} users`)
+        
+        // Check if no users found for this bakongPlatform
+        if (allUsers.length === 0) {
+          const platformName = template.bakongPlatform === 'BAKONG_TOURIST' ? 'Bakong Tourist' 
+            : template.bakongPlatform === 'BAKONG_JUNIOR' ? 'Bakong Junior' 
+            : 'Bakong'
+          
+          // Mark template as draft if templateId is provided
+          if (dto.templateId) {
+            try {
+              await this.templateRepo.update(dto.templateId, { isSent: false })
+              console.log(`📤 [sendNow] Marked template ${dto.templateId} as draft due to no users`)
+            } catch (e) {
+              console.error('Error marking template as draft:', e)
+            }
+          }
+          
+          // Return error response instead of throwing
+          return BaseResponseDto.error({
+            errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+            message: ResponseMessage.NO_USERS_FOR_BAKONG_PLATFORM,
+            data: {
+              bakongPlatform: template.bakongPlatform,
+              platformName: platformName,
+            },
+          })
+        }
+      }
+      
       const usersWithTokens = allUsers.filter((u) => u.fcmToken?.trim())
 
       if (notificationType === NotificationType.FLASH_NOTIFICATION) {
@@ -232,7 +304,41 @@ export class NotificationService implements OnModuleInit {
       if (!usersWithTokens.length) throw new Error(ResponseMessage.NO_USERS_CAN_RECEIVE)
 
       await this.baseFunctionHelper.syncAllUsers()
-      const refreshedUsers = await this.bkUserRepo.find()
+      let refreshedUsers = await this.bkUserRepo.find()
+      
+      // Filter by bakongPlatform again after sync (in case new users were added)
+      if (template.bakongPlatform) {
+        const beforeCount = refreshedUsers.length
+        refreshedUsers = refreshedUsers.filter(user => user.bakongPlatform === template.bakongPlatform)
+        console.log(`📤 [sendNow] After sync - Filtered by bakongPlatform (${template.bakongPlatform}): ${beforeCount} → ${refreshedUsers.length} users`)
+        
+        // Check again if no users found after sync
+        if (refreshedUsers.length === 0) {
+          const platformName = template.bakongPlatform === 'BAKONG_TOURIST' ? 'Bakong Tourist' 
+            : template.bakongPlatform === 'BAKONG_JUNIOR' ? 'Bakong Junior' 
+            : 'Bakong'
+          
+          // Mark template as draft if templateId is provided
+          if (dto.templateId) {
+            try {
+              await this.templateRepo.update(dto.templateId, { isSent: false })
+              console.log(`📤 [sendNow] After sync - Marked template ${dto.templateId} as draft due to no users`)
+            } catch (e) {
+              console.error('Error marking template as draft:', e)
+            }
+          }
+          
+          return BaseResponseDto.error({
+            errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+            message: ResponseMessage.NO_USERS_FOR_BAKONG_PLATFORM,
+            data: {
+              bakongPlatform: template.bakongPlatform,
+              platformName: platformName,
+            },
+          })
+        }
+      }
+      
       const refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
       const validUsers = await ValidationHelper.validateFCMTokens(refreshedWithTokens, this.fcm)
       if (!validUsers.length) throw new Error('No valid FCM tokens found after user data sync')
@@ -723,15 +829,17 @@ export class NotificationService implements OnModuleInit {
 
   async getNotificationCenter(dto: NotificationInboxDto, req?: any) {
     try {
-      const { accountId, fcmToken, participantCode, platform, language, page, size } = dto
+      const { accountId, fcmToken, participantCode, platform, language, page, size, bakongPlatform } = dto
       const { skip, take } = PaginationUtils.normalizePagination(page, size)
 
+      // Store bakongPlatform when user calls API
       const syncResult = await this.baseFunctionHelper.updateUserData({
         accountId,
         fcmToken,
         participantCode,
         platform,
         language,
+        bakongPlatform,
       })
       const user = await this.baseFunctionHelper.findUserByAccountId(accountId)
 
@@ -743,12 +851,18 @@ export class NotificationService implements OnModuleInit {
         })
       }
 
+      // Get user's bakongPlatform from database (stored when user called API)
+      const userPlatform = user.bakongPlatform
+
       const [notifications, totalCount] = await this.notiRepo.findAndCount({
         where: { accountId: accountId.trim() },
         order: { createdAt: 'DESC' },
         skip,
         take,
       })
+      
+      // Filter notifications by user's bakongPlatform
+      const filteredNotifications = []
       for (const notification of notifications) {
         if (notification.templateId) {
           notification.template = await this.templateRepo.findOne({
@@ -759,13 +873,26 @@ export class NotificationService implements OnModuleInit {
           if (notification.template && !notification.template.translations) {
             notification.template.translations = []
           }
+          
+          // Filter: only include if template.bakongPlatform matches user's platform
+          // OR if template has no bakongPlatform (backward compatibility)
+          if (
+            !notification.template.bakongPlatform ||
+            notification.template.bakongPlatform === userPlatform
+          ) {
+            filteredNotifications.push(notification)
+          }
+        } else {
+          // If no template, include notification
+          filteredNotifications.push(notification)
         }
       }
 
       const isNewUser = 'isNewUser' in syncResult ? (syncResult as any).isNewUser : false
+      const filteredCount = filteredNotifications.length
 
       return InboxResponseDto.getNotificationCenterResponse(
-        notifications.map(
+        filteredNotifications.map(
           (notif) =>
             new InboxResponseDto(
               notif as Notification,
@@ -776,15 +903,16 @@ export class NotificationService implements OnModuleInit {
             ),
         ),
         PaginationUtils.generateResponseMessage(
-          notifications,
-          totalCount,
+          filteredNotifications,
+          filteredCount,
           page,
           size,
-          PaginationUtils.calculatePaginationMeta(page, size, totalCount, notifications.length)
+          PaginationUtils.calculatePaginationMeta(page, size, filteredCount, filteredNotifications.length)
             .pageCount,
           isNewUser,
         ),
-        PaginationUtils.calculatePaginationMeta(page, size, totalCount, notifications.length),
+        PaginationUtils.calculatePaginationMeta(page, size, filteredCount, filteredNotifications.length),
+        userPlatform,
       )
     } catch (error) {
       return BaseResponseDto.error({

@@ -78,8 +78,9 @@ export const formatPlatform = (platform: string): string => {
   }
 }
 
-export const formatBakongApp = (app: string): string => {
-  switch (app?.toUpperCase()) {
+export const formatBakongApp = (app: string | undefined | null): string => {
+  if (!app) return 'Bakong'
+  switch (app.toUpperCase()) {
     case BakongApp.BAKONG:
       return 'Bakong'
     case BakongApp.BAKONG_TOURIST:
@@ -89,6 +90,37 @@ export const formatBakongApp = (app: string): string => {
     default:
       return app || 'Bakong'
   }
+}
+
+/**
+ * Extracts and formats the Bakong platform name from various sources
+ * @param sources - Object containing possible sources for platform name
+ * @returns Formatted platform name or 'this platform' as fallback
+ */
+export const getFormattedPlatformName = (sources: {
+  platformName?: string
+  bakongPlatform?: string
+  notification?: { bakongPlatform?: string }
+}): string => {
+  if (sources.platformName) {
+    return sources.platformName
+  }
+  if (sources.bakongPlatform) {
+    return formatBakongApp(sources.bakongPlatform)
+  }
+  if (sources.notification?.bakongPlatform) {
+    return formatBakongApp(sources.notification.bakongPlatform)
+  }
+  return 'this platform'
+}
+
+/**
+ * Creates a formatted message for "no users available" notification
+ * @param platformName - The formatted platform name (e.g., "Bakong Tourist")
+ * @returns HTML-formatted message string
+ */
+export const getNoUsersAvailableMessage = (platformName: string): string => {
+  return `No users are available yet for <strong>${platformName}</strong>, so it will be saved as a draft and sent once users are available.`
 }
 
 export const formatFileSize = (size: number) => {

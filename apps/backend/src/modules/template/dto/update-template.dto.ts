@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsArray, ValidateNested, IsEnum, IsBoolean } from 'class-validator'
 import { Type, Transform } from 'class-transformer'
 import { TemplateTranslationDto } from './template-translation.dto'
-import { CategoryType, NotificationType, Platform, SendType } from '@bakong/shared'
+import { CategoryType, NotificationType, Platform, SendType, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class UpdateTemplateDto {
@@ -58,4 +58,14 @@ export class UpdateTemplateDto {
   @IsOptional()
   @IsBoolean()
   isSent?: boolean
+
+  @IsOptional()
+  @IsEnum(BakongApp)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return ValidationHelper.normalizeEnum(value)
+    }
+    return value
+  })
+  bakongPlatform?: BakongApp
 }

@@ -173,6 +173,7 @@ export class TemplateService implements OnModuleInit {
 
     let template = this.repo.create({
       platforms: dto.platforms,
+      bakongPlatform: dto.bakongPlatform,
       sendType: dto.sendType,
       isSent: initialIsSent,
       notificationType: dto.notificationType || NotificationType.FLASH_NOTIFICATION,
@@ -417,6 +418,8 @@ export class TemplateService implements OnModuleInit {
           console.log('🔵 [TEMPLATE CREATE] ✅ Translations found, calling sendWithTemplate...')
 
           let sentCount = 0
+          let sendError: any = null
+          let noUsersForPlatform = false
           try {
             sentCount = await this.notificationService.sendWithTemplate(templateWithTranslations)
             console.log('🔵 [TEMPLATE CREATE] sendWithTemplate returned:', sentCount)
@@ -427,7 +430,27 @@ export class TemplateService implements OnModuleInit {
               code: error?.code,
               fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
             })
+            sendError = error
             sentCount = 0
+            
+            // Check if error is about no users for bakongPlatform
+            if (error?.message && error.message.includes('No users found for')) {
+              noUsersForPlatform = true
+              console.log('🔵 [TEMPLATE CREATE] ⚠️ No users found for bakongPlatform - keeping as draft')
+            }
+          }
+
+          // If no users found for the platform, keep as draft (don't mark as published)
+          if (noUsersForPlatform) {
+            console.log('📊 SEND_NOW Result: No users for platform - keeping as draft')
+            console.log('📊 Template will remain as draft (isSent=false)')
+            // Don't mark as published - template stays as draft
+            // Update isSent to false to ensure it's a draft
+            await this.repo.update(template.id, { isSent: false })
+            console.log('✅ Template kept as draft due to no users for target platform')
+            // Set flag to indicate saved as draft due to no users
+            ;(template as any).savedAsDraftNoUsers = true
+            break
           }
 
           console.log('📊 SEND_NOW Result:', {
@@ -472,12 +495,17 @@ export class TemplateService implements OnModuleInit {
     await this.repo.manager.connection.queryResultCache?.clear()
 
     const templateWithTranslations = await this.findOneRaw(template.id)
+    // Preserve the savedAsDraftNoUsers flag if it was set
+    if ((template as any).savedAsDraftNoUsers) {
+      ;(templateWithTranslations as any).savedAsDraftNoUsers = true
+    }
     return this.formatTemplateResponse(templateWithTranslations)
   }
 
   async update(id: number, dto: UpdateTemplateDto, currentUser?: any) {
     const {
       platforms,
+      bakongPlatform,
       translations,
       notificationType,
       categoryType,
@@ -496,6 +524,7 @@ export class TemplateService implements OnModuleInit {
     try {
       const updateFields: any = {}
       if (platforms !== undefined) updateFields.platforms = platforms
+      if (bakongPlatform !== undefined) updateFields.bakongPlatform = bakongPlatform
       if (notificationType !== undefined) updateFields.notificationType = notificationType
       if (categoryType !== undefined) updateFields.categoryType = categoryType
 
@@ -658,6 +687,47 @@ export class TemplateService implements OnModuleInit {
 
       const updatedTemplate = await this.findOneRaw(id)
 
+      // Check if trying to publish a draft (SEND_NOW with isSent=true)
+      if (updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true) {
+        // Try to send the notification
+        const templateWithTranslations = await this.repo.findOne({
+          where: { id: updatedTemplate.id },
+          relations: ['translations', 'translations.image'],
+        })
+
+        if (templateWithTranslations && templateWithTranslations.translations) {
+          let sentCount = 0
+          let noUsersForPlatform = false
+          try {
+            sentCount = await this.notificationService.sendWithTemplate(templateWithTranslations)
+            console.log(`[UPDATE] sendWithTemplate returned: ${sentCount}`)
+          } catch (error: any) {
+            console.error(`[UPDATE] ❌ ERROR in sendWithTemplate:`, error?.message)
+            // Check if error is about no users for bakongPlatform
+            if (error?.message && error.message.includes('No users found for')) {
+              noUsersForPlatform = true
+              console.log(`[UPDATE] ⚠️ No users found for bakongPlatform - keeping as draft`)
+            }
+          }
+
+          // If no users found for the platform, keep as draft
+          if (noUsersForPlatform) {
+            await this.repo.update(updatedTemplate.id, { isSent: false, updatedAt: new Date() })
+            console.log(`[UPDATE] Template kept as draft due to no users for target platform`)
+            // Set flag to indicate saved as draft due to no users
+            ;(updatedTemplate as any).savedAsDraftNoUsers = true
+            // Reload to get updated isSent value
+            const reloadedTemplate = await this.findOneRaw(id)
+            ;(reloadedTemplate as any).savedAsDraftNoUsers = true
+            return this.formatTemplateResponse(reloadedTemplate)
+          } else if (sentCount > 0) {
+            // Successfully sent, mark as published
+            await this.markAsPublished(updatedTemplate.id, currentUser)
+            console.log(`[UPDATE] Template published successfully, sent to ${sentCount} users`)
+          }
+        }
+      }
+
       if (updatedTemplate.sendType === SendType.SEND_SCHEDULE && updatedTemplate.sendSchedule) {
         if (this.schedulerRegistry.doesExist('cron', id.toString())) {
           this.schedulerRegistry.deleteCronJob(id.toString())
@@ -665,7 +735,13 @@ export class TemplateService implements OnModuleInit {
         this.addScheduleNotification(updatedTemplate)
       }
 
-      return this.formatTemplateResponse(updatedTemplate)
+      // Reload template to get latest state
+      const finalTemplate = await this.findOneRaw(id)
+      // Preserve flag if it was set
+      if ((updatedTemplate as any).savedAsDraftNoUsers) {
+        ;(finalTemplate as any).savedAsDraftNoUsers = true
+      }
+      return this.formatTemplateResponse(finalTemplate)
     } catch (error) {
       throw new Error(error)
     }
@@ -738,26 +814,35 @@ export class TemplateService implements OnModuleInit {
           console.log(`Sending updated notification immediately for template ${newTemplate.id}`)
           console.log(`Template has ${templateWithTranslations.translations.length} translations`)
 
+          let sentCount = 0
+          let noUsersForPlatform = false
           try {
-            const sentCount =
-              await this.notificationService.sendWithTemplate(templateWithTranslations)
+            sentCount = await this.notificationService.sendWithTemplate(templateWithTranslations)
             console.log(`sendWithTemplate returned: ${sentCount}`)
-
-            if (sentCount && sentCount > 0) {
-              await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
-              console.log(`Updated notification sent successfully to ${sentCount} users`)
-            } else {
-              console.log(
-                `No users received the updated notification (sentCount: ${sentCount}) - this might be because there are no users with valid FCM tokens in the database`,
-              )
-
-              await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
+          } catch (error: any) {
+            console.error(`❌ ERROR in sendWithTemplate for update:`, error?.message)
+            // Check if error is about no users for bakongPlatform
+            if (error?.message && error.message.includes('No users found for')) {
+              noUsersForPlatform = true
+              console.log(`⚠️ No users found for bakongPlatform - keeping as draft`)
             }
-          } catch (error) {
-            console.error(
-              `Error sending updated notification for template ${newTemplate.id}:`,
-              error,
+          }
+
+          // If no users found for the platform, keep as draft
+          if (noUsersForPlatform) {
+            await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
+            console.log(`Template kept as draft due to no users for target platform`)
+            // Set flag to indicate saved as draft due to no users
+            ;(newTemplate as any).savedAsDraftNoUsers = true
+          } else if (sentCount && sentCount > 0) {
+            await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
+            console.log(`Updated notification sent successfully to ${sentCount} users`)
+          } else {
+            console.log(
+              `No users received the updated notification (sentCount: ${sentCount}) - this might be because there are no users with valid FCM tokens in the database`,
             )
+
+            await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
           }
         } else {
           console.log(`No translations found for template ${newTemplate.id}, cannot send`)
@@ -778,7 +863,12 @@ export class TemplateService implements OnModuleInit {
         `Published notification edited: Old template ${id} deleted, new template ${newTemplate.id} created`,
       )
 
-      return this.formatTemplateResponse(newTemplate)
+      // Preserve the savedAsDraftNoUsers flag if it was set
+      const templateToReturn = await this.findOneRaw(newTemplate.id)
+      if ((newTemplate as any).savedAsDraftNoUsers) {
+        ;(templateToReturn as any).savedAsDraftNoUsers = true
+      }
+      return this.formatTemplateResponse(templateToReturn)
     } catch (error) {
       console.error('Error editing published notification:', error)
       throw new Error(error)
@@ -989,9 +1079,10 @@ export class TemplateService implements OnModuleInit {
     return template
   }
   private formatTemplateResponse(template: Template) {
-    const formattedTemplate = {
+    const formattedTemplate: any = {
       templateId: template.id,
       platforms: template.platforms,
+      bakongPlatform: template.bakongPlatform,
       sendType: template.sendType,
       notificationType: template.notificationType,
       categoryType: template.categoryType,
@@ -1035,6 +1126,11 @@ export class TemplateService implements OnModuleInit {
                 : null,
           }))
         : [],
+    }
+
+    // Add flag if saved as draft due to no users
+    if ((template as any).savedAsDraftNoUsers) {
+      formattedTemplate.savedAsDraftNoUsers = true
     }
 
     return formattedTemplate
@@ -1092,8 +1188,6 @@ export class TemplateService implements OnModuleInit {
       platforms = ['ALL']
     }
 
-    const bakongApp = platforms.includes('ALL') ? 'BAKONG' : platforms.join(',')
-
     return {
       id: template.id,
       author: author,
@@ -1113,7 +1207,7 @@ export class TemplateService implements OnModuleInit {
         ? TimezoneUtils.formatCambodiaTime(template.sendSchedule)
         : null,
       platforms: platforms,
-      bakongApp: bakongApp,
+      bakongPlatform: template.bakongPlatform || null,
     }
   }
 
@@ -1407,7 +1501,7 @@ export class TemplateService implements OnModuleInit {
     return { template: selectedTemplate, translation }
   }
 
-  findBestTranslation(template: Template, language?: string): TemplateTranslation | null {
+  public findBestTranslation(template: Template, language?: string): TemplateTranslation | null {
     if (!template.translations || template.translations.length === 0) {
       return null
     }

@@ -4,6 +4,7 @@ import { TimezoneUtils } from '@bakong/shared'
 export interface CreateTemplateRequest {
   imageId?: string
   platforms: string[]
+  bakongPlatform?: string
   sendType: string
   sendInterval?: {
     cron: string

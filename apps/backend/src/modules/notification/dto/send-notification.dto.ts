@@ -1,6 +1,6 @@
 import { Transform, Type } from 'class-transformer'
 import { IsEnum, IsOptional, IsString, IsNumber, IsArray, ValidateNested } from 'class-validator'
-import { CategoryType, Language, NotificationType, Platform } from '@bakong/shared'
+import { CategoryType, Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export default class SentNotificationDto {
@@ -77,6 +77,16 @@ export default class SentNotificationDto {
   @IsOptional()
   @IsNumber()
   notificationId?: number
+
+  @IsOptional()
+  @IsEnum(BakongApp)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return ValidationHelper.normalizeEnum(value)
+    }
+    return value
+  })
+  bakongPlatform?: BakongApp
 }
 
 export class FlashNotificationDto {

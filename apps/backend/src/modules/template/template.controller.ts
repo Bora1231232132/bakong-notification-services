@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common'
-import { UserRole } from '@bakong/shared'
+import { UserRole, ErrorCode, ResponseMessage } from '@bakong/shared'
 import { Roles } from 'src/common/middleware/roles.guard'
 import { BaseResponseDto } from 'src/common/base-response.dto'
 import { CreateTemplateDto } from './dto/create-template.dto'
@@ -45,6 +45,7 @@ export class TemplateController {
         stack: error?.stack,
         error: error,
       })
+      
       throw error
     }
   }

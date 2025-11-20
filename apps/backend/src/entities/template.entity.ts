@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
-import { SendType, NotificationType, CategoryType } from '@bakong/shared'
+import { SendType, NotificationType, CategoryType, BakongApp } from '@bakong/shared'
 import { TemplateTranslation } from './template-translation.entity'
 
 export type SendIntervalData = { cron: string; startAt: Date; endAt: Date }
@@ -24,6 +24,9 @@ export class Template {
 
   @Column('text', { array: true, nullable: false })
   platforms?: string[]
+
+  @Column({ nullable: true, type: 'enum', enum: BakongApp })
+  bakongPlatform?: BakongApp
 
   @Column({ nullable: false, type: 'enum', enum: SendType, default: SendType.SEND_SCHEDULE })
   sendType?: SendType
