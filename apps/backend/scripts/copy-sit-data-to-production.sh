@@ -8,7 +8,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "⚠️  WARNING: This will REPLACE all production data with SIT data!"
 echo "📊 Source: bakong_notification_services_sit (SIT)"
@@ -47,24 +47,34 @@ echo "   Looking for SIT container..."
 echo "   Looking for Production container..."
 echo ""
 
+# Handle SIT container
 if [ -z "$SIT_CONTAINER" ]; then
-  echo "❌ SIT database container not found"
+  echo "⚠️  SIT database container not found - starting it now..."
   echo ""
-  echo "💡 Available containers:"
-  docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
-  echo ""
-  echo "⚠️  Please ensure the SIT database container exists."
-  echo "    You can start it with: docker-compose -f docker-compose.sit.yml up -d db"
-  exit 1
-fi
-
-echo "✅ Found SIT container: $SIT_CONTAINER"
-
-# Check if SIT container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${SIT_CONTAINER}$"; then
-  echo "⚠️  SIT container is stopped - starting it..."
-  docker start "$SIT_CONTAINER"
-  sleep 10
+  cd "$PROJECT_ROOT"
+  docker-compose -f docker-compose.sit.yml up -d db
+  sleep 15
+  
+  # Try to find it again
+  SIT_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db-sit$|.*_bakong-notification-services-db-sit$" | head -1)
+  
+  if [ -z "$SIT_CONTAINER" ]; then
+    echo "❌ Failed to start SIT database container"
+    echo ""
+    echo "💡 Available containers:"
+    docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+    exit 1
+  fi
+  echo "✅ SIT container started: $SIT_CONTAINER"
+else
+  echo "✅ Found SIT container: $SIT_CONTAINER"
+  
+  # Check if SIT container is running
+  if ! docker ps --format '{{.Names}}' | grep -q "^${SIT_CONTAINER}$"; then
+    echo "⚠️  SIT container is stopped - starting it..."
+    docker start "$SIT_CONTAINER"
+    sleep 10
+  fi
 fi
 
 if [ -z "$PROD_CONTAINER" ]; then
