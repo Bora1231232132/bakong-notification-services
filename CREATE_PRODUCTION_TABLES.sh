@@ -6,10 +6,21 @@ set -e
 
 cd ~/bakong-notification-services
 
-DB_CONTAINER="bakong-notification-services-db"
+# Find the production database container (may have prefix)
+DB_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db$|.*_bakong-notification-services-db$" | head -1)
+
+if [ -z "$DB_CONTAINER" ]; then
+  echo "❌ Production database container not found!"
+  echo "   Available containers:"
+  docker ps --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+  exit 1
+fi
+
+echo "✅ Found database container: $DB_CONTAINER"
 DB_NAME="bakong_notification_services"
 DB_USER="bkns"
 
+echo ""
 echo "🔍 Step 1: Checking existing tables..."
 docker exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "\dt" || echo "   (No tables found or error)"
 
@@ -27,8 +38,8 @@ docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < apps/backend/s
 
 echo ""
 echo "✅ Step 5: Verifying bakongPlatform columns..."
-docker exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "\d template" | grep bakongPlatform || echo "   (checking...)"
-docker exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "\d bakong_user" | grep bakongPlatform || echo "   (checking...)"
+docker exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "\d template" | grep -i bakongPlatform || echo "   (checking template table...)"
+docker exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "\d bakong_user" | grep -i bakongPlatform || echo "   (checking bakong_user table...)"
 
 echo ""
 echo "✅ Tables created and migrations applied!"
