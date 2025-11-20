@@ -32,42 +32,55 @@ fi
 SIT_DB_NAME="bakong_notification_services_sit"
 SIT_DB_USER="bkns_sit"
 SIT_DB_PASS="0101bkns_sit"
-SIT_CONTAINER="bakong-notification-services-db-sit"
 
 PROD_DB_NAME="bakong_notification_services"
 PROD_DB_USER="bkns"
 PROD_DB_PASS="010110bkns"
-PROD_CONTAINER="bakong-notification-services-db"
+
+# Auto-detect container names (may have prefixes)
+SIT_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -E "bakong-notification-services-db-sit$|.*_bakong-notification-services-db-sit$" | head -1)
+PROD_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db$|.*_bakong-notification-services-db$" | head -1)
 
 # Check if containers exist
 echo "🔍 Checking for containers..."
-echo "   Looking for SIT container: $SIT_CONTAINER"
-echo "   Looking for Production container: $PROD_CONTAINER"
+echo "   Looking for SIT container..."
+echo "   Looking for Production container..."
 echo ""
 
+if [ -z "$SIT_CONTAINER" ]; then
+  echo "❌ SIT database container not found"
+  echo ""
+  echo "💡 Available containers:"
+  docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+  echo ""
+  echo "⚠️  Please ensure the SIT database container exists."
+  echo "    You can start it with: docker-compose -f docker-compose.sit.yml up -d db"
+  exit 1
+fi
+
+echo "✅ Found SIT container: $SIT_CONTAINER"
+
+# Check if SIT container is running
 if ! docker ps --format '{{.Names}}' | grep -q "^${SIT_CONTAINER}$"; then
-  echo "❌ SIT database container not found: $SIT_CONTAINER"
+  echo "⚠️  SIT container is stopped - starting it..."
+  docker start "$SIT_CONTAINER"
+  sleep 10
+fi
+
+if [ -z "$PROD_CONTAINER" ]; then
+  echo "❌ Production database container not found"
   echo ""
   echo "💡 Available containers:"
   docker ps --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
   echo ""
-  echo "⚠️  This script should run on the SERVER where both SIT and Production containers exist."
-  echo "    Or use the local dev copy script if testing locally."
+  echo "⚠️  Please ensure the Production database container is running."
+  echo "    You can start it with: docker-compose -f docker-compose.production.yml up -d db"
   exit 1
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -q "^${PROD_CONTAINER}$"; then
-  echo "❌ Production database container not found: $PROD_CONTAINER"
-  echo ""
-  echo "💡 Available containers:"
-  docker ps --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
-  echo ""
-  echo "⚠️  This script should run on the SERVER where both SIT and Production containers exist."
-  echo "    Or use the local dev copy script if testing locally."
-  exit 1
-fi
-
-echo "✅ Both containers found!"
+echo "✅ Found Production container: $PROD_CONTAINER"
+echo ""
+echo "✅ Both containers are ready!"
 echo ""
 
 echo ""
