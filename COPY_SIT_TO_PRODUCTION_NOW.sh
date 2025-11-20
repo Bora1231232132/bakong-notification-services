@@ -69,7 +69,7 @@ echo "✅ Production database container: $PROD_CONTAINER"
 
 echo ""
 echo "📊 Step 3: Checking SIT data..."
-docker exec -it "$SIT_CONTAINER" psql -U bkns_sit -d bakong_notification_services_sit <<EOF
+docker exec -i "$SIT_CONTAINER" psql -U bkns_sit -d bakong_notification_services_sit <<EOF
 SELECT 
     'Users' as type, COUNT(*) as count FROM "user" WHERE "deletedAt" IS NULL
 UNION ALL
