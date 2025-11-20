@@ -56,15 +56,21 @@ else
 fi
 
 echo ""
-echo "🔄 Step 4: Restarting frontend with domain configuration..."
+echo "🔄 Step 4: Stopping and removing frontend container..."
+docker stop bakong-notification-services-frontend 2>/dev/null || true
+docker rm bakong-notification-services-frontend 2>/dev/null || true
+sleep 2
+
+echo ""
+echo "🔄 Step 5: Starting frontend with domain configuration..."
 docker-compose -f docker-compose.production.yml up -d frontend
 
 echo ""
-echo "⏳ Step 5: Waiting for frontend to restart (10 seconds)..."
+echo "⏳ Step 6: Waiting for frontend to restart (10 seconds)..."
 sleep 10
 
 echo ""
-echo "🧪 Step 6: Testing domain access..."
+echo "🧪 Step 7: Testing domain access..."
 
 # Test via IP (should work)
 echo "   Testing via IP address..."
@@ -76,7 +82,7 @@ else
 fi
 
 echo ""
-echo "📋 Step 7: Summary"
+echo "📋 Step 8: Summary"
 echo "=================="
 echo "✅ Configuration updated!"
 echo ""
