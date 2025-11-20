@@ -2,6 +2,7 @@
 # Copy SIT Database Data to Production
 # This script copies all data from SIT to Production for testing
 # ⚠️ WARNING: This will REPLACE all production data with SIT data!
+# ⚠️ IMPORTANT: This script only READS from SIT, does not modify SIT
 # Usage: bash scripts/copy-sit-data-to-production.sh
 
 set -e

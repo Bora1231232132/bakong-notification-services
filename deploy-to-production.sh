@@ -1,11 +1,13 @@
 #!/bin/bash
 # Production Deployment Script
 # Run this on the production server: bash deploy-to-production.sh
+# ⚠️ IMPORTANT: This script ONLY touches PRODUCTION, NOT SIT
 
 set -e
 
 echo "🚀 Starting PRODUCTION deployment..."
 echo "⚠️  WARNING: This will deploy to PRODUCTION environment!"
+echo "✅ SIT environment will NOT be touched"
 echo ""
 
 cd ~/bakong-notification-services

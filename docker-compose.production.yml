@@ -53,7 +53,7 @@ services:
       - CORS_ORIGIN=https://prod-bakong-notification.nbc.gov.kh,http://10.20.6.58
       - LOG_LEVEL=warn
       - API_JWT_KEY=010110bkns
-      - TYPEORM_SYNCHRONIZE=true
+      - TYPEORM_SYNCHRONIZE=false
     volumes:
       - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
       - ./apps/backend/env.production:/opt/bk_notification_service/env.production:ro
