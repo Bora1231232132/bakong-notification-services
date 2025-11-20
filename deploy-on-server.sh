@@ -13,12 +13,23 @@ echo "📥 Pulling latest code..."
 git fetch origin
 git reset --hard origin/develop
 
-# Run database migration to convert fileId from UUID to VARCHAR
-echo "🔄 Running database migration..."
+# Run database migrations
+echo "🔄 Running database migrations..."
+
+# Migration 1: Convert fileId from UUID to VARCHAR (if needed)
 if [ -f "apps/backend/scripts/convert-fileid-to-varchar.sql" ]; then
-    docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/convert-fileid-to-varchar.sql || echo "⚠️  Migration warning (may be normal if column already converted)"
+    echo "  📝 Running fileId migration..."
+    docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/convert-fileid-to-varchar.sql || echo "⚠️  fileId migration warning (may be normal if already converted)"
 else
-    echo "⚠️  Migration script not found, skipping..."
+    echo "⚠️  fileId migration script not found, skipping..."
+fi
+
+# Migration 2: Add bakongPlatform support (NEW)
+if [ -f "apps/backend/scripts/add-bakong-platform-migration.sql" ]; then
+    echo "  📝 Running bakongPlatform migration..."
+    docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/add-bakong-platform-migration.sql || echo "⚠️  bakongPlatform migration warning (may be normal if already applied)"
+else
+    echo "⚠️  bakongPlatform migration script not found, skipping..."
 fi
 
 # Verify Dockerfile is correct (fix if corrupted)
