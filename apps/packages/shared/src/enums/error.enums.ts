@@ -62,7 +62,7 @@ export enum ResponseMessage {
   DATABASE_CHECK_CONSTRAINT_VIOLATION = 'Database check constraint violation',
   DATABASE_CONSTRAINT_VIOLATION = 'Database constraint violation',
   NO_USERS_CAN_RECEIVE = 'No users can receive flash notifications',
-  NO_FLASH_NOTIFICATION_TEMPLATE_AVAILABLE = 'No flash notification template available',
+  NO_FLASH_NOTIFICATION_TEMPLATE_AVAILABLE = 'No flash notification template is available, we will notify you when we have a new template.',
   FLASH_NOTIFICATION_POPUP_SUCCESS = 'Flash notification popup successfully',
   FLASH_NOTIFICATION_POPUP_FAILED = 'Flash notification popup failed',
   NOTIFICATION_CENTER_EMPTY = 'No notification sent yet, if have we will notify you',

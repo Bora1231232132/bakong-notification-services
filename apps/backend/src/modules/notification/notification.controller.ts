@@ -33,14 +33,16 @@ export class NotificationController {
       if (dto.accountId) {
         dto.notificationType = NotificationType.FLASH_NOTIFICATION
 
-        const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        if (!user) {
-          return BaseResponseDto.error({
-            errorCode: ErrorCode.USER_NOT_FOUND,
-            message: ResponseMessage.USER_NOT_FOUND,
-            data: { accountId: dto.accountId },
-          })
-        }
+        // Auto-sync/register user with minimal data (accountId + language)
+        // Backend will automatically infer bakongPlatform from template when processing flash notification
+        // Mobile doesn't need to send bakongPlatform - backend handles everything automatically
+        await this.baseFunctionHelper.updateUserData({
+          accountId: dto.accountId,
+          language: dto.language,
+          fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
+          platform: dto.platform,
+          bakongPlatform: dto.bakongPlatform, // Optional - backend will infer from template if not provided
+        })
       } else {
         if (!dto.notificationType) {
           dto.notificationType = NotificationType.ANNOUNCEMENT

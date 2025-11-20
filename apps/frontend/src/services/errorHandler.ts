@@ -197,7 +197,7 @@ export class ErrorHandler {
         return 'Daily flash notification limit reached. Please try again tomorrow.'
 
       case ErrorCode.NO_FLASH_NOTIFICATION_TEMPLATE_AVAILABLE:
-        return 'No flash notification template is available.'
+        return 'No flash notification template is available, we will notify you when we have a new template.'
 
       case ErrorCode.INVALID_FCM_TOKEN:
         return 'Invalid push notification token. Please refresh the page.'

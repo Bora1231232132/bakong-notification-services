@@ -1403,32 +1403,44 @@ export class TemplateService implements OnModuleInit {
 
   async findNotificationTemplate(dto: any): Promise<any> {
     if (dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
+      // IMPORTANT: Only include published templates (isSent: true), exclude drafts
       const templates = await this.repo.find({
-        where: { notificationType: NotificationType.FLASH_NOTIFICATION },
+        where: { 
+          notificationType: NotificationType.FLASH_NOTIFICATION,
+          isSent: true, // Only published templates, exclude drafts
+        },
         relations: ['translations', 'translations.image'],
         order: { priority: 'DESC', createdAt: 'DESC' },
       })
       const template = templates.find((t) => t.translations && t.translations.length > 0) || null
       if (!template) {
-        throw new Error(`No templates found for type ${NotificationType.FLASH_NOTIFICATION}`)
+        throw new Error(`No published templates found for type ${NotificationType.FLASH_NOTIFICATION}`)
       }
       return { template, notificationType: NotificationType.FLASH_NOTIFICATION }
     }
 
     if (dto.templateId) {
       const template = await this.findTemplateById(dto.templateId.toString())
+      // Verify template is published (not draft)
+      if (template && !template.isSent) {
+        throw new Error(`Template ${dto.templateId} is a draft and cannot be sent. Please publish it first.`)
+      }
       return { template, notificationType: template.notificationType }
     }
 
     const validatedRequest = dto.notificationType || dto.type
+    // IMPORTANT: Only include published templates (isSent: true), exclude drafts
     const templates = await this.repo.find({
-      where: { notificationType: validatedRequest },
+      where: { 
+        notificationType: validatedRequest,
+        isSent: true, // Only published templates, exclude drafts
+      },
       relations: ['translations', 'translations.image'],
       order: { priority: 'DESC', createdAt: 'DESC' },
     })
     const template = templates.find((t) => t.translations && t.translations.length > 0) || null
     if (!template) {
-      throw new Error(`No templates found for type ${validatedRequest}`)
+      throw new Error(`No published templates found for type ${validatedRequest}`)
     }
 
     return { template, notificationType: validatedRequest }
@@ -1450,6 +1462,7 @@ export class TemplateService implements OnModuleInit {
     accountId: string,
     language: string,
     notificationRepo: any,
+    userBakongPlatform?: string,
   ): Promise<{ template: Template; translation: TemplateTranslation } | null> {
     const userNotifications = await notificationRepo.find({
       where: {
@@ -1477,27 +1490,95 @@ export class TemplateService implements OnModuleInit {
       },
       {} as Record<number, number>,
     )
+    
+    // Filter out templates that have been sent 2 or more times in the last 24 hours
+    // This prevents users from receiving the same template too frequently
     const seenTemplateIds = Object.entries(templateViewCounts)
       .filter(([_, count]) => (count as unknown as number) >= 2)
       .map(([templateId, _]) => parseInt(templateId))
+    
+    if (seenTemplateIds.length > 0) {
+      console.log(`📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(', ')}`)
+      console.log(`📋 [findBestTemplateForUser] Template send counts:`, templateViewCounts)
+    } else {
+      console.log(`📋 [findBestTemplateForUser] No templates have been sent 2+ times in last 24h`)
+    }
+
+    // Build where clause - filter by bakongPlatform if user has it
+    // IMPORTANT: Only include published templates (isSent: true), exclude drafts
+    const whereClause: any = {
+      notificationType: NotificationType.FLASH_NOTIFICATION,
+      isSent: true, // Only published templates, exclude drafts
+      ...(seenTemplateIds.length > 0 && { id: Not(In(seenTemplateIds)) }),
+    }
+    
+    // Filter by user's bakongPlatform if provided
+    if (userBakongPlatform) {
+      whereClause.bakongPlatform = userBakongPlatform
+      console.log(`📋 [findBestTemplateForUser] Filtering templates by bakongPlatform: ${userBakongPlatform}`)
+    }
+
+    console.log(`📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'}`)
+    console.log(`📋 [findBestTemplateForUser] Only including published templates (isSent: true)`)
 
     const availableTemplates = await this.repo.find({
-      where: {
-        notificationType: NotificationType.FLASH_NOTIFICATION,
-        ...(seenTemplateIds.length > 0 && { id: Not(In(seenTemplateIds)) }),
-      },
+      where: whereClause,
       relations: ['translations'],
       order: { createdAt: 'DESC' },
     })
 
     if (availableTemplates.length === 0) {
+      // Check if all templates have been sent 2+ times (limit reached)
+      const allTemplatesWhere: any = {
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        isSent: true,
+      }
+      if (userBakongPlatform) {
+        allTemplatesWhere.bakongPlatform = userBakongPlatform
+      }
+      const allTemplates = await this.repo.find({
+        where: allTemplatesWhere,
+        select: ['id'],
+      })
+      
+      if (allTemplates.length > 0 && seenTemplateIds.length === allTemplates.length) {
+        // All templates have been sent 2+ times - limit reached
+        console.warn(`⚠️ [findBestTemplateForUser] All templates have been sent 2+ times for user ${accountId}. Limit reached.`)
+        return null // Return null to trigger limit error in handleFlashNotification
+      }
+      
+      // If no templates found for user's bakongPlatform, try without bakongPlatform filter (fallback)
+      // But still exclude drafts and templates sent 2+ times
+      if (userBakongPlatform) {
+        console.warn(`⚠️ [findBestTemplateForUser] No templates found for bakongPlatform: ${userBakongPlatform}, trying without bakongPlatform filter`)
+        const fallbackTemplates = await this.repo.find({
+      where: {
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+            isSent: true, // Still exclude drafts
+        ...(seenTemplateIds.length > 0 && { id: Not(In(seenTemplateIds)) }),
+      },
+      relations: ['translations'],
+      order: { createdAt: 'DESC' },
+    })
+        if (fallbackTemplates.length > 0) {
+          const selectedTemplate = fallbackTemplates[0]
+          const translation = this.findBestTranslation(selectedTemplate, language)
+          if (translation) {
+            console.log(`📋 [findBestTemplateForUser] Using fallback template ${selectedTemplate.id} (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`)
+            return { template: selectedTemplate, translation }
+          }
+        }
+      }
+      console.warn(`⚠️ [findBestTemplateForUser] No available templates found for user ${accountId}`)
       return null
     }
+    
     const selectedTemplate = availableTemplates[0]
     const translation = this.findBestTranslation(selectedTemplate, language)
 
     if (!translation) return null
 
+    console.log(`✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`)
     return { template: selectedTemplate, translation }
   }
 
