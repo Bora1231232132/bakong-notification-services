@@ -8,8 +8,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Go up 2 levels: scripts -> backend -> project root
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Go up 3 levels: scripts -> backend -> apps -> project root
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "⚠️  WARNING: This will REPLACE all production data with SIT data!"
 echo "📊 Source: bakong_notification_services_sit (SIT)"

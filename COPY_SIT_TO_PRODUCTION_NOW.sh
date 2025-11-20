@@ -15,6 +15,14 @@ if [ -z "$SIT_CONTAINER" ]; then
   docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
   echo ""
   echo "💡 Starting SIT database..."
+  
+  # Fix docker-compose KeyError bug: Remove any corrupted containers first
+  CORRUPTED=$(docker ps -a --format '{{.Names}}' | grep -E ".*_bakong-notification-services-db-sit$" | head -1)
+  if [ -n "$CORRUPTED" ]; then
+    echo "⚠️  Removing corrupted container: $CORRUPTED"
+    docker rm -f "$CORRUPTED" 2>/dev/null || true
+  fi
+  
   docker-compose -f docker-compose.sit.yml up -d db
   sleep 15
   SIT_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db-sit$|.*_bakong-notification-services-db-sit$" | head -1)
