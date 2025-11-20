@@ -9,9 +9,9 @@ Since you've already pushed to git, here's what to do on the server:
 
 ## 📝 On the Server - Run These Commands
 
-### Option 1: Use the Deployment Script (Easiest)
+### Option 1: Use the Deployment Scrip (Easiest)
 ```bash
-cd ~/bakong-notification-services
+cd ~/bakong-notificattion-services
 bash deploy-on-server.sh
 ```
 This will:
