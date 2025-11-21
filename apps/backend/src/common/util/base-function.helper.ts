@@ -208,7 +208,30 @@ export class BaseFunctionHelper {
 
   static getFirebaseServiceAccountPaths(): string[] {
     const cwd = process.cwd()
+    const nodeEnv = process.env.NODE_ENV || 'development'
+    const isStaging = nodeEnv === 'staging'
+    const isProduction = nodeEnv === 'production'
+
+    // Determine environment-specific file name
+    let envSpecificFileName = 'firebase-service-account.json' // default for development
+    if (isStaging) {
+      envSpecificFileName = 'bakong-sit-firebase-service-account.json'
+    } else if (isProduction) {
+      envSpecificFileName = 'bakong-uat-firebase-service-account.json'
+    }
+
     const paths = [
+      // Environment-specific paths (highest priority)
+      `/opt/bk_notification_service/${envSpecificFileName}`,
+      path.join(cwd, `../../${envSpecificFileName}`),
+      path.join(cwd, `../${envSpecificFileName}`),
+      path.join(cwd, envSpecificFileName),
+      path.join(__dirname, `../${envSpecificFileName}`),
+      path.join(__dirname, `../../${envSpecificFileName}`),
+      path.join(__dirname, `../../../${envSpecificFileName}`),
+      path.join(__dirname, `../../../../${envSpecificFileName}`),
+      path.join(__dirname, envSpecificFileName),
+      // Generic paths (fallback for backward compatibility)
       '/opt/bk_notification_service/firebase-service-account.json',
       process.env.GOOGLE_APPLICATION_CREDENTIALS,
       path.join(cwd, '../../firebase-service-account.json'),

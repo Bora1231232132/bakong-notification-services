@@ -13,6 +13,7 @@ import { UserModule } from './user/user.module'
 import { ImageModule } from './image/image.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ConfigService } from '../common/services/config.service'
+import { FirebaseManager } from '../common/services/firebase-manager.service'
 import { AppController } from '../app.controller'
 import { AppService } from '../app.service'
 
@@ -30,6 +31,7 @@ import { AppService } from '../app.service'
   controllers: [AppController],
   providers: [
     ConfigService,
+    FirebaseManager,
     AppService,
     {
       provide: APP_GUARD,

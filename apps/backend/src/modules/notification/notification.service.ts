@@ -1,13 +1,14 @@
-import { Injectable, OnModuleInit, Inject, forwardRef } from '@nestjs/common'
+import { Injectable, Inject, forwardRef } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { BakongUser } from 'src/entities/bakong-user.entity'
 import { Notification } from 'src/entities/notification.entity'
 import { Repository, Between } from 'typeorm'
-import { getMessaging, Messaging } from 'firebase-admin/messaging'
+import { Messaging } from 'firebase-admin/messaging'
 import { Template } from 'src/entities/template.entity'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
+import { FirebaseManager } from 'src/common/services/firebase-manager.service'
 import { PaginationUtils } from '@bakong/shared'
 import { BaseResponseDto } from '../../common/base-response.dto'
 import SentNotificationDto from './dto/send-notification.dto'
@@ -20,9 +21,7 @@ import { Language, NotificationType } from '@bakong/shared'
 import { InboxResponseDto } from './dto/inbox-response.dto'
 
 @Injectable()
-export class NotificationService implements OnModuleInit {
-  private _fcm: Messaging | null
-
+export class NotificationService {
   constructor(
     @InjectRepository(Notification) private readonly notiRepo: Repository<Notification>,
     @InjectRepository(BakongUser) private readonly bkUserRepo: Repository<BakongUser>,
@@ -33,36 +32,12 @@ export class NotificationService implements OnModuleInit {
     private readonly baseFunctionHelper: BaseFunctionHelper,
   ) {}
 
-  async onModuleInit() {
-    try {
-      this._fcm = getMessaging()
-      console.log('✓ NotificationService: Firebase Messaging initialized successfully')
-    } catch (error: any) {
-      console.warn(
-        '⚠️  NotificationService: Firebase not initialized - notification service will run without FCM capabilities',
-      )
-      console.warn('⚠️  Error details:', error?.message || String(error))
-      if (error?.code) {
-        console.warn('⚠️  Error code:', error.code)
-      }
-      this._fcm = null
-    }
-  }
-
-  get fcm(): Messaging | null {
-    if (!this._fcm) {
-      try {
-        this._fcm = getMessaging()
-      } catch (error: any) {
-        console.warn('⚠️  Firebase messaging not available')
-        console.warn('⚠️  Error details:', error?.message || String(error))
-        if (error?.code) {
-          console.warn('⚠️  Error code:', error.code)
-        }
-        return null
-      }
-    }
-    return this._fcm
+  /**
+   * Get Firebase Messaging instance for a specific Bakong platform
+   * Falls back to default if platform is not specified
+   */
+  private getFCM(bakongPlatform?: string | null): Messaging | null {
+    return FirebaseManager.getMessaging(bakongPlatform)
   }
 
   async sendWithTemplate(template: Template): Promise<number> {
@@ -170,7 +145,9 @@ export class NotificationService implements OnModuleInit {
       return 0
     }
 
-    if (!this.fcm) {
+    // Get FCM instance for template's bakongPlatform
+    const fcm = this.getFCM(template.bakongPlatform)
+    if (!fcm) {
       console.error(
         '❌ [sendWithTemplate] Firebase FCM is not initialized. Cannot send notifications.',
       )
@@ -178,7 +155,7 @@ export class NotificationService implements OnModuleInit {
     }
 
     console.log('📤 [sendWithTemplate] Validating FCM tokens...')
-    const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, this.fcm)
+    const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, fcm)
     console.log('📤 [sendWithTemplate] Valid users after token validation:', validUsers.length)
 
     if (!validUsers.length) {
@@ -444,7 +421,12 @@ export class NotificationService implements OnModuleInit {
       }
 
       const refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
-      const validUsers = await ValidationHelper.validateFCMTokens(refreshedWithTokens, this.fcm)
+      // Get FCM instance for template's bakongPlatform
+      const fcm = this.getFCM(template.bakongPlatform)
+      if (!fcm) {
+        throw new Error('Firebase FCM is not initialized for this platform')
+      }
+      const validUsers = await ValidationHelper.validateFCMTokens(refreshedWithTokens, fcm)
       if (!validUsers.length) throw new Error('No valid FCM tokens found after user data sync')
 
       const savedRecords = await Promise.all(
@@ -729,7 +711,9 @@ export class NotificationService implements OnModuleInit {
             )
 
       try {
-        if (!this.fcm) {
+        // Get FCM instance for user's bakongPlatform
+        const fcm = this.getFCM(user.bakongPlatform)
+        if (!fcm) {
           console.warn('⚠️  FCM not available - skipping iOS notification send')
           throw new Error(
             'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
@@ -739,8 +723,9 @@ export class NotificationService implements OnModuleInit {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
+          bakongPlatform: user.bakongPlatform || 'NULL',
         })
-        const sendResponse = await this.fcm.send(iosPayloadResponse)
+        const sendResponse = await fcm.send(iosPayloadResponse)
         console.log('✅ [sendFCMPayloadToPlatform] iOS FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
         })
@@ -787,7 +772,9 @@ export class NotificationService implements OnModuleInit {
       )
 
       try {
-        if (!this.fcm) {
+        // Get FCM instance for user's bakongPlatform
+        const fcm = this.getFCM(user.bakongPlatform)
+        if (!fcm) {
           console.warn('⚠️  FCM not available - skipping Android notification send')
           throw new Error(
             'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
@@ -797,8 +784,9 @@ export class NotificationService implements OnModuleInit {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
+          bakongPlatform: user.bakongPlatform || 'NULL',
         })
-        const sendResponse = await this.fcm.send(msg)
+        const sendResponse = await fcm.send(msg)
         console.log('✅ [sendFCMPayloadToPlatform] Android FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
         })

@@ -4,7 +4,7 @@ import { AllExceptionsFilter } from './common/middleware/exception.filter'
 import { ResponseFormatInterceptor } from './common/middleware/response-format.interceptor'
 import { GlobalValidationPipe } from './common/middleware/validator.pipe'
 import { configService } from './common/services/config.service'
-import { BaseFunctionHelper } from './common/util/base-function.helper'
+import { FirebaseManager } from './common/services/firebase-manager.service'
 import { AppModule } from './modules/app.module'
 import { ClassSerializerInterceptor } from '@nestjs/common'
 
@@ -13,12 +13,19 @@ import { ClassSerializerInterceptor } from '@nestjs/common'
 // in apps/backend/ or project root
 
 async function bootstrap() {
-  const firebaseInitialized = await BaseFunctionHelper.initializeFirebase()
-  if (!firebaseInitialized) {
+  // Initialize all Firebase apps for all platforms
+  const firebaseResult = await FirebaseManager.initializeAll()
+  if (firebaseResult.failed > 0) {
     console.warn(
-      '⚠️  WARNING: Firebase initialization failed. Notification sending may not work properly.',
+      `⚠️  WARNING: ${firebaseResult.failed} Firebase app(s) failed to initialize. Some notification sending may not work properly.`,
     )
     console.warn('⚠️  Please check Firebase service account configuration.')
+  }
+  if (firebaseResult.success > 0) {
+    console.log(
+      `✅ Successfully initialized ${firebaseResult.success} Firebase app(s) for multi-platform support.`,
+    )
+    console.log(`✅ Initialized apps: ${FirebaseManager.getInitializedApps().join(', ')}`)
   }
 
   const app = await NestFactory.create(AppModule)
