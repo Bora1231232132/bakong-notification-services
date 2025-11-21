@@ -113,6 +113,9 @@ Thumbs.db
 firebase-debug.log
 firebase-debug.*.log
 firebase-service-account.json
+# Firebase service account files (contain secrets - DO NOT COMMIT)
+*-firebase-service-account.json
+bakong-*-firebase-service-account.json
 
 # Environment files (keep examples and development)
 *env*

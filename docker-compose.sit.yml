@@ -55,7 +55,10 @@ services:
       - LOG_LEVEL=info
       - TYPEORM_SYNCHRONIZE=true
     volumes:
-      - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
+      # SIT Firebase service account files for all platforms
+      - ./bakong-sit-firebase-service-account.json:/opt/bk_notification_service/bakong-sit-firebase-service-account.json:ro
+      - ./bakong-junior-sit-firebase-service-account.json:/opt/bk_notification_service/bakong-junior-sit-firebase-service-account.json:ro
+      - ./bakong-tourists-sit-firebase-service-account.json:/opt/bk_notification_service/bakong-tourists-sit-firebase-service-account.json:ro
       - ./apps/backend/env.staging:/opt/bk_notification_service/env.staging:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/api/v1/health', (r) => { if (r.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1))"]

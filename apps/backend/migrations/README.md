@@ -18,13 +18,16 @@ Run migration manually on any environment:
 
 ```bash
 # Production
-bash apps/backend/scripts/run-migration.sh production
+bash utils-server.sh db-migrate
 
 # SIT
-bash apps/backend/scripts/run-migration.sh sit
+bash utils-server.sh db-migrate
 
 # Development
-bash apps/backend/scripts/run-migration.sh dev
+bash utils-server.sh db-migrate
+
+# Or use the unified command (auto-detects environment)
+bash RUN_MIGRATION_ON_DEPLOY.sh
 ```
 
 ### Automatic Migration on Deployment
@@ -36,6 +39,7 @@ bash RUN_MIGRATION_ON_DEPLOY.sh
 ```
 
 This script:
+
 1. Detects the environment automatically
 2. Runs the unified migration
 3. Ensures database schema is up to date
@@ -92,9 +96,10 @@ When you need to add new tables or columns:
    - Add new constraints with existence checks
 
 2. **Test the migration**:
+
    ```bash
    # Test on dev first
-   bash apps/backend/scripts/run-migration.sh dev
+   bash utils-server.sh db-migrate
    ```
 
 3. **Commit and deploy**:
@@ -108,8 +113,8 @@ When you need to add new tables or columns:
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'newColumn'
     ) THEN
         ALTER TABLE template ADD COLUMN "newColumn" VARCHAR(255);
@@ -125,11 +130,13 @@ END$$;
 ### Migration Fails
 
 1. Check database container is running:
+
    ```bash
    docker ps | grep bakong-notification-services-db
    ```
 
 2. Check database logs:
+
    ```bash
    docker logs bakong-notification-services-db
    ```
@@ -177,4 +184,3 @@ git pull
 bash RUN_MIGRATION_ON_DEPLOY.sh
 docker-compose -f docker-compose.production.yml up -d --build
 ```
-

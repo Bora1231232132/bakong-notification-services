@@ -55,7 +55,10 @@ services:
       - API_JWT_KEY=010110bkns
       - TYPEORM_SYNCHRONIZE=false
     volumes:
-      - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
+      # Production Firebase service account files for all platforms
+      - ./bakong-uat-firebase-service-account.json:/opt/bk_notification_service/bakong-uat-firebase-service-account.json:ro
+      - ./bakong-junior-uat-firebase-service-account.json:/opt/bk_notification_service/bakong-junior-uat-firebase-service-account.json:ro
+      - ./bakong-tourist-uat-firebase-service-account.json:/opt/bk_notification_service/bakong-tourist-uat-firebase-service-account.json:ro
       - ./apps/backend/env.production:/opt/bk_notification_service/env.production:ro
     depends_on:
       db:

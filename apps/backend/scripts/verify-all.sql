@@ -1,27 +1,33 @@
 -- ============================================
--- Script: Check All Database Tables
+-- Script: Comprehensive Database Verification
 -- ============================================
--- This script checks all tables in the database:
--- - user
--- - bakong_user
--- - image
--- - template
--- - template_translation
--- - notification
+-- This script consolidates all verification checks:
+-- - All tables existence and structure
+-- - Schema matches entity definitions
+-- - Image associations
+-- - Data integrity
 --
 -- Usage:
---   docker exec -i bakong-notification-services-db-sit psql -U bkns_sit -d bakong_notification_services_sit < apps/backend/scripts/check-all-tables.sql
+--   bash utils-server.sh verify-all
+--   OR
+--   docker exec -i <container> psql -U <user> -d <db> < apps/backend/scripts/verify-all.sql
 -- ============================================
 
 \echo ''
 \echo '========================================'
-\echo 'DATABASE SCHEMA CHECK - ALL TABLES'
+\echo 'COMPREHENSIVE DATABASE VERIFICATION'
 \echo '========================================'
 \echo ''
 
 -- ============================================
+-- PART 1: TABLE EXISTENCE AND STRUCTURE
+-- ============================================
+\echo '========================================'
+\echo 'PART 1: TABLE EXISTENCE AND STRUCTURE'
+\echo '========================================'
+\echo ''
+
 -- 1. USER TABLE
--- ============================================
 \echo '📋 Checking: user table'
 \echo '----------------------------------------'
 
@@ -45,7 +51,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -57,23 +62,9 @@ WHERE table_schema = 'public'
   AND table_name = 'user'
 ORDER BY ordinal_position;
 
--- Show constraints
-SELECT 
-    tc.constraint_name,
-    tc.constraint_type,
-    kcu.column_name
-FROM information_schema.table_constraints tc
-LEFT JOIN information_schema.key_column_usage kcu 
-    ON tc.constraint_name = kcu.constraint_name
-WHERE tc.table_schema = 'public' 
-  AND tc.table_name = 'user'
-ORDER BY tc.constraint_type, tc.constraint_name;
-
 \echo ''
 
--- ============================================
 -- 2. BAKONG_USER TABLE
--- ============================================
 \echo '📋 Checking: bakong_user table'
 \echo '----------------------------------------'
 
@@ -97,7 +88,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -109,20 +99,9 @@ WHERE table_schema = 'public'
   AND table_name = 'bakong_user'
 ORDER BY ordinal_position;
 
--- Show indexes
-SELECT 
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE schemaname = 'public' 
-  AND tablename = 'bakong_user'
-ORDER BY indexname;
-
 \echo ''
 
--- ============================================
 -- 3. IMAGE TABLE
--- ============================================
 \echo '📋 Checking: image table'
 \echo '----------------------------------------'
 
@@ -165,7 +144,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -177,23 +155,9 @@ WHERE table_schema = 'public'
   AND table_name = 'image'
 ORDER BY ordinal_position;
 
--- Show constraints
-SELECT 
-    tc.constraint_name,
-    tc.constraint_type,
-    kcu.column_name
-FROM information_schema.table_constraints tc
-LEFT JOIN information_schema.key_column_usage kcu 
-    ON tc.constraint_name = kcu.constraint_name
-WHERE tc.table_schema = 'public' 
-  AND tc.table_name = 'image'
-ORDER BY tc.constraint_type, tc.constraint_name;
-
 \echo ''
 
--- ============================================
 -- 4. TEMPLATE TABLE
--- ============================================
 \echo '📋 Checking: template table'
 \echo '----------------------------------------'
 
@@ -217,7 +181,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -230,23 +193,9 @@ WHERE table_schema = 'public'
   AND table_name = 'template'
 ORDER BY ordinal_position;
 
--- Show constraints
-SELECT 
-    tc.constraint_name,
-    tc.constraint_type,
-    kcu.column_name
-FROM information_schema.table_constraints tc
-LEFT JOIN information_schema.key_column_usage kcu 
-    ON tc.constraint_name = kcu.constraint_name
-WHERE tc.table_schema = 'public' 
-  AND tc.table_name = 'template'
-ORDER BY tc.constraint_type, tc.constraint_name;
-
 \echo ''
 
--- ============================================
 -- 5. TEMPLATE_TRANSLATION TABLE
--- ============================================
 \echo '📋 Checking: template_translation table'
 \echo '----------------------------------------'
 
@@ -307,7 +256,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -320,27 +268,9 @@ WHERE table_schema = 'public'
   AND table_name = 'template_translation'
 ORDER BY ordinal_position;
 
--- Show foreign keys
-SELECT 
-    tc.constraint_name,
-    kcu.column_name,
-    ccu.table_name AS foreign_table_name,
-    ccu.column_name AS foreign_column_name
-FROM information_schema.table_constraints AS tc
-JOIN information_schema.key_column_usage AS kcu
-    ON tc.constraint_name = kcu.constraint_name
-JOIN information_schema.constraint_column_usage AS ccu
-    ON ccu.constraint_name = tc.constraint_name
-WHERE tc.constraint_type = 'FOREIGN KEY'
-  AND tc.table_schema = 'public'
-  AND tc.table_name = 'template_translation'
-ORDER BY tc.constraint_name;
-
 \echo ''
 
--- ============================================
 -- 6. NOTIFICATION TABLE
--- ============================================
 \echo '📋 Checking: notification table'
 \echo '----------------------------------------'
 
@@ -364,7 +294,6 @@ BEGIN
     END IF;
 END $$;
 
--- Show columns
 SELECT 
     column_name,
     data_type,
@@ -376,24 +305,187 @@ WHERE table_schema = 'public'
   AND table_name = 'notification'
 ORDER BY ordinal_position;
 
--- Show indexes
-SELECT 
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE schemaname = 'public' 
-  AND tablename = 'notification'
-ORDER BY indexname;
+\echo ''
+
+-- ============================================
+-- PART 2: SCHEMA MATCHES ENTITY DEFINITIONS
+-- ============================================
+\echo '========================================'
+\echo 'PART 2: SCHEMA MATCHES ENTITY DEFINITIONS'
+\echo '========================================'
+\echo ''
+
+-- Check image.fileId column
+DO $$
+DECLARE
+    fileid_type TEXT;
+    fileid_nullable TEXT;
+    fileid_length INTEGER;
+    fileid_unique BOOLEAN;
+BEGIN
+    SELECT 
+        data_type,
+        is_nullable,
+        character_maximum_length,
+        CASE WHEN EXISTS (
+            SELECT 1 FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+            WHERE tc.table_name = 'image' 
+              AND tc.constraint_type = 'UNIQUE'
+              AND ccu.column_name = 'fileId'
+        ) THEN TRUE ELSE FALSE END
+    INTO fileid_type, fileid_nullable, fileid_length, fileid_unique
+    FROM information_schema.columns
+    WHERE table_schema = 'public' 
+      AND table_name = 'image' 
+      AND column_name = 'fileId';
+    
+    RAISE NOTICE 'image.fileId Column Check:';
+    RAISE NOTICE '  Current DB Type: %', COALESCE(fileid_type, 'NOT FOUND');
+    RAISE NOTICE '  Expected Type: character varying (VARCHAR)';
+    RAISE NOTICE '  Current Length: %', COALESCE(fileid_length::TEXT, 'N/A');
+    RAISE NOTICE '  Expected Length: 255';
+    RAISE NOTICE '  Is Nullable: %', COALESCE(fileid_nullable, 'N/A');
+    RAISE NOTICE '  Expected Nullable: NO';
+    RAISE NOTICE '  Has Unique Constraint: %', fileid_unique;
+    RAISE NOTICE '  Expected Unique: YES';
+    
+    IF fileid_type = 'character varying' AND fileid_length = 255 AND fileid_nullable = 'NO' AND fileid_unique = TRUE THEN
+        RAISE NOTICE '  ✅ image.fileId matches entity definition!';
+    ELSE
+        RAISE WARNING '  ⚠️ image.fileId does NOT match entity definition!';
+        RAISE WARNING '     Entity expects: VARCHAR(255) NOT NULL UNIQUE';
+    END IF;
+END $$;
+
+-- Check template_translation.imageId column
+DO $$
+DECLARE
+    imageid_type TEXT;
+    imageid_nullable TEXT;
+    imageid_length INTEGER;
+BEGIN
+    SELECT 
+        data_type,
+        is_nullable,
+        character_maximum_length
+    INTO imageid_type, imageid_nullable, imageid_length
+    FROM information_schema.columns
+    WHERE table_schema = 'public' 
+      AND table_name = 'template_translation' 
+      AND column_name = 'imageId';
+    
+    RAISE NOTICE '';
+    RAISE NOTICE 'template_translation.imageId Column Check:';
+    RAISE NOTICE '  Current DB Type: %', COALESCE(imageid_type, 'NOT FOUND');
+    RAISE NOTICE '  Expected Type: character varying (VARCHAR)';
+    RAISE NOTICE '  Current Length: %', COALESCE(imageid_length::TEXT, 'N/A');
+    RAISE NOTICE '  Expected Length: 255';
+    RAISE NOTICE '  Is Nullable: %', COALESCE(imageid_nullable, 'N/A');
+    RAISE NOTICE '  Expected Nullable: YES';
+    
+    IF imageid_type = 'character varying' AND imageid_length = 255 AND imageid_nullable = 'YES' THEN
+        RAISE NOTICE '  ✅ template_translation.imageId matches entity definition!';
+    ELSE
+        RAISE WARNING '  ⚠️ template_translation.imageId does NOT match entity definition!';
+        RAISE WARNING '     Entity expects: VARCHAR(255) NULL';
+    END IF;
+END $$;
+
+-- Check foreign key constraint
+DO $$
+DECLARE
+    fk_exists BOOLEAN;
+    fk_referenced_table TEXT;
+    fk_referenced_column TEXT;
+BEGIN
+    SELECT 
+        EXISTS (
+            SELECT 1 FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.table_name = 'template_translation'
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND tc.constraint_name = 'FK_d871aa842216b0708829b76233b'
+        ),
+        (SELECT referenced_table_name FROM information_schema.key_column_usage 
+         WHERE table_name = 'template_translation' 
+           AND constraint_name = 'FK_d871aa842216b0708829b76233b' 
+         LIMIT 1),
+        (SELECT referenced_column_name FROM information_schema.key_column_usage 
+         WHERE table_name = 'template_translation' 
+           AND constraint_name = 'FK_d871aa842216b0708829b76233b' 
+         LIMIT 1)
+    INTO fk_exists, fk_referenced_table, fk_referenced_column;
+    
+    RAISE NOTICE '';
+    RAISE NOTICE 'Foreign Key Constraint Check:';
+    RAISE NOTICE '  FK Exists: %', fk_exists;
+    RAISE NOTICE '  References: %.%', COALESCE(fk_referenced_table, 'N/A'), COALESCE(fk_referenced_column, 'N/A');
+    RAISE NOTICE '  Expected: image.fileId';
+    
+    IF fk_exists AND fk_referenced_table = 'image' AND fk_referenced_column = 'fileId' THEN
+        RAISE NOTICE '  ✅ Foreign key constraint is correct!';
+    ELSE
+        RAISE WARNING '  ⚠️ Foreign key constraint is missing or incorrect!';
+    END IF;
+END $$;
 
 \echo ''
 
 -- ============================================
--- SUMMARY
+-- PART 3: IMAGE ASSOCIATIONS
 -- ============================================
 \echo '========================================'
-\echo 'SUMMARY'
+\echo 'PART 3: IMAGE ASSOCIATIONS'
 \echo '========================================'
+\echo ''
 
+-- Quick check: Are images accessible?
+SELECT 
+    'Image Status' as check_type,
+    COUNT(*) as total_images,
+    COUNT(DISTINCT "fileId") as unique_fileIds,
+    COUNT(CASE WHEN "fileId" IS NULL THEN 1 END) as null_fileIds
+FROM image;
+
+-- Check template translations with images
+SELECT 
+    'Template Translations' as check_type,
+    COUNT(*) as total_translations,
+    COUNT(CASE WHEN "imageId" IS NOT NULL AND "imageId" != '' THEN 1 END) as with_imageId,
+    COUNT(CASE WHEN "imageId" IS NULL OR "imageId" = '' THEN 1 END) as without_imageId
+FROM template_translation;
+
+-- Check if associations are valid
+SELECT 
+    'Valid Associations' as check_type,
+    COUNT(*) as valid_count
+FROM template_translation tt
+INNER JOIN image i ON i."fileId" = tt."imageId"
+WHERE tt."imageId" IS NOT NULL AND tt."imageId" != '';
+
+-- Check for broken associations
+SELECT 
+    'Broken Associations' as check_type,
+    COUNT(*) as broken_count
+FROM template_translation tt
+WHERE tt."imageId" IS NOT NULL 
+  AND tt."imageId" != ''
+  AND NOT EXISTS (
+      SELECT 1 FROM image i WHERE i."fileId" = tt."imageId"
+  );
+
+\echo ''
+
+-- ============================================
+-- PART 4: SUMMARY
+-- ============================================
+\echo '========================================'
+\echo 'PART 4: SUMMARY'
+\echo '========================================'
+\echo ''
+
+-- Table summary
 SELECT 
     'user' as table_name,
     COUNT(*) as row_count,
@@ -437,9 +529,42 @@ SELECT
 FROM notification
 ORDER BY table_name;
 
+-- Final data integrity check
+DO $$
+DECLARE
+    null_fileids INTEGER;
+    total_images INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO null_fileids FROM image WHERE "fileId" IS NULL;
+    SELECT COUNT(*) INTO total_images FROM image;
+    
+    RAISE NOTICE '';
+    RAISE NOTICE 'Data Integrity Check:';
+    RAISE NOTICE '  Total images: %', total_images;
+    RAISE NOTICE '  Images with NULL fileId: %', null_fileids;
+    
+    IF null_fileids = 0 THEN
+        RAISE NOTICE '  ✅ No NULL fileId values found!';
+    ELSE
+        RAISE WARNING '  ⚠️ Found % images with NULL fileId!', null_fileids;
+    END IF;
+    
+    RAISE NOTICE '';
+    RAISE NOTICE '========================================';
+    RAISE NOTICE 'CONCLUSION:';
+    RAISE NOTICE '========================================';
+    IF null_fileids = 0 THEN
+        RAISE NOTICE '✅ Schema matches entity definitions!';
+        RAISE NOTICE '✅ TypeORM synchronize should NOT make any changes';
+    ELSE
+        RAISE WARNING '⚠️ Schema may need updates - check warnings above';
+    END IF;
+    RAISE NOTICE '========================================';
+END $$;
+
 \echo ''
 \echo '========================================'
-\echo 'CHECK COMPLETE'
+\echo 'VERIFICATION COMPLETE'
 \echo '========================================'
 \echo ''
 
