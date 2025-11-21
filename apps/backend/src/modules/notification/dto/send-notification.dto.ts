@@ -95,7 +95,6 @@ export default class SentNotificationDto {
     message:
       'bakongPlatform is required when accountId is provided. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
   })
-  @IsOptional()
   @Transform(({ value }) => {
     if (typeof value === 'string') {
       return ValidationHelper.normalizeEnum(value)

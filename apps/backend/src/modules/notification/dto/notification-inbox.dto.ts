@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer'
-import { IsString, IsOptional, IsNumber, Min, Max, IsEnum } from 'class-validator'
+import { IsString, IsOptional, IsNumber, Min, Max, IsEnum, ValidateIf } from 'class-validator'
 import { Language, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
@@ -49,8 +49,11 @@ export class NotificationInboxDto {
   @Transform(({ value }) => parseInt(value) || 10)
   size?: number = 10
 
-  @IsOptional()
-  @IsEnum(BakongApp)
+  @ValidateIf((o) => !!o.accountId)
+  @IsEnum(BakongApp, {
+    message:
+      'bakongPlatform is required when accountId is provided. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+  })
   @Transform(({ value, obj }) => {
     // Handle typo: "bakongPlatfrom" -> "bakongPlatform"
     // If the typo field exists but bakongPlatform doesn't, use the typo value
