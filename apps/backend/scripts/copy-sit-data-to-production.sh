@@ -2,12 +2,14 @@
 # Copy SIT Database Data to Production
 # This script copies all data from SIT to Production for testing
 # ⚠️ WARNING: This will REPLACE all production data with SIT data!
+# ⚠️ IMPORTANT: This script only READS from SIT, does not modify SIT
 # Usage: bash scripts/copy-sit-data-to-production.sh
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Go up 3 levels: scripts -> backend -> apps -> project root
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "⚠️  WARNING: This will REPLACE all production data with SIT data!"
 echo "📊 Source: bakong_notification_services_sit (SIT)"
@@ -31,23 +33,75 @@ fi
 SIT_DB_NAME="bakong_notification_services_sit"
 SIT_DB_USER="bkns_sit"
 SIT_DB_PASS="0101bkns_sit"
-SIT_CONTAINER="bakong-notification-services-db-sit"
 
 PROD_DB_NAME="bakong_notification_services"
 PROD_DB_USER="bkns"
 PROD_DB_PASS="010110bkns"
-PROD_CONTAINER="bakong-notification-services-db-prod"
+
+# Auto-detect container names (may have prefixes)
+SIT_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -E "bakong-notification-services-db-sit$|.*_bakong-notification-services-db-sit$" | head -1)
+PROD_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db$|.*_bakong-notification-services-db$" | head -1)
 
 # Check if containers exist
-if ! docker ps --format '{{.Names}}' | grep -q "^${SIT_CONTAINER}$"; then
-  echo "❌ SIT database container not found: $SIT_CONTAINER"
+echo "🔍 Checking for containers..."
+echo "   Looking for SIT container..."
+echo "   Looking for Production container..."
+echo ""
+
+# Handle SIT container
+if [ -z "$SIT_CONTAINER" ]; then
+  echo "⚠️  SIT database container not found - starting it now..."
+  echo ""
+  # Use absolute path for docker-compose file
+  DOCKER_COMPOSE_SIT="$PROJECT_ROOT/docker-compose.sit.yml"
+  if [ ! -f "$DOCKER_COMPOSE_SIT" ]; then
+    echo "❌ docker-compose.sit.yml not found at: $DOCKER_COMPOSE_SIT"
+    echo "   PROJECT_ROOT: $PROJECT_ROOT"
+    echo "   Current directory: $(pwd)"
+    exit 1
+  fi
+  cd "$PROJECT_ROOT" || exit 1
+  # Use absolute path for -f flag
+  docker-compose -f "$DOCKER_COMPOSE_SIT" up -d db
+  sleep 15
+  
+  # Try to find it again
+  SIT_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "bakong-notification-services-db-sit$|.*_bakong-notification-services-db-sit$" | head -1)
+  
+  if [ -z "$SIT_CONTAINER" ]; then
+    echo "❌ Failed to start SIT database container"
+    echo ""
+    echo "💡 Available containers:"
+    docker ps -a --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+    exit 1
+  fi
+  echo "✅ SIT container started: $SIT_CONTAINER"
+else
+  echo "✅ Found SIT container: $SIT_CONTAINER"
+  
+  # Check if SIT container is running
+  if ! docker ps --format '{{.Names}}' | grep -q "^${SIT_CONTAINER}$"; then
+    echo "⚠️  SIT container is stopped - starting it..."
+    docker start "$SIT_CONTAINER"
+    sleep 10
+  fi
+fi
+
+if [ -z "$PROD_CONTAINER" ]; then
+  echo "❌ Production database container not found"
+  echo ""
+  echo "💡 Available containers:"
+  docker ps --format "   - {{.Names}}" | grep -i bakong || echo "   (none found)"
+  echo ""
+  echo "⚠️  Please ensure the Production database container is running."
+  echo "    You can start it with: docker-compose -f docker-compose.production.yml up -d db"
   exit 1
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -q "^${PROD_CONTAINER}$"; then
-  echo "❌ Production database container not found: $PROD_CONTAINER"
-  exit 1
-fi
+echo "✅ Found Production container: $PROD_CONTAINER"
+echo ""
+echo "✅ Both containers are ready!"
+echo ""
 
 echo ""
 echo "💾 Step 1: Creating backup of production database..."

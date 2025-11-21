@@ -46,14 +46,14 @@ services:
       # Supports both HTTPS domain and HTTP IP for flexibility
       # CORS_ORIGIN supports comma-separated values for multiple origins
       # API_BASE_URL/HOSTING_BASE_URL use HTTPS domain (primary)
-      # Production: prod-bakong-notification.nbc.gov.kh (10.20.6.58)
-      - API_BASE_URL=https://prod-bakong-notification.nbc.gov.kh
-      - HOSTING_BASE_URL=https://prod-bakong-notification.nbc.gov.kh
+      # Production: bakong-notification.nbc.gov.kh (10.20.6.58)
+      - API_BASE_URL=https://bakong-notification.nbc.gov.kh
+      - HOSTING_BASE_URL=https://bakong-notification.nbc.gov.kh
       - NODE_ENV=production
-      - CORS_ORIGIN=https://prod-bakong-notification.nbc.gov.kh,http://10.20.6.58
+      - CORS_ORIGIN=https://bakong-notification.nbc.gov.kh,http://10.20.6.58
       - LOG_LEVEL=warn
       - API_JWT_KEY=010110bkns
-      - TYPEORM_SYNCHRONIZE=true
+      - TYPEORM_SYNCHRONIZE=false
     volumes:
       - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
       - ./apps/backend/env.production:/opt/bk_notification_service/env.production:ro
@@ -82,6 +82,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      # SSL certificates (create ssl-certs directory and add certificates)
+      - ./ssl-certs:/etc/nginx/ssl:ro
+      # Use domain config (works with or without SSL)
+      # If SSL certificates exist, nginx will use HTTPS
+      # If not, it will use HTTP only
+      - ./apps/frontend/nginx-domain.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
     restart: unless-stopped
