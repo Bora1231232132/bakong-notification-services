@@ -5,6 +5,7 @@ import { Repository } from 'typeorm'
 import { cert, initializeApp, getApps } from 'firebase-admin/app'
 import * as fs from 'fs'
 import * as path from 'path'
+import { BakongApp } from '@bakong/shared'
 
 type SingleUserSyncResult = { isNewUser: boolean; savedUser: BakongUser }
 type AllUsersSyncResult = {
@@ -116,13 +117,14 @@ export class BaseFunctionHelper {
     }
 
     // For new users: create with provided data, use empty string for fcmToken if not provided
+    // bakongPlatform will be set from template when sending flash notification (see notification.service.ts)
     const created = this.bkUserRepo.create({
       accountId,
       fcmToken: updateData.fcmToken || '', // Use empty string as placeholder if not provided
       participantCode: updateData.participantCode,
       platform: this.normalizePlatform(updateData.platform),
       language: this.normalizeLanguage(updateData.language),
-      bakongPlatform: updateData.bakongPlatform,
+      bakongPlatform: updateData.bakongPlatform, // Only set if explicitly provided
     })
     console.log(
       `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${updateData.bakongPlatform || 'NULL'}`,
@@ -205,6 +207,7 @@ export class BaseFunctionHelper {
     const res = ValidationHelper.validateLanguage(language)
     return res.isValid ? res.normalizedValue : language
   }
+
 
   static getFirebaseServiceAccountPaths(): string[] {
     const cwd = process.cwd()

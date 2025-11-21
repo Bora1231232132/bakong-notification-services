@@ -1,5 +1,13 @@
 import { Transform, Type } from 'class-transformer'
-import { IsEnum, IsOptional, IsString, IsNumber, IsArray, ValidateNested } from 'class-validator'
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  ValidateIf,
+} from 'class-validator'
 import { CategoryType, Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
@@ -11,6 +19,10 @@ export default class SentNotificationDto {
   @IsOptional()
   @IsString()
   fcmToken?: string
+
+  @IsOptional()
+  @IsString()
+  participantCode?: string
 
   @IsOptional()
   @IsString()
@@ -78,8 +90,12 @@ export default class SentNotificationDto {
   @IsNumber()
   notificationId?: number
 
+  @ValidateIf((o) => !!o.accountId)
+  @IsEnum(BakongApp, {
+    message:
+      'bakongPlatform is required when accountId is provided. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+  })
   @IsOptional()
-  @IsEnum(BakongApp)
   @Transform(({ value }) => {
     if (typeof value === 'string') {
       return ValidationHelper.normalizeEnum(value)

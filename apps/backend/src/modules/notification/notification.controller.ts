@@ -33,15 +33,15 @@ export class NotificationController {
       if (dto.accountId) {
         dto.notificationType = NotificationType.FLASH_NOTIFICATION
 
-        // Auto-sync/register user with minimal data (accountId + language)
-        // Backend will automatically infer bakongPlatform from template when processing flash notification
-        // Mobile doesn't need to send bakongPlatform - backend handles everything automatically
+        // Auto-sync/register user with data from mobile app
+        // Mobile app MUST provide bakongPlatform - backend uses exactly what mobile sends
         await this.baseFunctionHelper.updateUserData({
           accountId: dto.accountId,
           language: dto.language,
           fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
           platform: dto.platform,
-          bakongPlatform: dto.bakongPlatform, // Optional - backend will infer from template if not provided
+          participantCode: dto.participantCode,
+          bakongPlatform: dto.bakongPlatform, // Mobile app must provide this
         })
       } else {
         if (!dto.notificationType) {
