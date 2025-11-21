@@ -88,10 +88,9 @@ services:
     volumes:
       # SSL certificates (create ssl-certs directory and add certificates)
       - ./ssl-certs:/etc/nginx/ssl:ro
-      # Use domain config (works with or without SSL)
-      # If SSL certificates exist, nginx will use HTTPS
-      # If not, it will use HTTP only
-      - ./apps/frontend/nginx-domain.conf:/etc/nginx/conf.d/default.conf:ro
+      # Use HTTP-only config (no SSL certificates required)
+      # Switch to nginx-domain.conf when SSL certificates are available
+      - ./apps/frontend/nginx-http-only.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
     restart: unless-stopped
