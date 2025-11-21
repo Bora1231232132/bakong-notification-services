@@ -1,11 +1,13 @@
 #!/bin/bash
 # Production Deployment Script
 # Run this on the production server: bash deploy-to-production.sh
+# ⚠️ IMPORTANT: This script ONLY touches PRODUCTION, NOT SIT
 
 set -e
 
 echo "🚀 Starting PRODUCTION deployment..."
 echo "⚠️  WARNING: This will deploy to PRODUCTION environment!"
+echo "✅ SIT environment will NOT be touched"
 echo ""
 
 cd ~/bakong-notification-services
@@ -36,7 +38,7 @@ echo "🔄 Running database migrations..."
 # Migration 1: Update usernames to lowercase and remove spaces
 if [ -f "apps/backend/scripts/update-usernames-to-lowercase.sql" ]; then
     echo "  📝 Running username update migration..."
-    docker exec -i bakong-notification-services-db-prod psql -U bkns -d bakong_notification_services < apps/backend/scripts/update-usernames-to-lowercase.sql || echo "⚠️  Username migration warning (may be normal if already applied)"
+    docker exec -i bakong-notification-services-db psql -U bkns -d bakong_notification_services < apps/backend/scripts/update-usernames-to-lowercase.sql || echo "⚠️  Username migration warning (may be normal if already applied)"
 else
     echo "⚠️  Username migration script not found, skipping..."
 fi
@@ -44,7 +46,7 @@ fi
 # Migration 2: Add bakongPlatform support
 if [ -f "apps/backend/scripts/add-bakong-platform-migration.sql" ]; then
     echo "  📝 Running bakongPlatform migration..."
-    docker exec -i bakong-notification-services-db-prod psql -U bkns -d bakong_notification_services < apps/backend/scripts/add-bakong-platform-migration.sql || echo "⚠️  bakongPlatform migration warning (may be normal if already applied)"
+    docker exec -i bakong-notification-services-db psql -U bkns -d bakong_notification_services < apps/backend/scripts/add-bakong-platform-migration.sql || echo "⚠️  bakongPlatform migration warning (may be normal if already applied)"
 else
     echo "⚠️  bakongPlatform migration script not found, skipping..."
 fi
