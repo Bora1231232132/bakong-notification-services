@@ -4,7 +4,7 @@ import { NotificationInboxDto } from './dto/notification-inbox.dto'
 import { NotificationService } from './notification.service'
 import SentNotificationDto from './dto/send-notification.dto'
 import { BaseResponseDto } from 'src/common/base-response.dto'
-import { ErrorCode, ResponseMessage } from '@bakong/shared'
+import { ErrorCode, ResponseMessage, BakongApp } from '@bakong/shared'
 import { NotificationType } from '@bakong/shared'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { Roles } from 'src/common/middleware/roles.guard'
@@ -33,15 +33,27 @@ export class NotificationController {
       if (dto.accountId) {
         dto.notificationType = NotificationType.FLASH_NOTIFICATION
 
+        // Mobile app ALWAYS provides bakongPlatform in the request
+        // Fallback: Only infer if mobile didn't provide it (shouldn't happen, but for backward compatibility)
+        if (!dto.bakongPlatform) {
+          const inferredBakongPlatform = this.inferBakongPlatform(dto.participantCode, dto.accountId)
+          if (inferredBakongPlatform) {
+            console.warn(
+              `⚠️ [sendNotification] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId} -> ${inferredBakongPlatform}`,
+            )
+            dto.bakongPlatform = inferredBakongPlatform
+          }
+        }
+
         // Auto-sync/register user with data from mobile app
-        // Mobile app MUST provide bakongPlatform - backend uses exactly what mobile sends
+        // Mobile app always provides all data including bakongPlatform
         await this.baseFunctionHelper.updateUserData({
           accountId: dto.accountId,
           language: dto.language,
           fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
           platform: dto.platform,
           participantCode: dto.participantCode,
-          bakongPlatform: dto.bakongPlatform, // Mobile app must provide this
+          bakongPlatform: dto.bakongPlatform, // Mobile always provides this
         })
       } else {
         if (!dto.notificationType) {
@@ -98,5 +110,41 @@ export class NotificationController {
   @Roles(UserRole.ADMIN_USER, UserRole.API_USER)
   async postNotificationInbox(@Body() dto: NotificationInboxDto, @Req() req: any) {
     return await this.service.getNotificationCenter(dto, req)
+  }
+
+  /**
+   * Infer bakongPlatform from participantCode or accountId
+   * Priority: participantCode > accountId domain
+   */
+  private inferBakongPlatform(participantCode?: string, accountId?: string): BakongApp | undefined {
+    // Check participantCode first (higher priority)
+    if (participantCode) {
+      const normalized = participantCode.toUpperCase()
+      if (normalized.startsWith('BKRT')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.startsWith('BKJR')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.startsWith('TOUR')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    // Check accountId domain
+    if (accountId) {
+      const normalized = accountId.toLowerCase()
+      if (normalized.includes('@bkrt')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.includes('@bkjr')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.includes('@tour')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    return undefined
   }
 }

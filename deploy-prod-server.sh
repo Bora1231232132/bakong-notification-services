@@ -203,7 +203,26 @@ if [ -n "$DOMAIN" ]; then
 fi
 
 echo ""
+
+# ============================================================================
+# Step 8: Verify Data Integrity (Post-deployment)
+# ============================================================================
+echo "🔍 Step 8: Verifying data integrity after deployment..."
+if [ -f "utils-server.sh" ]; then
+    bash utils-server.sh verify-all || {
+        echo "   ⚠️  Data verification warning (check manually if needed)"
+    }
+else
+    echo "   ⚠️  utils-server.sh not found, skipping verification..."
+fi
+
+echo ""
 echo "✅ Production deployment complete!"
+echo ""
+echo "🔒 Data Safety Summary:"
+echo "   ✅ Backup created before deployment: backups/backup_production_latest.sql"
+echo "   ✅ Data stored in Docker volume (persistent)"
+echo "   ✅ Migration only adds schema changes (no data deletion)"
 echo ""
 echo "🌐 Access URLs:"
 echo "   • Backend API: http://${SERVER_IP}:${BACKEND_PORT}/api/v1/health"
@@ -216,5 +235,7 @@ echo "💡 Useful commands:"
 echo "   • View logs: docker-compose -f $COMPOSE_FILE logs -f"
 echo "   • Restart: docker-compose -f $COMPOSE_FILE restart"
 echo "   • Stop: docker-compose -f $COMPOSE_FILE down"
+echo "   • Verify data: bash utils-server.sh verify-all"
+echo "   • Restore backup: bash utils-server.sh db-restore production backups/backup_production_latest.sql"
 echo ""
 

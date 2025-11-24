@@ -12,14 +12,9 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(username: string, password: string): Promise<any> {
+    // validateUserLogin now throws errors directly instead of returning null
+    // This provides more specific error messages
     const user = await this.authService.validateUserLogin(username, password)
-    if (!user) {
-      throw new BaseResponseDto({
-        responseCode: 1,
-        errorCode: ErrorCode.INVALID_USERNAME_OR_PASSWORD,
-        responseMessage: ResponseMessage.INVALID_USERNAME_OR_PASSWORD,
-      })
-    }
     return user
   }
 }

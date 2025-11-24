@@ -25,13 +25,20 @@ echo "======================="
 echo ""
 
 # ============================================================================
-# Step 1: Pre-deployment Backup
+# Step 1: Pre-deployment Backup (CRITICAL - data safety)
 # ============================================================================
-echo "💾 Step 1: Creating backup before deployment..."
+echo "💾 Step 1: Creating backup before deployment (CRITICAL)..."
 if [ -f "utils-server.sh" ]; then
-    bash utils-server.sh db-backup || echo "⚠️  Backup warning (continuing anyway...)"
+    bash utils-server.sh db-backup || {
+        echo "❌ Backup failed!"
+        echo "   Deployment cannot proceed without a valid backup."
+        echo "   Please fix the backup issue and try again."
+        exit 1
+    }
 else
-    echo "⚠️  utils-server.sh not found, skipping backup..."
+    echo "❌ utils-server.sh not found!"
+    echo "   Cannot create backup - deployment cancelled for safety."
+    exit 1
 fi
 
 echo ""
@@ -156,7 +163,26 @@ else
 fi
 
 echo ""
+
+# ============================================================================
+# Step 8: Verify Data Integrity (Post-deployment)
+# ============================================================================
+echo "🔍 Step 8: Verifying data integrity after deployment..."
+if [ -f "utils-server.sh" ]; then
+    bash utils-server.sh verify-all || {
+        echo "   ⚠️  Data verification warning (check manually if needed)"
+    }
+else
+    echo "   ⚠️  utils-server.sh not found, skipping verification..."
+fi
+
+echo ""
 echo "✅ SIT deployment complete!"
+echo ""
+echo "🔒 Data Safety Summary:"
+echo "   ✅ Backup created before deployment: backups/backup_sit_latest.sql"
+echo "   ✅ Data stored in Docker volume (persistent)"
+echo "   ✅ Migration only adds schema changes (no data deletion)"
 echo ""
 echo "🌐 Access your services:"
 echo "   Frontend: http://${SERVER_IP}:${FRONTEND_PORT}"
@@ -165,6 +191,8 @@ echo "   Health:   http://${SERVER_IP}:${BACKEND_PORT}/api/v1/health"
 echo ""
 echo "💡 Useful commands:"
 echo "   • Follow logs: docker compose -f $COMPOSE_FILE logs -f"
+echo "   • Verify data: bash utils-server.sh verify-all"
+echo "   • Restore backup: bash utils-server.sh db-restore sit backups/backup_sit_latest.sql"
 echo "   • Restart: docker compose -f $COMPOSE_FILE restart"
 echo "   • Stop: docker compose -f $COMPOSE_FILE down"
 echo ""

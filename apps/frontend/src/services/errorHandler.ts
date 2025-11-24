@@ -1,32 +1,5 @@
 import { ElNotification } from 'element-plus'
-
-const ErrorCode = {
-  INTERNAL_SERVER_ERROR: 500,
-  REQUEST_SUCCESS: 200,
-  INVALID_USERNAME_OR_PASSWORD: 1001,
-  FAILED_AUTHENTICATION: 1002,
-  JWT_EXPIRE: 1003,
-  NO_PERMISSION: 1004,
-  ACCOUNT_TIMEOUT: 1005,
-  VALIDATION_FAILED: 1006,
-  RECORD_NOT_FOUND: 1007,
-  USER_NOT_FOUND: 1008,
-  TEMPLATE_NOT_FOUND: 1009,
-  NOTIFICATION_NOT_FOUND: 1010,
-  IMAGE_NOT_FOUND: 1011,
-  FILE_NOT_FOUND: 1012,
-  DATABASE_UNIQUE_CONSTRAINT_VIOLATION: 1013,
-  DATABASE_FOREIGN_KEY_VIOLATION: 1014,
-  DATABASE_NOT_NULL_VIOLATION: 1015,
-  DATABASE_CONNECTION_ERROR: 1016,
-  FLASH_LIMIT_REACHED_IN_TODAY: 1017,
-  NO_FLASH_NOTIFICATION_TEMPLATE_AVAILABLE: 1018,
-  INVALID_FCM_TOKEN: 1019,
-  TEMPLATE_SEND_SCHEDULE_IN_PAST: 1020,
-  TEMPLATE_SEND_INTERVAL_INVAILD_DURATION: 1021,
-  API_NOT_FOUND: 1022,
-  SERVICE_UNHEALTHY: 1023,
-}
+import { ErrorCode } from '@bakong/shared'
 
 export interface ApiError {
   responseCode: number
@@ -85,6 +58,11 @@ export class ErrorHandler {
     return userMessage
   }
 
+  getApiErrorMessage(error: any, context: ErrorContext = {}): string {
+    const apiError = this.extractApiError(error)
+    return this.getUserFriendlyMessage(apiError, context)
+  }
+
   handleGeneralError(error: any, context: ErrorContext = {}): string {
     const timestamp = new Date()
     this.errorLog.push({ error, context: { ...context, timestamp }, timestamp })
@@ -141,12 +119,27 @@ export class ErrorHandler {
   private getUserFriendlyMessage(apiError: ApiError, context: ErrorContext): string {
     const { errorCode, responseMessage } = apiError
 
+    // Prioritize the actual responseMessage from the API when it's available and specific
+    // This ensures backend-specific messages (like "Invalid password. 2 attempts remain") are shown
+    if (responseMessage && responseMessage.trim() && responseMessage !== 'Unknown error') {
+      // For certain error codes, use the API responseMessage directly as it contains specific details
+      const useApiMessageDirectly = [
+        ErrorCode.INVALID_USERNAME_OR_PASSWORD,
+        ErrorCode.ACCOUNT_TIMEOUT,
+        ErrorCode.VALIDATION_FAILED,
+      ]
+      
+      if (useApiMessageDirectly.includes(errorCode)) {
+        return responseMessage
+      }
+    }
+
     switch (errorCode) {
       case ErrorCode.REQUEST_SUCCESS:
         return 'Operation completed successfully'
 
       case ErrorCode.INVALID_USERNAME_OR_PASSWORD:
-        return 'Invalid username or password. Please check your credentials and try again.'
+        return responseMessage || 'Invalid username or password. Please check your credentials and try again.'
 
       case ErrorCode.FAILED_AUTHENTICATION:
         return 'Authentication failed. Please log in again.'
@@ -158,16 +151,16 @@ export class ErrorHandler {
         return 'You do not have permission to perform this action.'
 
       case ErrorCode.ACCOUNT_TIMEOUT:
-        return 'Your account has been temporarily locked. Please contact support.'
+        return responseMessage || 'Your account has been temporarily locked. Please contact support.'
 
       case ErrorCode.VALIDATION_FAILED:
-        return 'Please check your input and try again.'
+        return responseMessage || 'Please check your input and try again.'
 
       case ErrorCode.RECORD_NOT_FOUND:
         return 'The requested item was not found.'
 
       case ErrorCode.USER_NOT_FOUND:
-        return 'User not found.'
+        return responseMessage || 'User not found.'
 
       case ErrorCode.TEMPLATE_NOT_FOUND:
         return 'Template not found.'
@@ -349,6 +342,9 @@ export const errorHandler = ErrorHandler.getInstance()
 
 export const handleApiError = (error: any, context?: ErrorContext) =>
   errorHandler.handleApiError(error, context)
+
+export const getApiErrorMessage = (error: any, context?: ErrorContext) =>
+  errorHandler.getApiErrorMessage(error, context)
 
 export const handleGeneralError = (error: any, context?: ErrorContext) =>
   errorHandler.handleGeneralError(error, context)
