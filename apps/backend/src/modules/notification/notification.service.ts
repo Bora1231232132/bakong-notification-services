@@ -16,7 +16,7 @@ import { NotificationInboxDto } from './dto/notification-inbox.dto'
 import { TemplateService } from '../template/template.service'
 import { ImageService } from '../image/image.service'
 import { DateFormatter } from '@bakong/shared'
-import { ResponseMessage, ErrorCode } from '@bakong/shared'
+import { ResponseMessage, ErrorCode, BakongApp } from '@bakong/shared'
 import { Language, NotificationType } from '@bakong/shared'
 import { InboxResponseDto } from './dto/inbox-response.dto'
 
@@ -232,17 +232,84 @@ export class NotificationService {
         })
       }
 
-      await this.baseFunctionHelper.updateUserData()
-
-      // For flash notifications: Check user's bakongPlatform first, then find matching template
-      // Priority: Use user's registered bakongPlatform > Infer from template
+      // For flash notifications: Always sync user data and ensure bakongPlatform is set
+      // Priority: Use user's registered bakongPlatform > Infer from accountId/participantCode > Infer from template
       let userBakongPlatform: string | undefined = undefined
       if (dto.accountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
+        // Always sync user data again to ensure all fields are up to date
         const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        if (user && user.bakongPlatform) {
-          userBakongPlatform = user.bakongPlatform
+        
+        console.log(`📤 [sendNow] Syncing user data for ${dto.accountId}`, {
+          existingBakongPlatform: user?.bakongPlatform || 'NULL',
+          providedBakongPlatform: dto.bakongPlatform || 'NULL',
+          accountId: dto.accountId,
+          participantCode: dto.participantCode || 'N/A',
+        })
+        
+        // Mobile app ALWAYS provides bakongPlatform in the request
+        // This is the primary path - mobile provides all data including bakongPlatform
+        let bakongPlatformToSync = dto.bakongPlatform
+        
+        // Fallback logic (shouldn't normally happen since mobile always provides bakongPlatform):
+        // Only used for edge cases like:
+        // - Old mobile app versions that don't send bakongPlatform
+        // - API calls from other sources
+        // - Backward compatibility
+        if (!bakongPlatformToSync) {
+          // Try existing user value first
+          if (user?.bakongPlatform) {
+            bakongPlatformToSync = user.bakongPlatform
+            console.warn(
+              `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), using existing from user: ${bakongPlatformToSync}`,
+            )
+          } else {
+            // Last resort: try to infer from accountId/participantCode
+            const inferred = this.inferBakongPlatform(dto.participantCode, dto.accountId)
+            if (inferred) {
+              bakongPlatformToSync = inferred
+              console.warn(
+                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId}, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
+              )
+            } else {
+              console.error(
+                `❌ [sendNow] CRITICAL: bakongPlatform not provided by mobile and cannot be determined for ${dto.accountId}`,
+              )
+            }
+          }
+        }
+
+        // Always sync ALL user data from mobile app
+        // Mobile app always provides all data including: language, fcmToken, platform, participantCode, bakongPlatform
+        const syncData: any = {
+          accountId: dto.accountId,
+          language: dto.language,
+          fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
+          platform: dto.platform,
+          participantCode: dto.participantCode,
+          bakongPlatform: bakongPlatformToSync, // Mobile always provides this
+        }
+        
+        console.log(`📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`, {
+          accountId: syncData.accountId,
+          language: syncData.language || 'N/A',
+          platform: syncData.platform || 'N/A',
+          participantCode: syncData.participantCode || 'N/A',
+          bakongPlatform: syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
+        })
+        
+        // Always sync all user data - mobile provides all fields including bakongPlatform
+        await this.baseFunctionHelper.updateUserData(syncData)
+
+        // Re-fetch user to get the latest bakongPlatform
+        const updatedUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+        if (updatedUser && updatedUser.bakongPlatform) {
+          userBakongPlatform = updatedUser.bakongPlatform
           console.log(
-            `📤 [sendNow] User ${dto.accountId} has bakongPlatform: ${userBakongPlatform}`,
+            `✅ [sendNow] User ${dto.accountId} bakongPlatform after sync: ${userBakongPlatform}`,
+          )
+        } else {
+          console.log(
+            `⚠️ [sendNow] User ${dto.accountId} still has no bakongPlatform after sync attempt`,
           )
         }
       }
@@ -1253,5 +1320,41 @@ export class NotificationService {
       console.error(`Error deleting notification records for template ${templateId}:`, error)
       throw error
     }
+  }
+
+  /**
+   * Infer bakongPlatform from participantCode or accountId
+   * Priority: participantCode > accountId domain
+   */
+  private inferBakongPlatform(participantCode?: string, accountId?: string): BakongApp | undefined {
+    // Check participantCode first (higher priority)
+    if (participantCode) {
+      const normalized = participantCode.toUpperCase()
+      if (normalized.startsWith('BKRT')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.startsWith('BKJR')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.startsWith('TOUR')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    // Check accountId domain
+    if (accountId) {
+      const normalized = accountId.toLowerCase()
+      if (normalized.includes('@bkrt')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.includes('@bkjr')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.includes('@tour')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    return undefined
   }
 }

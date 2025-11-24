@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { authApi } from '@/services/api'
 import { mockAuthApi, isMockMode } from '@/services/mockAuth'
-import { handleApiError, showSuccess } from '@/services/errorHandler'
+import { handleApiError, getApiErrorMessage, showSuccess } from '@/services/errorHandler'
+import { ErrorCode } from '@bakong/shared'
 
 export enum UserRole {
   ADMIN_USER = 'ADMIN_USER',
@@ -101,7 +102,17 @@ export const useAuthStore = defineStore('auth', () => {
 
         return { success: true }
       } else {
-        const errorMessage = response.data.responseMessage || 'Login failed'
+        // Use error handler to get the correct message based on errorCode (without showing notification)
+        const apiError = {
+          responseCode: response.data.responseCode ?? 1,
+          responseMessage: response.data.responseMessage ?? 'Unknown error',
+          errorCode: response.data.errorCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
+          data: response.data.data,
+        }
+        const errorMessage = getApiErrorMessage(
+          { response: { data: apiError } },
+          { operation: 'login', component: 'AuthStore' },
+        )
         error.value = errorMessage
         return { success: false, error: errorMessage }
       }
@@ -121,7 +132,17 @@ export const useAuthStore = defineStore('auth', () => {
 
             return { success: true }
           } else {
-            const errorMessage = mockResponse.data.responseMessage || 'Login failed'
+            // Use error handler to get the correct message based on errorCode (without showing notification)
+            const apiError = {
+              responseCode: mockResponse.data.responseCode ?? 1,
+              responseMessage: mockResponse.data.responseMessage ?? 'Unknown error',
+              errorCode: mockResponse.data.responseCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
+              data: mockResponse.data.data,
+            }
+            const errorMessage = getApiErrorMessage(
+              { response: { data: apiError } },
+              { operation: 'login', component: 'AuthStore' },
+            )
             error.value = errorMessage
             return { success: false, error: errorMessage }
           }

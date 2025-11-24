@@ -44,14 +44,35 @@ export class BaseFunctionHelper {
     let baseUrl = defaultBaseUrl
 
     if (req) {
-      const protocol = req.protocol || (req.secure ? 'https' : 'http')
+      let protocol = req.protocol || (req.secure ? 'https' : 'http')
       const host = req.get('host') || req.headers?.host
+      
       if (host) {
+        // Force HTTPS for production/staging domains (even if request came via HTTP proxy)
+        const isProductionDomain = 
+          host.includes('nbc.gov.kh') || 
+          host.includes('bakong-notification') ||
+          nodeEnv === 'production' ||
+          nodeEnv === 'staging'
+        
+        if (isProductionDomain && protocol === 'http') {
+          // Check if X-Forwarded-Proto header indicates HTTPS (common with reverse proxies)
+          const forwardedProto = req.get('x-forwarded-proto') || req.headers?.['x-forwarded-proto']
+          if (forwardedProto === 'https' || nodeEnv === 'production') {
+            protocol = 'https'
+          }
+        }
+        
         baseUrl = `${protocol}://${host}`
       }
     }
     if (!baseUrl || baseUrl === defaultBaseUrl) {
       baseUrl = process.env.HOSTING_BASE_URL || process.env.API_BASE_URL || defaultBaseUrl
+    }
+
+    // Final check: ensure HTTPS for production domains
+    if (baseUrl.includes('nbc.gov.kh') || baseUrl.includes('bakong-notification')) {
+      baseUrl = baseUrl.replace(/^http:/, 'https:')
     }
 
     return baseUrl
@@ -207,7 +228,6 @@ export class BaseFunctionHelper {
     const res = ValidationHelper.validateLanguage(language)
     return res.isValid ? res.normalizedValue : language
   }
-
 
   static getFirebaseServiceAccountPaths(): string[] {
     const cwd = process.cwd()

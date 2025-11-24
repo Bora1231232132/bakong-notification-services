@@ -123,9 +123,12 @@ bakong-*-firebase-service-account.json
 !.env.development
 !.env.sit
 !.env.production
-apps/backend/env.development
 apps/frontend/.env.example
 apps/frontend/.env.development
+apps/frontend/.env.production
+apps/backend/.env.production
+apps/backend/.env.development
+apps/backend/.env.staging
 
 # Production environment files (sensitive - do not commit)
 apps/backend/env.sit

@@ -60,20 +60,54 @@ export class AuthService implements OnModuleInit {
 
     const user = await this.userService.findByUsername(username)
     if (!user) {
-      return null
+      // User not found - throw specific error
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: ResponseMessage.USER_NOT_FOUND,
+      })
     }
-    if (user.failLoginAttempt >= 3) {
+
+    // Check if account is locked (6 failed attempts)
+    if (user.failLoginAttempt >= 6) {
       throw new BaseResponseDto({
         responseCode: 1,
         errorCode: ErrorCode.ACCOUNT_TIMEOUT,
-        responseMessage: ResponseMessage.ACCOUNT_TIMEOUT,
+        responseMessage: `Account locked due to ${user.failLoginAttempt} failed login attempts. Please contact administrator to unlock your account.`,
       })
     }
+
+    // Verify password
     if (await bcrypt.compare(password, user.password)) {
+      // Password correct - reset failLoginAttempt and return user
+      if (user.failLoginAttempt > 0) {
+        await this.userService.resetFailLoginAttempt(user.id)
+      }
       return user
     }
+
+    // Password incorrect - increment failLoginAttempt
     await this.userService.increementFailLoginAttempt(user.id)
-    return null
+    
+    // Get updated user to check current attempt count
+    const updatedUser = await this.userService.findByUsername(username)
+    const remainingAttempts = 6 - (updatedUser?.failLoginAttempt || 0)
+    
+    if (remainingAttempts <= 0) {
+      // Account is now locked
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.ACCOUNT_TIMEOUT,
+        responseMessage: `Account locked due to ${updatedUser.failLoginAttempt} failed login attempts. Please contact administrator to unlock your account.`,
+      })
+    }
+
+    // Throw error with remaining attempts info
+    throw new BaseResponseDto({
+      responseCode: 1,
+      errorCode: ErrorCode.INVALID_USERNAME_OR_PASSWORD,
+      responseMessage: `Invalid password. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining before account lockout.`,
+    })
   }
 
   async register(dto: CreateUserDto) {

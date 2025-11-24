@@ -30,9 +30,6 @@
     "docker:up:prod": "docker-compose -f docker-compose.production.yml up -d --build",
     "docker:down:prod": "docker-compose -f docker-compose.production.yml down",
     "docker:logs:prod": "docker-compose -f docker-compose.production.yml logs -f",
-    "backup-db": "node apps/backend/backup-db-data.js",
-    "backup-db:sit": "node apps/backend/backup-db-data.js --env=staging",
-    "backup-db:prod": "node apps/backend/backup-db-data.js --env=production",
     "clean": "cd apps/backend && npm run prebuild && cd ../frontend && rm -rf dist",
     "fix": "npm run format && npm run lint",
     "fix:check": "npm run format:check && npm run lint:check"

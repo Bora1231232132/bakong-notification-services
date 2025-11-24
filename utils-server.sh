@@ -87,7 +87,7 @@ _run_migration_internal() {
     echo ""
     
     # Check if migration file exists
-    MIGRATION_FILE="apps/backend/migrations/unified-migration.sql"
+    MIGRATION_FILE="apps/backend/unified-migration.sql"
     if [ ! -f "$MIGRATION_FILE" ]; then
         echo "❌ Migration file not found: $MIGRATION_FILE"
         return 1
@@ -111,20 +111,112 @@ _run_migration_internal() {
     fi
 }
 
+# Cleanup old backups (keep only the last N backups per environment)
+_cleanup_old_backups() {
+    local env="$1"
+    local keep_count="${2:-5}"  # Default: keep last 5 backups
+    
+    BACKUP_DIR="backups"
+    
+    if [ ! -d "$BACKUP_DIR" ]; then
+        return 0
+    fi
+    
+    # Find all timestamped backup files for this environment (excluding _latest.sql)
+    # Sort by filename (which contains timestamp) in reverse order (newest first)
+    local backup_files
+    backup_files=$(find "$BACKUP_DIR" -name "backup_${env}_*.sql" ! -name "backup_${env}_latest.sql" -type f | sort -r)
+    
+    # Count total backups
+    local total_count
+    total_count=$(echo "$backup_files" | grep -c . || echo "0")
+    
+    if [ "$total_count" -le "$keep_count" ]; then
+        return 0  # No cleanup needed
+    fi
+    
+    # Get files to keep (first N files)
+    local files_to_keep
+    files_to_keep=$(echo "$backup_files" | head -n "$keep_count")
+    
+    # Delete old backups (not in the keep list)
+    local deleted_count=0
+    while IFS= read -r file; do
+        if [ -n "$file" ] && [ -f "$file" ]; then
+            # Check if file is in the keep list
+            local should_keep=0
+            while IFS= read -r keep_file; do
+                if [ "$file" = "$keep_file" ]; then
+                    should_keep=1
+                    break
+                fi
+            done <<< "$files_to_keep"
+            
+            if [ "$should_keep" -eq 0 ]; then
+                rm -f "$file"
+                deleted_count=$((deleted_count + 1))
+            fi
+        fi
+    done <<< "$backup_files"
+    
+    if [ "$deleted_count" -gt 0 ]; then
+        echo "🧹 Cleaned up $deleted_count old backup(s) (kept last $keep_count)"
+    fi
+}
+
 # Backup database internally
 _backup_database_internal() {
     local env="${1:-staging}"
-    _get_db_config "$env" || return 1
+    local keep_backups="${2:-5}"  # Default: keep last 5 backups
+    
+    # Validate environment before proceeding
+    if [ -z "$env" ]; then
+        echo "❌ Error: Environment not specified"
+        return 1
+    fi
+    
+    # Get database configuration for this environment
+    if ! _get_db_config "$env"; then
+        echo "❌ Error: Invalid environment '$env' or configuration failed"
+        return 1
+    fi
     
     BACKUP_DIR="backups"
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    mkdir -p "$BACKUP_DIR"
     
-    BACKUP_FILE="$BACKUP_DIR/backup_${env}_${TIMESTAMP}.sql"
-    BACKUP_FILE_LATEST="$BACKUP_DIR/backup_${env}_latest.sql"
+    # Ensure backup directory exists and warn if it was missing
+    if [ ! -d "$BACKUP_DIR" ]; then
+        echo "⚠️  Backup directory not found - creating it..."
+        mkdir -p "$BACKUP_DIR"
+        echo "✅ Backup directory created: $BACKUP_DIR"
+        echo ""
+    else
+        mkdir -p "$BACKUP_DIR"
+    fi
+    
+    # Use consistent environment name for file naming
+    # Map internal names to file-friendly names
+    local file_env_name
+    case "$env" in
+        dev|development)
+            file_env_name="dev"
+            ;;
+        sit|staging)
+            file_env_name="staging"
+            ;;
+        production|prod)
+            file_env_name="production"
+            ;;
+        *)
+            file_env_name="$env"
+            ;;
+    esac
+    
+    BACKUP_FILE="$BACKUP_DIR/backup_${file_env_name}_${TIMESTAMP}.sql"
+    BACKUP_FILE_LATEST="$BACKUP_DIR/backup_${file_env_name}_latest.sql"
     
     echo "💾 Starting database backup..."
-    echo "📊 Environment: $env"
+    echo "📊 Environment: $file_env_name"
     echo "🗄️  Database: $DB_NAME"
     echo "📁 Backup file: $BACKUP_FILE"
     echo ""
@@ -138,7 +230,7 @@ _backup_database_internal() {
     echo ""
     
     export PGPASSWORD="$DB_PASSWORD"
-    docker exec "$DB_CONTAINER" pg_dump \
+    if ! docker exec "$DB_CONTAINER" pg_dump \
         -U "$DB_USER" \
         -d "$DB_NAME" \
         --clean \
@@ -147,8 +239,27 @@ _backup_database_internal() {
         --format=plain \
         --no-owner \
         --no-privileges \
-        > "$BACKUP_FILE"
+        > "$BACKUP_FILE"; then
+        unset PGPASSWORD
+        echo "❌ Backup failed!"
+        rm -f "$BACKUP_FILE"
+        return 1
+    fi
     unset PGPASSWORD
+    
+    # Verify backup file exists and is not empty
+    if [ ! -f "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
+        echo "❌ Backup file is empty or missing!"
+        rm -f "$BACKUP_FILE"
+        return 1
+    fi
+    
+    # Verify backup contains SQL statements
+    if ! grep -q "CREATE TABLE\|INSERT INTO\|COPY" "$BACKUP_FILE" 2>/dev/null; then
+        echo "❌ Backup file appears corrupted (no SQL statements found)!"
+        rm -f "$BACKUP_FILE"
+        return 1
+    fi
     
     # Also create a latest copy
     cp "$BACKUP_FILE" "$BACKUP_FILE_LATEST"
@@ -158,7 +269,12 @@ _backup_database_internal() {
     echo ""
     echo "✅ Backup completed successfully!"
     echo "📄 Backup file: $BACKUP_FILE"
+    echo "📄 Latest backup: $BACKUP_FILE_LATEST"
     echo "📊 File size: $FILE_SIZE"
+    echo "✅ Backup verified (contains valid SQL)"
+    
+    # Cleanup old backups (keep only the last N)
+    _cleanup_old_backups "$file_env_name" "$keep_backups"
 }
 
 # Restore database internally
@@ -201,50 +317,37 @@ _restore_database_internal() {
     
     echo ""
     echo "✅ Database restore completed!"
-}
-
-# Update usernames internally
-_update_usernames_internal() {
-    local env="${1:-staging}"
-    _get_db_config "$env" || return 1
-    
-    SQL_FILE="apps/backend/scripts/update-usernames-to-lowercase.sql"
-    
-    if [ ! -f "$SQL_FILE" ]; then
-        echo "❌ Error: SQL migration file not found: $SQL_FILE"
-        return 1
-    fi
-    
-    echo "🔄 Starting username update migration..."
-    echo "📊 Environment: $env"
-    echo "🗄️  Database: $DB_NAME"
     echo ""
-    echo "⚠️  WARNING: This will update all usernames to lowercase and remove spaces!"
-    echo "   Example: 'So Theany' -> 'sotheany'"
-    echo ""
-    read -p "Continue? (yes/no): " confirm
+    echo "🔍 Verifying restored data..."
     
-    if [ "$confirm" != "yes" ]; then
-        echo "❌ Migration cancelled by user"
-        return 1
-    fi
-    
-    echo ""
-    echo "🔄 Running migration..."
-    echo ""
-    
-    if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
-        echo "❌ Docker container not found: $DB_CONTAINER"
-        return 1
-    fi
-    
+    # Quick verification - count records in key tables
     export PGPASSWORD="$DB_PASSWORD"
-    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE"
+    VERIFY_RESULT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
+        SELECT 
+            'bakong_user' as table_name, COUNT(*) as count FROM bakong_user
+        UNION ALL
+            SELECT 'user', COUNT(*) FROM \"user\" WHERE \"deletedAt\" IS NULL
+        UNION ALL
+            SELECT 'template', COUNT(*) FROM template WHERE \"deletedAt\" IS NULL
+        UNION ALL
+            SELECT 'notification', COUNT(*) FROM notification;
+    " 2>/dev/null)
     unset PGPASSWORD
     
+    if [ -n "$VERIFY_RESULT" ]; then
+        echo "$VERIFY_RESULT" | while IFS='|' read -r table count || [ -n "$table" ]; do
+            table=$(echo "$table" | xargs 2>/dev/null)
+            count=$(echo "$count" | xargs 2>/dev/null)
+            if [ -n "$table" ] && [ -n "$count" ]; then
+                echo "   📊 $table: $count record(s)"
+            fi
+        done
+    else
+        echo "   ⚠️  Could not verify data (but restore completed)"
+    fi
     echo ""
-    echo "✅ Migration completed!"
 }
+
 
 # Verify data internally
 _verify_data_internal() {
@@ -306,10 +409,9 @@ show_help() {
     echo "  db-setup-prod      - Setup production database (create tables, run migrations)"
     echo "  db-setup-sit       - Setup SIT database (create tables, run migrations)"
     echo "  db-migrate         - Run database migration (auto-detects environment)"
-    echo "  db-backup          - Backup database (auto-detects environment)"
+    echo "  db-backup [env]    - Backup database (keeps last 5 backups)"
+    echo "                       Optional: dev, sit, production (auto-detects if not specified)"
     echo "  db-restore         - Restore database from backup"
-    echo "  update-usernames   - Update usernames to lowercase (data migration)"
-    echo "  copy-sit-to-prod   - Copy SIT data to Production (with confirmation)"
     echo "  verify-connection  - Check and fix connection issues"
     echo "  verify-502         - Verify and fix 502 Bad Gateway errors"
     echo "  verify-all         - Comprehensive verification (all checks in one)"
@@ -317,8 +419,6 @@ show_help() {
     echo "  verify-images      - Verify image associations in templates (uses verify-all.sql)"
     echo "  verify-data        - Verify data after restart"
     echo "  check-tables       - Check all database tables (uses verify-all.sql)"
-    echo "  associate-images   - Associate images to templates"
-    echo "  restore-images     - Restore image associations"
     echo "  setup-ssl          - Setup HTTPS/SSL certificates"
     echo "  check-dns          - Check DNS configuration"
     echo "  check-ssl          - Check SSL certificate status"
@@ -412,13 +512,73 @@ db_migrate() {
 db_backup() {
     echo "💾 Backing up database..."
     
-    # Auto-detect environment
-    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
-        ENV="production"
-    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
-        ENV="staging"
+    # Check if environment is explicitly provided
+    local requested_env=""
+    if [ -n "$2" ]; then
+        requested_env="$2"
+        # Normalize environment name for internal use
+        case "$requested_env" in
+            dev|development)
+                ENV="dev"
+                ;;
+            sit|staging)
+                ENV="staging"
+                ;;
+            production|prod)
+                ENV="production"
+                ;;
+            *)
+                echo "❌ Invalid environment: $requested_env"
+                echo "   Valid options: dev, sit, production"
+                exit 1
+                ;;
+        esac
     else
-        echo "❌ No database container found!"
+        # Auto-detect environment
+        if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
+            ENV="production"
+        elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
+            ENV="staging"
+        elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-dev"; then
+            ENV="dev"
+        else
+            echo "❌ No database container found!"
+            echo ""
+            echo "💡 Usage: bash utils-server.sh db-backup [environment]"
+            echo "   Environments: dev, sit, production"
+            echo ""
+            echo "   Examples:"
+            echo "     bash utils-server.sh db-backup dev"
+            echo "     bash utils-server.sh db-backup sit"
+            echo "     bash utils-server.sh db-backup production"
+            exit 1
+        fi
+    fi
+    
+    # Verify the requested environment's container exists before backing up
+    _get_db_config "$ENV" || {
+        echo "❌ Cannot backup $ENV environment - container not found or configuration invalid"
+        echo ""
+        echo "💡 Make sure the database container for $ENV is running:"
+        case "$ENV" in
+            dev)
+                echo "   docker-compose up -d db"
+                ;;
+            staging)
+                echo "   docker-compose -f docker-compose.sit.yml up -d db"
+                ;;
+            production)
+                echo "   docker-compose -f docker-compose.production.yml up -d db"
+                ;;
+        esac
+        exit 1
+    }
+    
+    # Double-check container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+        echo "❌ Database container '$DB_CONTAINER' is not running!"
+        echo ""
+        echo "💡 Start the container first, then try again."
         exit 1
     fi
     
@@ -431,64 +591,79 @@ db_restore() {
     if [ -z "$2" ]; then
         echo "❌ Error: Backup file not specified"
         echo ""
-        echo "Usage: bash utils-server.sh db-restore [backup-file]"
+        echo "Usage: bash utils-server.sh db-restore [backup-file] [environment]"
         echo ""
         echo "Examples:"
-        echo "  bash utils-server.sh db-restore backups/backup_staging_20250101_120000.sql"
-        echo "  bash utils-server.sh db-restore backups/backup_staging_latest.sql"
+        echo "  bash utils-server.sh db-restore backups/backup_staging_20250101_120000.sql staging"
+        echo "  bash utils-server.sh db-restore backups/backup_staging_latest.sql sit"
+        echo "  bash utils-server.sh db-restore backups/backup_dev_latest.sql dev"
+        echo ""
+        echo "💡 Tip: Use the _latest.sql file for the most recent backup of each environment"
         echo ""
         exit 1
     fi
     
     BACKUP_FILE="$2"
     
-    # Auto-detect environment
-    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
-        ENV="production"
-    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
-        ENV="staging"
-    else
-        echo "❌ No database container found!"
-        exit 1
+    # Extract environment from backup filename if not provided
+    local detected_env=""
+    if echo "$BACKUP_FILE" | grep -q "backup_dev_"; then
+        detected_env="dev"
+    elif echo "$BACKUP_FILE" | grep -q "backup_staging_"; then
+        detected_env="staging"
+    elif echo "$BACKUP_FILE" | grep -q "backup_production_"; then
+        detected_env="production"
     fi
+    
+    # Use provided environment or detected from filename
+    if [ -n "$3" ]; then
+        ENV="$3"
+        # Normalize environment name
+        case "$ENV" in
+            dev|development)
+                ENV="dev"
+                ;;
+            sit|staging)
+                ENV="staging"
+                ;;
+            production|prod)
+                ENV="production"
+                ;;
+        esac
+    elif [ -n "$detected_env" ]; then
+        ENV="$detected_env"
+        echo "ℹ️  Detected environment from filename: $ENV"
+    else
+        # Auto-detect from running containers
+        if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
+            ENV="production"
+        elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
+            ENV="staging"
+        elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-dev"; then
+            ENV="dev"
+        else
+            echo "❌ Cannot determine environment!"
+            echo "   Please specify: bash utils-server.sh db-restore [backup-file] [environment]"
+            exit 1
+        fi
+        echo "ℹ️  Auto-detected environment: $ENV"
+    fi
+    
+    # Show backup file info
+    echo ""
+    echo "📄 Backup file: $BACKUP_FILE"
+    echo "📊 Target environment: $ENV"
+    if [ -f "$BACKUP_FILE" ]; then
+        FILE_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+        FILE_DATE=$(stat -c "%y" "$BACKUP_FILE" 2>/dev/null || stat -f "%Sm" "$BACKUP_FILE" 2>/dev/null || echo "unknown")
+        echo "📊 File size: $FILE_SIZE"
+        echo "📅 File date: $FILE_DATE"
+    fi
+    echo ""
     
     _restore_database_internal "$ENV" "$BACKUP_FILE"
 }
 
-update_usernames() {
-    echo "👤 Updating usernames to lowercase..."
-    
-    # Auto-detect environment
-    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
-        ENV="production"
-    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
-        ENV="staging"
-    else
-        echo "❌ No database container found!"
-        exit 1
-    fi
-    
-    _update_usernames_internal "$ENV"
-}
-
-# ============================================================================
-# Data Migration Functions
-# ============================================================================
-
-copy_sit_to_prod() {
-    echo "📋 Copying SIT Data to Production"
-    echo "================================"
-    echo ""
-    echo "⚠️  WARNING: This will REPLACE all production data with SIT data!"
-    read -p "Type 'YES' to continue: " confirm
-    
-    if [ "$confirm" != "YES" ]; then
-        echo "❌ Operation cancelled"
-        exit 1
-    fi
-    
-    bash COPY_SIT_TO_PRODUCTION_NOW.sh
-}
 
 # ============================================================================
 # Verification Functions
@@ -609,7 +784,7 @@ verify_all() {
     
     _get_db_config "$ENV" || exit 1
     
-    SQL_FILE="apps/backend/scripts/verify-all.sql"
+    SQL_FILE="apps/backend/verify-all.sql"
     if [ ! -f "$SQL_FILE" ]; then
         echo "❌ Verification script not found!"
         exit 1
@@ -649,54 +824,6 @@ check_tables() {
     verify_all
 }
 
-associate_images() {
-    echo "🔗 Associating Images to Templates..."
-    
-    # Auto-detect environment
-    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
-        ENV="production"
-    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
-        ENV="sit"
-    else
-        echo "❌ No database container found!"
-        exit 1
-    fi
-    
-    _get_db_config "$ENV" || exit 1
-    
-    SQL_FILE="apps/backend/scripts/associate-images-to-templates.sql"
-    if [ ! -f "$SQL_FILE" ]; then
-        echo "❌ Image association script not found!"
-        exit 1
-    fi
-    
-    echo "   This will show available images and templates needing images..."
-    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE"
-}
-
-restore_images() {
-    echo "🔄 Restoring Image Associations..."
-    
-    # Auto-detect environment
-    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
-        ENV="production"
-    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
-        ENV="sit"
-    else
-        echo "❌ No database container found!"
-        exit 1
-    fi
-    
-    _get_db_config "$ENV" || exit 1
-    
-    SQL_FILE="apps/backend/scripts/restore-images-to-templates.sql"
-    if [ ! -f "$SQL_FILE" ]; then
-        echo "❌ Image restoration script not found!"
-        exit 1
-    fi
-    
-    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE"
-}
 
 # ============================================================================
 # SSL/HTTPS Functions
@@ -861,12 +988,6 @@ case "${1:-}" in
     db-restore)
         db_restore "$@"
         ;;
-    update-usernames)
-        update_usernames
-        ;;
-    copy-sit-to-prod)
-        copy_sit_to_prod
-        ;;
     verify-connection)
         verify_connection
         ;;
@@ -887,12 +1008,6 @@ case "${1:-}" in
         ;;
     check-tables)
         check_tables
-        ;;
-    associate-images)
-        associate_images
-        ;;
-    restore-images)
-        restore_images
         ;;
     setup-ssl)
         setup_ssl
