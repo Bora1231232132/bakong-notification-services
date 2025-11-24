@@ -635,6 +635,7 @@ export class TemplateService implements OnModuleInit {
 
           if (item) {
             let imageId = item.imageId
+            const oldImageId = item.imageId
             // If image field is provided in the translation object, update it
             // Empty string means user explicitly removed the image
             if (translation.image !== undefined) {
@@ -642,11 +643,24 @@ export class TemplateService implements OnModuleInit {
                 const imageExists = await this.imageService.validateImageExists(image)
                 if (imageExists) {
                   imageId = image
+                  if (oldImageId !== imageId) {
+                    this.logger.log(
+                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId}`,
+                    )
+                  }
                 } else {
+                  this.logger.warn(
+                    `⚠️ [Template Update] Image ${image} does not exist, setting imageId to null for template ${id}, language ${language}`,
+                  )
                   imageId = null
                 }
               } else {
                 // Image was removed (empty string or falsy value)
+                if (oldImageId) {
+                  this.logger.log(
+                    `🖼️ [Template Update] Removing imageId for template ${id}, language ${language}: ${oldImageId} -> null`,
+                  )
+                }
                 imageId = null
               }
             }
@@ -664,6 +678,12 @@ export class TemplateService implements OnModuleInit {
                 linkPreview: linkPreview,
                 updatedAt: new Date(),
               })
+              
+              if (oldImageId !== imageId) {
+                this.logger.log(
+                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId || 'null'}`,
+                )
+              }
             }
           } else {
             let imageId = null

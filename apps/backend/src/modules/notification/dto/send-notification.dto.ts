@@ -90,10 +90,9 @@ export default class SentNotificationDto {
   @IsNumber()
   notificationId?: number
 
-  @ValidateIf((o) => !!o.accountId)
+  @IsOptional()
   @IsEnum(BakongApp, {
-    message:
-      'bakongPlatform is required when accountId is provided. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+    message: 'bakongPlatform must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
   })
   @Transform(({ value }) => {
     if (typeof value === 'string') {

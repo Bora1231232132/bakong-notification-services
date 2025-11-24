@@ -114,7 +114,12 @@ export class ImageService {
   buildImageUrl(imageId: string, req?: any, baseUrl?: string): string {
     if (!imageId) return ''
 
-    const finalBaseUrl = baseUrl || this.baseFunctionHelper.getBaseUrl(req)
+    let finalBaseUrl = baseUrl || this.baseFunctionHelper.getBaseUrl(req)
+
+    // Ensure HTTPS for production domains
+    if (finalBaseUrl.includes('nbc.gov.kh') || finalBaseUrl.includes('bakong-notification')) {
+      finalBaseUrl = finalBaseUrl.replace(/^http:/, 'https:')
+    }
 
     return `${finalBaseUrl}/api/v1/image/${imageId}`
   }
