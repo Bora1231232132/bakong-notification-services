@@ -175,3 +175,9 @@ test-report.xml
 
 # TypeScript build info
 *.tsbuildinfo
+
+#.cursor
+.cursor/
+.cursor/rules/
+.cursor/scripts/
+.cursor/templates/
