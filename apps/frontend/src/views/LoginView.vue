@@ -204,11 +204,21 @@ const handleSubmitLogin = async (formRef: any) => {
       }
     } else {
       const errorMessage = result?.error || 'Login failed. Please try again.'
+      
+      // Check if account is suspended
+      const isAccountSuspended =
+        errorMessage.toLowerCase().includes('suspended') ||
+        errorMessage.toLowerCase().includes('too many login attempt') ||
+        errorMessage.toLowerCase().includes('account timeout') ||
+        errorMessage.toLowerCase().includes('temporarily locked')
+      
       ElNotification({
-        title: 'Error',
-        message: errorMessage,
+        title: isAccountSuspended ? 'Account Suspended' : 'Error',
+        message: isAccountSuspended
+          ? 'Your account has been temporarily suspended due to too many failed login attempts. Please contact an administrator to reset your account, or wait before trying again.'
+          : errorMessage,
         type: 'error',
-        duration: 2000,
+        duration: isAccountSuspended ? 5000 : 2000,
       })
     }
   } catch (err) {

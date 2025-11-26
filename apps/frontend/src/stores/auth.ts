@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { authApi } from '@/services/api'
-import { mockAuthApi, isMockMode } from '@/services/mockAuth'
 import { handleApiError, getApiErrorMessage, showSuccess } from '@/services/errorHandler'
 import { ErrorCode } from '@bakong/shared'
 
@@ -87,10 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const mockMode = isMockMode()
-      const api = mockMode ? mockAuthApi : authApi
-
-      const response = await api.login(credentials)
+      const response = await authApi.login(credentials)
 
       if (response.data.responseCode === 0) {
         const { accessToken, user: userData } = response.data.data
@@ -117,45 +113,6 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: false, error: errorMessage }
       }
     } catch (err: any) {
-      if (!isMockMode()) {
-        try {
-          const mockResponse = await mockAuthApi.login(credentials)
-          if (mockResponse.data.responseCode === 0) {
-            const { accessToken, user: userData } = mockResponse.data.data
-
-            token.value = accessToken
-            user.value = userData
-
-            localStorage.setItem('auth_token', accessToken)
-
-            showSuccess('Login successful! (Mock Mode)', { operation: 'login' })
-
-            return { success: true }
-          } else {
-            // Use error handler to get the correct message based on errorCode (without showing notification)
-            const apiError = {
-              responseCode: mockResponse.data.responseCode ?? 1,
-              responseMessage: mockResponse.data.responseMessage ?? 'Unknown error',
-              errorCode: mockResponse.data.responseCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
-              data: mockResponse.data.data,
-            }
-            const errorMessage = getApiErrorMessage(
-              { response: { data: apiError } },
-              { operation: 'login', component: 'AuthStore' },
-            )
-            error.value = errorMessage
-            return { success: false, error: errorMessage }
-          }
-        } catch (mockErr: any) {
-          const errorMessage = handleApiError(mockErr, {
-            operation: 'login',
-            component: 'AuthStore',
-          })
-          error.value = errorMessage
-          return { success: false, error: errorMessage }
-        }
-      }
-
       const errorMessage = handleApiError(err, {
         operation: 'login',
         component: 'AuthStore',
@@ -193,9 +150,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const api = isMockMode() ? mockAuthApi : authApi
-
-      const response = await api.register(userData)
+      const response = await authApi.register(userData)
       if (response.data.responseCode === 0) {
         const { accessToken, user: newUserData } = response.data.data
 
@@ -211,33 +166,6 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: false, error: errorMessage }
       }
     } catch (err: any) {
-      if (!isMockMode()) {
-        try {
-          const mockResponse = await mockAuthApi.register(userData)
-          if (mockResponse.data.responseCode === 0) {
-            const { accessToken, user: newUserData } = mockResponse.data.data
-
-            token.value = accessToken
-            user.value = newUserData
-
-            showSuccess('Registration successful! (Mock Mode)', { operation: 'register' })
-
-            return { success: true, data: mockResponse.data }
-          } else {
-            const errorMessage = mockResponse.data.responseMessage || 'Registration failed'
-            error.value = errorMessage
-            return { success: false, error: errorMessage }
-          }
-        } catch (mockErr: any) {
-          const errorMessage = handleApiError(mockErr, {
-            operation: 'register',
-            component: 'AuthStore',
-          })
-          error.value = errorMessage
-          return { success: false, error: errorMessage }
-        }
-      }
-
       const errorMessage = handleApiError(err, {
         operation: 'register',
         component: 'AuthStore',
@@ -252,6 +180,8 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     user.value = null
     token.value = null
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user')
   }
 
   const clearError = () => {

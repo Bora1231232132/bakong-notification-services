@@ -32,7 +32,8 @@
     "docker:logs:prod": "docker-compose -f docker-compose.production.yml logs -f",
     "clean": "cd apps/backend && npm run prebuild && cd ../frontend && rm -rf dist",
     "fix": "npm run format && npm run lint",
-    "fix:check": "npm run format:check && npm run lint:check"
+    "fix:check": "npm run format:check && npm run lint:check",
+    "update:project-structure": "node .cursor/scripts/update-project-structure.js"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
@@ -61,7 +62,11 @@
     "element-plus": "^2.11.4",
     "lucide-vue-next": "^0.545.0",
     "nestjs": "^0.0.1",
+    "passport": "^0.6.0",
+    "passport-jwt": "^4.0.1",
+    "passport-local": "^1.0.0",
     "pinia": "^3.0.3",
+    "typeorm": "^0.3.10",
     "u": "^0.1.0"
   }
 }

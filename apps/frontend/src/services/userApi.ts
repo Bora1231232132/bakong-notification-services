@@ -188,4 +188,80 @@ export const userApi = {
       return false
     }
   },
+
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        throw new Error('Authentication required. Please login again.')
+      }
+
+      // Validate token before making request
+      try {
+        const tokenParts = token.split('.')
+        if (tokenParts.length !== 3) {
+          throw new Error('Invalid token format. Please login again.')
+        }
+
+        const payload = JSON.parse(atob(tokenParts[1]))
+        const now = Math.floor(Date.now() / 1000)
+
+        if (payload.exp && payload.exp < now) {
+          throw new Error('Your session has expired. Please login again.')
+        }
+      } catch (tokenError: any) {
+        // If token validation fails, clear it and throw error
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+        throw new Error(tokenError.message || 'Invalid token. Please login again.')
+      }
+
+      try {
+        const response = await api.put('/api/v1/auth/change-password', {
+          currentPassword,
+          newPassword,
+        })
+
+        if (response.data && response.data.responseCode === 0) {
+          return {
+            success: true,
+            message: response.data.responseMessage || 'Password changed successfully',
+          }
+        }
+
+        return {
+          success: false,
+          message: response.data?.responseMessage || 'Failed to change password',
+        }
+      } catch (apiError: any) {
+        // Handle validation errors (400) and auth errors (401) differently
+        const errorData = apiError.response?.data
+        const errorMessage =
+          errorData?.responseMessage ||
+          errorData?.message ||
+          apiError.message ||
+          'Failed to change password'
+
+        // If it's a 401 and the error message indicates auth failure, throw auth error
+        if (apiError.response?.status === 401) {
+          if (
+            errorMessage.toLowerCase().includes('authentication') ||
+            errorMessage.toLowerCase().includes('login') ||
+            errorMessage.toLowerCase().includes('token') ||
+            errorMessage.toLowerCase().includes('expired')
+          ) {
+            throw new Error('Authentication failed. Please login again.')
+          }
+        }
+
+        // For validation errors (400) or other errors, throw with the specific message
+        throw new Error(errorMessage)
+      }
+    } catch (error: any) {
+      throw error
+    }
+  },
 }

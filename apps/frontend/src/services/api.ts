@@ -37,18 +37,34 @@ const addAuthInterceptor = (axiosInstance: typeof api) => {
         if (token && token.trim() !== '') {
           const tokenParts = token.split('.')
           if (tokenParts.length === 3) {
-            config.headers.Authorization = `Bearer ${token}`
-
             try {
               const payload = JSON.parse(atob(tokenParts[1]))
+              const now = Math.floor(Date.now() / 1000)
 
-              if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+              // Check if token is expired
+              if (payload.exp && payload.exp < now) {
                 localStorage.removeItem('auth_token')
+                localStorage.removeItem('user')
+                return Promise.reject(new Error('Token expired. Please login again.'))
               }
+
+              config.headers.Authorization = `Bearer ${token}`
             } catch (e) {
               localStorage.removeItem('auth_token')
+              localStorage.removeItem('user')
+              return Promise.reject(new Error('Invalid token. Please login again.'))
             }
+          } else {
+            // Invalid token format
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('user')
+            return Promise.reject(new Error('Invalid token format. Please login again.'))
           }
+        } else {
+          // No token found
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('user')
+          return Promise.reject(new Error('No authentication token found. Please login.'))
         }
       }
 
@@ -68,6 +84,11 @@ const addResponseInterceptor = (axiosInstance: typeof api) => {
     },
     async (error) => {
       if (error.response?.status === 401) {
+        // Don't auto-redirect for change-password endpoint - let component handle validation errors
+        if (error.config?.url?.includes('/auth/change-password')) {
+          return Promise.reject(error)
+        }
+
         if (
           error.config?.url?.includes('/auth/login') ||
           error.config?.url?.includes('/auth/register')
