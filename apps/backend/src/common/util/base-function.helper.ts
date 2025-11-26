@@ -199,7 +199,7 @@ export class BaseFunctionHelper {
           !user.fcmToken.startsWith('eyJ')
 
         if (!isValidToken) {
-          Logger.warn(`⚠️ Skip ${user.accountId}: invalid FCM token`)
+          this.logger.warn(`⚠️ Skip ${user.accountId}: invalid FCM token`)
         }
 
         return isValidToken

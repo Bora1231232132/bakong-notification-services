@@ -97,6 +97,8 @@ import type { Notification } from '@/types/notification'
 import { ElNotification } from 'element-plus'
 import {
   NotificationType,
+  SendType,
+  Platform,
   formatNotificationType,
   formatBakongApp,
   getFormattedPlatformName,
@@ -104,6 +106,7 @@ import {
 } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
+import { api } from '@/services/api'
 
 const route = useRoute()
 
@@ -759,63 +762,125 @@ const handlePublishNotification = async (notification: Notification) => {
         })
       }
     } else {
-      // Use the notification's actual language instead of hardcoded 'EN'
-      const notificationLanguage = notification.language || 'KM'
+      // Publish the template by updating it with sendType=SEND_NOW and isSent=true
+      // This will trigger the backend to send the notification and mark it as published
+      // Clear sendSchedule if it exists since we're publishing immediately
+      try {
+        // First, fetch the full template data to get platforms and translations
+        const fullTemplate = await api.get(`/api/v1/template/${notificationId}`)
+        const template = fullTemplate.data?.data || fullTemplate.data
 
-      const result = await notificationApi.sendNotification(
-        Number(notificationId),
-        notificationLanguage,
-        notification.type,
-      )
+        // Prepare update payload with existing template data
+        const updatePayload: any = {
+          sendType: SendType.SEND_NOW,
+          isSent: true,
+          sendSchedule: null, // Clear schedule when publishing immediately
+        }
 
-      // Check if error response (no users found)
-      if (result?.responseCode !== 0 || result?.errorCode !== 0) {
-        const errorMessage =
-          result?.responseMessage || result?.message || 'Failed to publish notification'
+        // Include platforms from template (default to [IOS, ANDROID] if not set)
+        if (template?.platforms && Array.isArray(template.platforms) && template.platforms.length > 0) {
+          updatePayload.platforms = template.platforms
+        } else {
+          // Default to both platforms if not set (ALL)
+          updatePayload.platforms = [Platform.IOS, Platform.ANDROID]
+        }
 
-        // Get platform name from response data or notification
-        const platformName = getFormattedPlatformName({
-          platformName: result?.data?.platformName,
-          bakongPlatform: result?.data?.bakongPlatform,
-          notification: notification as any,
-        })
+        // Include translations from template
+        if (template?.translations && Array.isArray(template.translations) && template.translations.length > 0) {
+          updatePayload.translations = template.translations.map((t: any) => ({
+            language: t.language,
+            title: t.title,
+            content: t.content,
+            image: t.image?.fileId || t.imageId || t.image?.id || '',
+            linkPreview: t.linkPreview || undefined,
+          }))
+        }
 
-        ElNotification({
-          title: 'Info',
-          message: errorMessage.includes('No users found')
-            ? getNoUsersAvailableMessage(platformName)
-            : errorMessage,
-          type: 'info',
-          duration: 3000,
-          dangerouslyUseHTMLString: true,
-        })
-        // Keep in draft tab
-        activeTab.value = 'draft'
+        const result = await notificationApi.updateTemplate(Number(notificationId), updatePayload)
+
+        // Check if error response (no users found)
+        if (result?.responseCode !== 0 || result?.errorCode !== 0) {
+          const errorMessage =
+            result?.responseMessage || result?.message || 'Failed to publish notification'
+
+          // Get platform name from response data or notification
+          const platformName = getFormattedPlatformName({
+            platformName: result?.data?.platformName,
+            bakongPlatform: result?.data?.bakongPlatform,
+            notification: notification as any,
+          })
+
+          ElNotification({
+            title: 'Info',
+            message: errorMessage.includes('No users found')
+              ? getNoUsersAvailableMessage(platformName)
+              : errorMessage,
+            type: 'info',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          // Keep in draft tab
+          activeTab.value = 'draft'
+          cachedNotifications = null
+          cacheTimestamp = 0
+          clearCacheFromStorage()
+          await fetchNotifications(true)
+          applyFilters()
+          return
+        }
+
+        // Check if template was saved as draft due to no users
+        if (result?.data?.savedAsDraftNoUsers) {
+          // Template was kept as draft - show info message and stay in draft tab
+          const platformName = getFormattedPlatformName({
+            platformName: result?.data?.platformName,
+            bakongPlatform: result?.data?.bakongPlatform,
+            notification: notification as any,
+          })
+
+          ElNotification({
+            title: 'Info',
+            message: getNoUsersAvailableMessage(platformName),
+            type: 'info',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          activeTab.value = 'draft'
+        } else if (result?.data?.successfulCount > 0) {
+          // Successfully published and sent to users
+          const successfulCount = result?.data?.successfulCount ?? 0
+          const userText = successfulCount === 1 ? 'user' : 'users'
+          ElNotification({
+            title: 'Success',
+            message: `Notification published and sent to ${successfulCount} ${userText} successfully!`,
+            type: 'success',
+            duration: 2000,
+          })
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
+        } else {
+          // No users received the notification - show warning and keep in draft
+          ElNotification({
+            title: 'Info',
+            message: 'Notification could not be sent. No users received the notification. It has been kept as a draft.',
+            type: 'info',
+            duration: 3000,
+          })
+          activeTab.value = 'draft'
+        }
         cachedNotifications = null
         cacheTimestamp = 0
         clearCacheFromStorage()
         await fetchNotifications(true)
         applyFilters()
-        return
+      } catch (updateError: any) {
+        // If updateTemplate fails, throw to be caught by outer catch block
+        throw updateError
       }
-
-      ElNotification({
-        title: 'Success',
-        message: `Notification published successfully!`,
-        type: 'success',
-        duration: 2000,
-      })
-      const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
-      if (notificationIndex !== -1) {
-        notifications.value[notificationIndex].status = 'published'
-        notifications.value[notificationIndex].isSent = true
-      }
-      activeTab.value = 'published'
-      cachedNotifications = null
-      cacheTimestamp = 0
-      clearCacheFromStorage()
-      await fetchNotifications(true)
-      applyFilters()
     }
   } catch (error: any) {
     console.error('Failed to publish notification:', error)

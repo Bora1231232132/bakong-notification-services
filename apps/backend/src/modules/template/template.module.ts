@@ -9,6 +9,7 @@ import { NotificationModule } from '../notification/notification.module'
 import { ImageModule } from '../image/image.module'
 import { Image } from 'src/entities/image.entity'
 import { BakongUser } from 'src/entities/bakong-user.entity'
+import { User } from 'src/entities/user.entity'
 import { ImageService } from '../image/image.service'
 import { PaginationUtils } from '@bakong/shared'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
@@ -17,7 +18,7 @@ import { Logger } from '@nestjs/common'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Template, TemplateTranslation, Image, BakongUser]),
+    TypeOrmModule.forFeature([Template, TemplateTranslation, Image, BakongUser, User]),
     forwardRef(() => NotificationModule),
     forwardRef(() => ImageModule),
     ScheduleModule,

@@ -173,18 +173,21 @@ export class InboxResponseDto implements NotificationData {
     sharedNotificationId?: number,
     sharedSuccessfulCount?: number,
     sharedFailedCount?: number,
+    sharedFailedUsers?: Array<{ accountId: string; error: string; errorCode?: string }>,
   ) {
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
         successfulCount: successfulNotifications.length,
         failedCount: failedUsers.length,
+        failedUsers: failedUsers.map((u) => u.accountId),
       }
     } else {
       return {
         notificationId: sharedNotificationId || null,
         successfulCount: sharedSuccessfulCount ?? 0,
         failedCount: sharedFailedCount ?? 0,
+        failedUsers: (sharedFailedUsers || []).map((u) => u.accountId),
       }
     }
   }

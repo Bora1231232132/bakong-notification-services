@@ -8,6 +8,7 @@ import { UploadImageDto } from './dto/upload-image.dto'
 import { TemplateTranslation } from '../../entities/template-translation.entity'
 import { BaseFunctionHelper } from '../../common/util/base-function.helper'
 import sharp from 'sharp'
+import { createHash } from 'crypto'
 
 @Injectable()
 export class ImageService {
@@ -64,25 +65,23 @@ export class ImageService {
   }
 
   async create(dto: UploadImageDto) {
-    if (dto.file) {
-      const compressed = await this.compressImage(dto.file, dto.mimeType || 'image/jpeg')
-      dto.file = compressed.buffer
-      dto.mimeType = compressed.mimeType
-    }
-
     const fileBuffer = dto.file as Buffer
-    try {
-      const existingImageResult = await this.repo.manager.query(
-        `SELECT "fileId" FROM image WHERE md5(file) = md5($1::bytea) LIMIT 1`,
-        [fileBuffer],
-      )
 
-      if (existingImageResult && existingImageResult.length > 0) {
-        const existingFileId = existingImageResult[0].fileId
+    // Step 1: Compute MD5 hash in memory (fast) - BEFORE compression
+    const fileHash = createHash('md5').update(fileBuffer).digest('hex')
+
+    // Step 2: Check if hash exists using indexed column (fast lookup)
+    try {
+      const existingImage = await this.repo.findOne({
+        where: { fileHash },
+        select: ['fileId'],
+      })
+
+      if (existingImage) {
         this.logger.log(
-          `✅ Image with same file content already exists (fileId: ${existingFileId}), reusing existing record`,
+          `✅ Image with same file content already exists (fileId: ${existingImage.fileId}), reusing existing record`,
         )
-        return { fileId: existingFileId }
+        return { fileId: existingImage.fileId }
       }
     } catch (error) {
       this.logger.warn(
@@ -90,10 +89,47 @@ export class ImageService {
       )
     }
 
-    let image = this.repo.create(dto)
-    image = await this.repo.save(image)
-    this.logger.log(`Created new image record (fileId: ${image.fileId})`)
-    return { fileId: image.fileId }
+    // Step 3: Only compress if image doesn't exist (save processing time)
+    if (dto.file) {
+      const compressed = await this.compressImage(dto.file, dto.mimeType || 'image/jpeg')
+      dto.file = compressed.buffer
+      dto.mimeType = compressed.mimeType
+    }
+
+    // Step 4: Create new image record with hash
+    // Handle race condition: if two requests upload same image simultaneously,
+    // one will succeed and the other will get unique constraint violation
+    try {
+      let image = this.repo.create({ ...dto, fileHash })
+      image = await this.repo.save(image)
+      this.logger.log(`Created new image record (fileId: ${image.fileId})`)
+      return { fileId: image.fileId }
+    } catch (error: any) {
+      // Handle race condition: if unique constraint violation on fileHash,
+      // another request already inserted this image, so fetch and return it
+      if (error?.code === '23505' || error?.code === 23505) {
+        // Check if it's the fileHash constraint
+        const constraintName = error?.constraint || error?.detail || ''
+        if (constraintName.includes('fileHash') || constraintName.includes('UQ_image_fileHash')) {
+          this.logger.log(
+            `⚠️ Race condition detected: Another request already inserted this image. Fetching existing record...`,
+          )
+          // Fetch the existing image that was just inserted by the other request
+          const existingImage = await this.repo.findOne({
+            where: { fileHash },
+            select: ['fileId'],
+          })
+          if (existingImage) {
+            this.logger.log(
+              `✅ Found existing image from race condition (fileId: ${existingImage.fileId}), reusing existing record`,
+            )
+            return { fileId: existingImage.fileId }
+          }
+        }
+      }
+      // Re-throw if it's not a fileHash unique constraint violation
+      throw error
+    }
   }
 
   async findByFileId(fileId: string) {

@@ -40,13 +40,13 @@ export class NotificationService {
     return FirebaseManager.getMessaging(bakongPlatform)
   }
 
-  async sendWithTemplate(template: Template): Promise<number> {
+  async sendWithTemplate(template: Template): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[] }> {
     console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
     console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
 
     if (!template.translations?.length) {
       console.warn('⚠️ [sendWithTemplate] No translations found for template:', template.id)
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     // Parse platforms - handle both array and JSON string formats
@@ -128,13 +128,13 @@ export class NotificationService {
 
     if (!matchingUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users match the platform filter')
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     const defaultTranslation = this.templateService.findBestTranslation(template, Language.EN)
     if (!defaultTranslation) {
       console.warn('⚠️ [sendWithTemplate] No default translation found')
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
@@ -142,7 +142,7 @@ export class NotificationService {
 
     if (!usersWithTokens.length) {
       console.warn('⚠️ [sendWithTemplate] No users have FCM tokens')
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     // Get FCM instance for template's bakongPlatform
@@ -151,7 +151,7 @@ export class NotificationService {
       console.error(
         '❌ [sendWithTemplate] Firebase FCM is not initialized. Cannot send notifications.',
       )
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     console.log('📤 [sendWithTemplate] Validating FCM tokens...')
@@ -160,7 +160,7 @@ export class NotificationService {
 
     if (!validUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users have valid FCM tokens after validation')
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
     console.log('📤 [sendWithTemplate] Sending FCM notifications to', validUsers.length, 'users...')
@@ -170,15 +170,20 @@ export class NotificationService {
       validUsers,
       undefined,
       'individual',
-    )) as { notificationId: number | null; successfulCount: number; failedCount: number }
+    )) as { notificationId: number | null; successfulCount: number; failedCount: number; failedUsers?: string[] }
 
     console.log('✅ [sendWithTemplate] Notification send complete:', {
       successfulCount: result.successfulCount,
       failedCount: result.failedCount,
+      failedUsers: result.failedUsers?.length || 0,
       totalUsers: validUsers.length,
     })
 
-    return result.successfulCount
+    return {
+      successfulCount: result.successfulCount,
+      failedCount: result.failedCount,
+      failedUsers: result.failedUsers || [],
+    }
   }
 
   async sendNow(dto: SentNotificationDto, req?: any) {
@@ -510,7 +515,7 @@ export class NotificationService {
 
       const firstRecord = savedRecords[0]
 
-      let fcmResult: { successfulCount: number; failedCount: number } | void
+      let fcmResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } | void
       try {
         fcmResult = await this.sendFCM(
           template,
@@ -529,6 +534,18 @@ export class NotificationService {
         console.log(
           `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
         )
+        
+        // Log failed users if any - Make it very visible in Docker logs
+        if (fcmResult.failedUsers && fcmResult.failedUsers.length > 0) {
+          console.log('')
+          console.log('='.repeat(80))
+          console.log(`❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`)
+          console.log('='.repeat(80))
+          console.log(JSON.stringify(fcmResult.failedUsers, null, 2))
+          console.log('='.repeat(80))
+          console.log('')
+        }
+        
         if (fcmResult.successfulCount === 0 && fcmResult.failedCount > 0) {
           throw new Error(
             `Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`,
@@ -555,8 +572,17 @@ export class NotificationService {
         firstRecord.id,
         firstRecord.sendCount,
       )
+      
+      // Include successful count and failed users in response
+      const responseData: any = { whatnews: whatNews }
+      if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
+        responseData.successfulCount = fcmResult.successfulCount
+        responseData.failedCount = fcmResult.failedCount
+        responseData.failedUsers = fcmResult.failedUsers || []
+      }
+      
       return BaseResponseDto.success({
-        data: { whatnews: whatNews },
+        data: responseData,
         message: `Send ${template.notificationType} to users successfully`,
       })
     } catch (error: any) {
@@ -579,6 +605,7 @@ export class NotificationService {
     notificationId: number | null
     successfulCount: number
     failedCount: number
+    failedUsers?: string[]
   } | void> {
     console.log('📨 [sendFCM] Starting FCM send process:', {
       templateId: template.id,
@@ -591,6 +618,7 @@ export class NotificationService {
       const failedUsers: Array<{ accountId: string; error: string; errorCode?: string }> = []
       let sharedSuccessfulCount = 0
       let sharedFailedCount = 0
+      const sharedFailedUsers: Array<{ accountId: string; error: string; errorCode?: string }> = []
 
       const imageUrl = translation.imageId
         ? this.imageService.buildImageUrl(translation.imageId, req)
@@ -672,6 +700,10 @@ export class NotificationService {
             console.warn('⚠️ [sendFCM] No response from FCM for user:', user.accountId)
             if (mode === 'shared') {
               sharedFailedCount++
+              sharedFailedUsers.push({
+                accountId: user.accountId,
+                error: 'No response from FCM',
+              })
             }
           }
         } catch (error: any) {
@@ -689,6 +721,11 @@ export class NotificationService {
             })
           } else if (mode === 'shared') {
             sharedFailedCount++
+            sharedFailedUsers.push({
+              accountId: user.accountId,
+              error: error.message,
+              errorCode: error.code,
+            })
           }
           // Continue to next user instead of throwing - don't stop sending to other users
           continue
@@ -706,6 +743,24 @@ export class NotificationService {
         mode: mode,
       })
 
+      // Log failed users summary if any - Make it very visible in Docker logs
+      const allFailedUsers = mode === 'individual' ? failedUsers : sharedFailedUsers
+      if (allFailedUsers.length > 0) {
+        const failedAccountIds = allFailedUsers.map((u) => u.accountId)
+        console.log('')
+        console.log('='.repeat(80))
+        console.log(`❌ [sendFCM] FAILED USERS SUMMARY - ${allFailedUsers.length} user(s) failed:`)
+        console.log('='.repeat(80))
+        console.log('Failed Account IDs:', JSON.stringify(failedAccountIds, null, 2))
+        console.log('')
+        console.log('Detailed Error Information:')
+        allFailedUsers.forEach((failedUser, index) => {
+          console.log(`  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''}`)
+        })
+        console.log('='.repeat(80))
+        console.log('')
+      }
+
       return InboxResponseDto.buildFCMResult(
         mode,
         successfulNotifications,
@@ -714,9 +769,14 @@ export class NotificationService {
         sharedNotificationId,
         sharedSuccessfulCount,
         sharedFailedCount,
+        sharedFailedUsers,
       )
     } catch (error: any) {
       console.error('❌ [sendFCM] Critical error in sendFCM:', error.message)
+      const allFailedUsers = validUsers.map((u) => ({
+        accountId: u.accountId,
+        error: error.message || 'Critical error in sendFCM',
+      }))
       return InboxResponseDto.buildFCMResult(
         mode,
         [],
@@ -725,6 +785,7 @@ export class NotificationService {
         undefined,
         0,
         validUsers.length,
+        allFailedUsers,
       )
     }
   }
@@ -1318,6 +1379,27 @@ export class NotificationService {
       console.log(`Deleted ${result.affected || 0} notification records for template ${templateId}`)
     } catch (error) {
       console.error(`Error deleting notification records for template ${templateId}:`, error)
+      throw error
+    }
+  }
+
+  async updateNotificationTemplateId(oldTemplateId: number, newTemplateId: number): Promise<void> {
+    try {
+      console.log(
+        `Updating notification records: templateId ${oldTemplateId} -> ${newTemplateId}`,
+      )
+      const result = await this.notiRepo.update(
+        { templateId: oldTemplateId },
+        { templateId: newTemplateId },
+      )
+      console.log(
+        `Updated ${result.affected || 0} notification records from template ${oldTemplateId} to ${newTemplateId}`,
+      )
+    } catch (error) {
+      console.error(
+        `Error updating notification records from template ${oldTemplateId} to ${newTemplateId}:`,
+        error,
+      )
       throw error
     }
   }

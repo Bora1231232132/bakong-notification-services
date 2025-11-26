@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS image (
     id SERIAL PRIMARY KEY,
     "fileId" VARCHAR(255) NOT NULL UNIQUE,
     file BYTEA,
+    "fileHash" VARCHAR(32) UNIQUE,
     "mimeType" VARCHAR(100),
     "originalFileName" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -242,6 +243,21 @@ BEGIN
     END IF;
 END$$;
 
+-- Add fileHash to image table (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'fileHash'
+    ) THEN
+        ALTER TABLE image ADD COLUMN "fileHash" VARCHAR(32);
+        RAISE NOTICE '✅ Added fileHash column to image table';
+    ELSE
+        RAISE NOTICE 'ℹ️  image.fileHash already exists';
+    END IF;
+END$$;
+
 \echo '   ✅ Columns migration completed'
 \echo ''
 
@@ -323,8 +339,91 @@ CREATE INDEX IF NOT EXISTS "IDX_template_translation_language" ON template_trans
 CREATE INDEX IF NOT EXISTS "IDX_user_username" ON "user"(username);
 CREATE INDEX IF NOT EXISTS "IDX_user_role" ON "user"(role);
 CREATE INDEX IF NOT EXISTS "IDX_image_fileId" ON image("fileId");
+CREATE INDEX IF NOT EXISTS "IDX_image_fileHash" ON image("fileHash");
 
 \echo '   ✅ Indexes created'
+\echo ''
+
+-- ============================================================================
+-- Step 7.5: Populate fileHash for existing images and add unique constraint
+-- ============================================================================
+\echo '📊 Step 7.5: Populating fileHash for existing images...'
+
+DO $$
+DECLARE
+    image_record RECORD;
+    hash_value TEXT;
+    processed_count INTEGER := 0;
+BEGIN
+    -- Populate fileHash for existing images that don't have it
+    FOR image_record IN 
+        SELECT id, file FROM image WHERE "fileHash" IS NULL AND file IS NOT NULL
+    LOOP
+        -- Compute MD5 hash of the file
+        SELECT md5(image_record.file) INTO hash_value;
+        
+        -- Update the record with the hash
+        UPDATE image SET "fileHash" = hash_value WHERE id = image_record.id;
+        
+        processed_count := processed_count + 1;
+        
+        -- Log progress every 100 records
+        IF processed_count % 100 = 0 THEN
+            RAISE NOTICE '   Processed % images...', processed_count;
+        END IF;
+    END LOOP;
+    
+    IF processed_count > 0 THEN
+        RAISE NOTICE '✅ Populated fileHash for % existing images', processed_count;
+    ELSE
+        RAISE NOTICE 'ℹ️  No existing images need fileHash population';
+    END IF;
+END$$;
+
+\echo '   ✅ Existing images processed'
+\echo ''
+
+-- Add unique constraint on fileHash (after population)
+DO $$
+BEGIN
+    -- Check if unique constraint already exists
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'UQ_image_fileHash'
+    ) THEN
+        -- First, handle any duplicate hashes (shouldn't happen, but just in case)
+        -- Keep the oldest record for each hash
+        DELETE FROM image a
+        USING image b
+        WHERE a.id > b.id 
+        AND a."fileHash" = b."fileHash"
+        AND a."fileHash" IS NOT NULL;
+        
+        -- Now add unique constraint
+        ALTER TABLE image ADD CONSTRAINT "UQ_image_fileHash" UNIQUE ("fileHash");
+        RAISE NOTICE '✅ Added unique constraint on fileHash';
+    ELSE
+        RAISE NOTICE 'ℹ️  Unique constraint on fileHash already exists';
+    END IF;
+END$$;
+
+-- Make fileHash NOT NULL (after population and constraint)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'fileHash'
+        AND is_nullable = 'YES'
+    ) THEN
+        ALTER TABLE image ALTER COLUMN "fileHash" SET NOT NULL;
+        RAISE NOTICE '✅ Made fileHash NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  fileHash is already NOT NULL';
+    END IF;
+END$$;
+
+\echo '   ✅ fileHash migration completed'
 \echo ''
 
 -- ============================================================================

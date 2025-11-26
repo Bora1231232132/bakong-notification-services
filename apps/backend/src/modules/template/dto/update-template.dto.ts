@@ -5,6 +5,7 @@ import { CategoryType, NotificationType, Platform, SendType, BakongApp } from '@
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class UpdateTemplateDto {
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @Transform(({ value }) => {
@@ -14,12 +15,13 @@ export class UpdateTemplateDto {
     return value
   })
   @IsEnum(Platform, { each: true })
-  platforms: Platform[]
+  platforms?: Platform[]
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TemplateTranslationDto)
-  translations: TemplateTranslationDto[]
+  translations?: TemplateTranslationDto[]
 
   @IsOptional()
   @IsEnum(NotificationType)

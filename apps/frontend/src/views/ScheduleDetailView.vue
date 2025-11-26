@@ -64,7 +64,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElDialog, ElButton } from 'element-plus'
 import { Warning, Picture } from '@element-plus/icons-vue'
 import { typeApi } from '../services/typeApi'
+import { notificationApi } from '@/services/notificationApi'
+import { SendType, Platform } from '@/utils/helpers'
 import { useErrorHandler } from '@/composables/useErrorHandler'
+import { api } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,9 +120,57 @@ const handlePublishNow = async () => {
   try {
     publishing.value = true
 
+    if (!scheduleData.value.id) {
+      showInfo('Schedule ID not found')
+      return
+    }
+
     showInfo('Publishing schedule...')
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    
+    // First, fetch the full template data to get platforms and translations
+    const fullTemplate = await typeApi.getTemplateById(Number(scheduleData.value.id))
+    const templateResponse = await api.get(`/api/v1/template/${scheduleData.value.id}`)
+    const template = templateResponse.data?.data || templateResponse.data
+
+    // Prepare update payload with existing template data
+    const updatePayload: any = {
+      sendType: SendType.SEND_NOW,
+      isSent: true,
+      sendSchedule: null, // Clear schedule when publishing immediately
+    }
+
+    // Include platforms from template (default to [IOS, ANDROID] if not set)
+    if (template?.platforms && Array.isArray(template.platforms) && template.platforms.length > 0) {
+      updatePayload.platforms = template.platforms
+    } else {
+      // Default to both platforms if not set (ALL)
+      updatePayload.platforms = [Platform.IOS, Platform.ANDROID]
+    }
+
+    // Include translations from template
+    if (template?.translations && Array.isArray(template.translations) && template.translations.length > 0) {
+      updatePayload.translations = template.translations.map((t: any) => ({
+        language: t.language,
+        title: t.title,
+        content: t.content,
+        image: t.image?.fileId || t.imageId || t.image?.id || '',
+        linkPreview: t.linkPreview || undefined,
+      }))
+    }
+
+    const result = await notificationApi.updateTemplate(Number(scheduleData.value.id), updatePayload)
+
+    // Check if error response
+    if (result?.responseCode !== 0 || result?.errorCode !== 0) {
+      const errorMessage =
+        result?.responseMessage || result?.message || 'Failed to publish schedule'
+      showInfo(errorMessage)
+      return
+    }
+
     showSuccess('Schedule published successfully!')
+    // Refresh the schedule data
+    await fetchScheduleDetail()
   } catch (error) {
     handleApiError(error, { operation: 'publishSchedule' })
   } finally {

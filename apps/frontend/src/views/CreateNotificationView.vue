@@ -256,7 +256,7 @@
           </div>
           <div class="action-buttons">
             <Button
-              text="Publish now"
+              :text="publishButtonText"
               variant="primary"
               size="medium"
               width="123px"
@@ -264,6 +264,7 @@
               @click="handlePublishNow"
             />
             <Button
+              v-if="!isEditingPublished"
               text="Save draft"
               variant="secondary"
               size="medium"
@@ -340,6 +341,19 @@ const route = useRoute()
 
 const isEditMode = computed(() => route.name === 'edit-notification')
 const notificationId = computed(() => route.params.id as string)
+const fromTab = computed(() => (route.query.fromTab as string) || '')
+const isEditingPublished = ref(false)
+
+// Dynamic button text based on context
+const publishButtonText = computed(() => {
+  if (isEditingPublished.value) {
+    return 'Update now'
+  }
+  if (formData.scheduleEnabled) {
+    return 'Schedule Now'
+  }
+  return 'Publish now'
+})
 
 const languages = [
   { code: Language.KM, name: 'Khmer' },
@@ -484,6 +498,9 @@ const loadNotificationData = async () => {
     const template = res.data?.data
 
     if (!template) return
+
+    // Check if editing a published notification (either from fromTab query or isSent status)
+    isEditingPublished.value = fromTab.value === 'published' || template.isSent === true
 
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
@@ -873,14 +890,47 @@ const handlePublishNow = async () => {
         duration: 2000,
       })
     } else {
+      // Get successful count from response if available
+      // Debug: log the full result to see the structure
+      console.log('📊 [CreateNotificationView] Full result:', result)
+      console.log('📊 [CreateNotificationView] result.data:', result?.data)
+      
+      const successfulCount = result?.data?.successfulCount
+      const failedCount = result?.data?.failedCount
+      const failedUsers = result?.data?.failedUsers || []
+      
+      console.log('📊 [CreateNotificationView] Send result:', {
+        successfulCount,
+        failedCount,
+        failedUsers,
+      })
+      
+      let message = isEditMode.value
+        ? 'Notification updated and published successfully!'
+        : 'Notification created and published successfully!'
+      
+      // Add user count if available
+      if (successfulCount !== undefined && successfulCount !== null && successfulCount > 0) {
+        const userText = successfulCount === 1 ? 'user' : 'users'
+        message = isEditMode.value
+          ? `Notification updated and published to ${successfulCount} ${userText} successfully!`
+          : `Notification created and published to ${successfulCount} ${userText} successfully!`
+      }
+      
       ElNotification({
         title: 'Success',
-        message: isEditMode.value
-          ? 'Notification updated and published successfully!'
-          : 'Notification created and published successfully!',
+        message: message,
         type: 'success',
         duration: 2000,
       })
+      
+      // Log failed users to console if any
+      if (failedCount > 0 && failedUsers.length > 0) {
+        console.warn(
+          `⚠️ Failed to send notification to ${failedCount} user(s):`,
+          failedUsers,
+        )
+      }
     }
     try {
       localStorage.removeItem('notifications_cache')
@@ -978,6 +1028,16 @@ const handleSaveDraft = async () => {
         }
       } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
         imageId = existingImageIds[langKey]
+      }
+
+      // For drafts: include translation if it has title OR content OR image
+      // This allows saving drafts with just an image, or just title/content, or any combination
+      const hasTitle = title && title.trim() !== ''
+      const hasContent = content && content.trim() !== ''
+      const hasImage = !!imageId || !!langData.imageFile
+
+      if (!hasTitle && !hasContent && !hasImage) {
+        continue
       }
 
       translations.push({
