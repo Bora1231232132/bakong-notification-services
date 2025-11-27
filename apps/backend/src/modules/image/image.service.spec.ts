@@ -78,9 +78,9 @@ describe('ImageService', () => {
   })
 
   describe('Service Definition', () => {
-  it('should be defined', () => {
-    expect(service).toBeDefined()
-  })
+    it('should be defined', () => {
+      expect(service).toBeDefined()
+    })
   })
 
   describe('findByFileId', () => {
@@ -91,12 +91,12 @@ describe('ImageService', () => {
         expect(result).toEqual(mockImage)
         expect(imageRepo.findOneBy).toHaveBeenCalledTimes(1)
         expect(imageRepo.findOneBy).toHaveBeenCalledWith({ fileId })
-    })
+      })
     })
 
     describe('Error Cases', () => {
       it('should throw NotFoundException when image not found', async () => {
-      imageRepo.findOneBy.mockResolvedValueOnce(null)
+        imageRepo.findOneBy.mockResolvedValueOnce(null)
 
         await expect(service.findByFileId(fileId)).rejects.toThrow(NotFoundException)
 
@@ -135,7 +135,7 @@ describe('ImageService', () => {
           resize: jest.fn().mockReturnThis(),
           jpeg: jest.fn().mockReturnThis(),
           toBuffer: jest.fn().mockResolvedValue(createMockBuffer(512)),
-    }
+        }
         ;(sharp as any).mockReturnValue(mockSharpInstance)
 
         const dto = createUploadDto()

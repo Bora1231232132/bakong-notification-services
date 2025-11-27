@@ -894,20 +894,20 @@ const handlePublishNow = async () => {
       // Debug: log the full result to see the structure
       console.log('📊 [CreateNotificationView] Full result:', result)
       console.log('📊 [CreateNotificationView] result.data:', result?.data)
-      
+
       const successfulCount = result?.data?.successfulCount
       const failedCount = result?.data?.failedCount
       const failedUsers = result?.data?.failedUsers || []
-      
+
       console.log('📊 [CreateNotificationView] Send result:', {
         successfulCount,
         failedCount,
         failedUsers,
       })
-      
+
       // Check if this is a flash notification
       const isFlashNotification = formData.notificationType === NotificationType.FLASH_NOTIFICATION
-      
+
       let message = isFlashNotification
         ? isEditMode.value
           ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
@@ -915,21 +915,26 @@ const handlePublishNow = async () => {
         : isEditMode.value
           ? 'Notification updated and published successfully!'
           : 'Notification created and published successfully!'
-      
+
       // Add user count if available (only for non-flash notifications)
-      if (!isFlashNotification && successfulCount !== undefined && successfulCount !== null && successfulCount > 0) {
+      if (
+        !isFlashNotification &&
+        successfulCount !== undefined &&
+        successfulCount !== null &&
+        successfulCount > 0
+      ) {
         const userText = successfulCount === 1 ? 'user' : 'users'
         message = isEditMode.value
           ? `Notification updated and published to ${successfulCount} ${userText} successfully!`
           : `Notification created and published to ${successfulCount} ${userText} successfully!`
       }
-      
+
       // For flash notifications, replace bakongPlatform with bold platform name
       if (isFlashNotification) {
         const platformName = formatBakongApp(formData.platform)
         message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
       }
-      
+
       ElNotification({
         title: 'Success',
         message: message,
@@ -937,13 +942,10 @@ const handlePublishNow = async () => {
         duration: 2000,
         dangerouslyUseHTMLString: isFlashNotification,
       })
-      
+
       // Log failed users to console if any
       if (failedCount > 0 && failedUsers.length > 0) {
-        console.warn(
-          `⚠️ Failed to send notification to ${failedCount} user(s):`,
-          failedUsers,
-        )
+        console.warn(`⚠️ Failed to send notification to ${failedCount} user(s):`, failedUsers)
       }
     }
     try {

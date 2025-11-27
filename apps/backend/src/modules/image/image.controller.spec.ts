@@ -59,9 +59,9 @@ describe('ImageController', () => {
   })
 
   describe('Controller Definition', () => {
-  it('should be defined', () => {
-    expect(controller).toBeDefined()
-  })
+    it('should be defined', () => {
+      expect(controller).toBeDefined()
+    })
   })
 
   describe('uploadFiles', () => {
@@ -246,9 +246,7 @@ describe('ImageController', () => {
         } catch (error: any) {
           expect(error.responseCode).toBe(1)
           expect(error.errorCode).toBe(ErrorCode.VALIDATION_FAILED)
-          expect(error.data.validations).toContain(
-            `files[0] exceeds 10MB (size: ${maxBytes + 1})`,
-          )
+          expect(error.data.validations).toContain(`files[0] exceeds 10MB (size: ${maxBytes + 1})`)
         }
       })
 
@@ -271,7 +269,9 @@ describe('ImageController', () => {
           fail('Should have thrown an error')
         } catch (error: any) {
           expect(error.responseCode).toBe(1)
-          expect(error.data.validations).toContain('files[0] is not an image (type: application/pdf)')
+          expect(error.data.validations).toContain(
+            'files[0] is not an image (type: application/pdf)',
+          )
         }
       })
 
@@ -312,7 +312,9 @@ describe('ImageController', () => {
         } catch (error: any) {
           expect(error.data.validations).toHaveLength(2)
           expect(error.data.validations.some((v: string) => v.includes('exceeds 10MB'))).toBe(true)
-          expect(error.data.validations.some((v: string) => v.includes('is not an image'))).toBe(true)
+          expect(error.data.validations.some((v: string) => v.includes('is not an image'))).toBe(
+            true,
+          )
         }
       })
 
@@ -337,7 +339,9 @@ describe('ImageController', () => {
           await controller.uploadFiles([emptyFile])
           fail('Should have thrown an error')
         } catch (error: any) {
-          expect(error.data.validations.some((v: string) => v.includes('is not an image'))).toBe(true)
+          expect(error.data.validations.some((v: string) => v.includes('is not an image'))).toBe(
+            true,
+          )
         }
       })
     })
@@ -378,7 +382,7 @@ describe('ImageController', () => {
 
         await controller.findByFileId(mockResponse as Response, fileId)
 
-    expect(service.findByFileId).toHaveBeenCalledWith(fileId)
+        expect(service.findByFileId).toHaveBeenCalledWith(fileId)
         expect(mockResponse.set).toHaveBeenCalledWith({
           'Content-Type': 'image/jpeg',
         })

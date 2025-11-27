@@ -126,7 +126,7 @@ const handlePublishNow = async () => {
     }
 
     showInfo('Publishing schedule...')
-    
+
     // First, fetch the full template data to get platforms and translations
     const fullTemplate = await typeApi.getTemplateById(Number(scheduleData.value.id))
     const templateResponse = await api.get(`/api/v1/template/${scheduleData.value.id}`)
@@ -148,7 +148,11 @@ const handlePublishNow = async () => {
     }
 
     // Include translations from template
-    if (template?.translations && Array.isArray(template.translations) && template.translations.length > 0) {
+    if (
+      template?.translations &&
+      Array.isArray(template.translations) &&
+      template.translations.length > 0
+    ) {
       updatePayload.translations = template.translations.map((t: any) => ({
         language: t.language,
         title: t.title,
@@ -158,7 +162,10 @@ const handlePublishNow = async () => {
       }))
     }
 
-    const result = await notificationApi.updateTemplate(Number(scheduleData.value.id), updatePayload)
+    const result = await notificationApi.updateTemplate(
+      Number(scheduleData.value.id),
+      updatePayload,
+    )
 
     // Check if error response
     if (result?.responseCode !== 0 || result?.errorCode !== 0) {

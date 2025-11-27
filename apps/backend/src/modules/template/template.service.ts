@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, OnModuleInit, Inject, forwardRef, Logger } from '@nestjs/common'
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleInit,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common'
 import { SchedulerRegistry } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { CronJob } from 'cron'
@@ -235,22 +242,22 @@ export class TemplateService implements OnModuleInit {
 
       // Only apply fallback logic for published notifications, not drafts
       if (!isDraft) {
-      dto.translations.forEach((translation) => {
-        if (
-          translation.title === undefined ||
-          translation.title === null ||
-          String(translation.title).trim() === ''
-        ) {
-          translation.title = getFallbackValue('title', translation.language)
-        }
-        if (
-          translation.content === undefined ||
-          translation.content === null ||
-          String(translation.content).trim() === ''
-        ) {
-          translation.content = getFallbackValue('content', translation.language)
-        }
-      })
+        dto.translations.forEach((translation) => {
+          if (
+            translation.title === undefined ||
+            translation.title === null ||
+            String(translation.title).trim() === ''
+          ) {
+            translation.title = getFallbackValue('title', translation.language)
+          }
+          if (
+            translation.content === undefined ||
+            translation.content === null ||
+            String(translation.content).trim() === ''
+          ) {
+            translation.content = getFallbackValue('content', translation.language)
+          }
+        })
       }
 
       // For drafts, filter translations to only include those with actual content (title, content, or image)
@@ -439,7 +446,8 @@ export class TemplateService implements OnModuleInit {
 
           console.log('🔵 [TEMPLATE CREATE] ✅ Translations found, calling sendWithTemplate...')
 
-          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } = { successfulCount: 0, failedCount: 0, failedUsers: [] }
+          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } =
+            { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let sendError: any = null
           let noUsersForPlatform = false
           try {
@@ -486,8 +494,8 @@ export class TemplateService implements OnModuleInit {
 
           // Only mark as published if we successfully sent to at least one user
           if (sendResult.successfulCount > 0) {
-          await this.markAsPublished(template.id, currentUser)
-          console.log('✅ Template marked as published:', template.id)
+            await this.markAsPublished(template.id, currentUser)
+            console.log('✅ Template marked as published:', template.id)
             console.log(`✅ Successfully sent to ${sendResult.successfulCount} user(s)`)
             if (sendResult.failedCount > 0) {
               console.log(`⚠️ Failed to send to ${sendResult.failedCount} user(s)`)
@@ -716,7 +724,7 @@ export class TemplateService implements OnModuleInit {
                 linkPreview: linkPreview,
                 updatedAt: new Date(),
               })
-              
+
               if (oldImageId !== imageId) {
                 this.logger.log(
                   `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId || 'null'}`,
@@ -764,7 +772,8 @@ export class TemplateService implements OnModuleInit {
         })
 
         if (templateWithTranslations && templateWithTranslations.translations) {
-          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } = { successfulCount: 0, failedCount: 0, failedUsers: [] }
+          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } =
+            { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let noUsersForPlatform = false
           try {
             sendResult = await this.notificationService.sendWithTemplate(templateWithTranslations)
@@ -791,14 +800,18 @@ export class TemplateService implements OnModuleInit {
           } else if (sendResult.successfulCount > 0) {
             // Successfully sent, mark as published
             await this.markAsPublished(updatedTemplate.id, currentUser)
-            console.log(`[UPDATE] Template published successfully, sent to ${sendResult.successfulCount} users`)
+            console.log(
+              `[UPDATE] Template published successfully, sent to ${sendResult.successfulCount} users`,
+            )
             // Include send result in template response
             ;(updatedTemplate as any).successfulCount = sendResult.successfulCount
             ;(updatedTemplate as any).failedCount = sendResult.failedCount
             ;(updatedTemplate as any).failedUsers = sendResult.failedUsers || []
-            } else {
+          } else {
             // No users received the notification - revert to draft
-            console.warn(`[UPDATE] No notifications were sent (successfulCount = 0) - reverting to draft`)
+            console.warn(
+              `[UPDATE] No notifications were sent (successfulCount = 0) - reverting to draft`,
+            )
             await this.repo.update(updatedTemplate.id, { isSent: false, updatedAt: new Date() })
             // Reload template to get updated isSent value
             const reloadedTemplate = await this.findOneRaw(id)
@@ -843,7 +856,8 @@ export class TemplateService implements OnModuleInit {
     try {
       const newTemplateData = {
         platforms: dto.platforms || oldTemplate.platforms,
-        bakongPlatform: dto.bakongPlatform !== undefined ? dto.bakongPlatform : oldTemplate.bakongPlatform,
+        bakongPlatform:
+          dto.bakongPlatform !== undefined ? dto.bakongPlatform : oldTemplate.bakongPlatform,
         sendType: oldTemplate.sendType,
         isSent: false,
         sendSchedule: oldTemplate.sendSchedule,
@@ -898,43 +912,52 @@ export class TemplateService implements OnModuleInit {
       // When editing a published notification, we should NOT resend FCM notifications
       // We just update the template data and notification records in the notification center
       // The notification records will automatically reflect the updated template data via the relationship
-      
+
       // Check if this is editing a published notification (oldTemplate.isSent === true)
       // When editing published notifications, we should NOT resend - just update the data
       const isEditingPublished = oldTemplate.isSent === true
-      
+
       if (newTemplate.sendType === 'SEND_NOW' && isEditingPublished) {
         // Editing a published notification - just update data, don't resend FCM
-        console.log(`📝 [editPublishedNotification] Editing published notification - updating data without resending FCM`)
-        
+        console.log(
+          `📝 [editPublishedNotification] Editing published notification - updating data without resending FCM`,
+        )
+
         // Mark as published (preserve published status)
         await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
-        console.log(`✅ [editPublishedNotification] Template updated and marked as published (no FCM resend)`)
-        
+        console.log(
+          `✅ [editPublishedNotification] Template updated and marked as published (no FCM resend)`,
+        )
+
         // Update notification records to point to new templateId BEFORE deleting old template
         // This ensures notification center shows updated data
         await this.notificationService.updateNotificationTemplateId(id, newTemplate.id)
       } else if (newTemplate.sendType === 'SEND_NOW' && dto.isSent === true) {
         // This shouldn't happen in editPublishedNotification (only drafts go through update method)
         // But handle it just in case - this would be publishing a draft for the first time
-        console.log(`⚠️ [editPublishedNotification] Unexpected: Publishing draft in editPublishedNotification`)
-        
+        console.log(
+          `⚠️ [editPublishedNotification] Unexpected: Publishing draft in editPublishedNotification`,
+        )
+
         // FLASH_NOTIFICATION should not send FCM - it only shows as popup when user opens app
         if (newTemplate.notificationType === NotificationType.FLASH_NOTIFICATION) {
-          console.log('🔵 [editPublishedNotification] FLASH_NOTIFICATION - no sending logic, just mark as published')
+          console.log(
+            '🔵 [editPublishedNotification] FLASH_NOTIFICATION - no sending logic, just mark as published',
+          )
           await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
           const templateToReturn = await this.findOneRaw(newTemplate.id)
           await this.forceDeleteTemplate(id)
           return this.formatTemplateResponse(templateToReturn)
         }
-        
+
         const templateWithTranslations = await this.repo.findOne({
           where: { id: newTemplate.id },
           relations: ['translations', 'translations.image'],
         })
 
         if (templateWithTranslations && templateWithTranslations.translations) {
-          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } = { successfulCount: 0, failedCount: 0, failedUsers: [] }
+          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } =
+            { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let noUsersForPlatform = false
           try {
             sendResult = await this.notificationService.sendWithTemplate(templateWithTranslations)
@@ -962,12 +985,12 @@ export class TemplateService implements OnModuleInit {
             ;(newTemplate as any).failedCount = sendResult.failedCount
             ;(newTemplate as any).failedUsers = sendResult.failedUsers || []
           }
-          }
-        } else {
+        }
+      } else {
         // Keep as draft if isSent is false
         await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
         console.log(`📝 [editPublishedNotification] Template updated and kept as draft`)
-        }
+      }
 
       if (newTemplate.sendType === 'SEND_SCHEDULE' && newTemplate.sendSchedule) {
         console.log(

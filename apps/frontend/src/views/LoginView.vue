@@ -204,14 +204,14 @@ const handleSubmitLogin = async (formRef: any) => {
       }
     } else {
       const errorMessage = result?.error || 'Login failed. Please try again.'
-      
+
       // Check if account is suspended
       const isAccountSuspended =
         errorMessage.toLowerCase().includes('suspended') ||
         errorMessage.toLowerCase().includes('too many login attempt') ||
         errorMessage.toLowerCase().includes('account timeout') ||
         errorMessage.toLowerCase().includes('temporarily locked')
-      
+
       ElNotification({
         title: isAccountSuspended ? 'Account Suspended' : 'Error',
         message: isAccountSuspended

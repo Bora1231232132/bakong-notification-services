@@ -778,7 +778,11 @@ const handlePublishNotification = async (notification: Notification) => {
         }
 
         // Include platforms from template (default to [IOS, ANDROID] if not set)
-        if (template?.platforms && Array.isArray(template.platforms) && template.platforms.length > 0) {
+        if (
+          template?.platforms &&
+          Array.isArray(template.platforms) &&
+          template.platforms.length > 0
+        ) {
           updatePayload.platforms = template.platforms
         } else {
           // Default to both platforms if not set (ALL)
@@ -786,7 +790,11 @@ const handlePublishNotification = async (notification: Notification) => {
         }
 
         // Include translations from template
-        if (template?.translations && Array.isArray(template.translations) && template.translations.length > 0) {
+        if (
+          template?.translations &&
+          Array.isArray(template.translations) &&
+          template.translations.length > 0
+        ) {
           updatePayload.translations = template.translations.map((t: any) => ({
             language: t.language,
             title: t.title,
@@ -850,15 +858,16 @@ const handlePublishNotification = async (notification: Notification) => {
           // Successfully published and sent to users
           const successfulCount = result?.data?.successfulCount ?? 0
           const userText = successfulCount === 1 ? 'user' : 'users'
-          
+
           // Check if this is a flash notification - check result data first, then template, then notification
-          const notificationType = result?.data?.notificationType || template?.notificationType || notification.type
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
           const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
-          
+
           let message = isFlashNotification
             ? 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
             : `Notification published and sent to ${successfulCount} ${userText} successfully!`
-          
+
           // For flash notifications, replace bakongPlatform with bold platform name
           if (isFlashNotification) {
             const platformName = getFormattedPlatformName({
@@ -868,35 +877,37 @@ const handlePublishNotification = async (notification: Notification) => {
             })
             message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
           }
-          
-        ElNotification({
-          title: 'Success',
+
+          ElNotification({
+            title: 'Success',
             message: message,
-          type: 'success',
-          duration: 2000,
-          dangerouslyUseHTMLString: isFlashNotification,
-        })
-        const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
-        if (notificationIndex !== -1) {
-          notifications.value[notificationIndex].status = 'published'
-          notifications.value[notificationIndex].isSent = true
-        }
-        activeTab.value = 'published'
+            type: 'success',
+            duration: 2000,
+            dangerouslyUseHTMLString: isFlashNotification,
+          })
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
         } else {
           // Check if this is a flash notification - even if no successfulCount, show flash message
-          const notificationType = result?.data?.notificationType || template?.notificationType || notification.type
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
           const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
-          
+
           if (isFlashNotification) {
             // For flash notifications, show success message even if no user count
-            let message = 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            let message =
+              'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
             const platformName = getFormattedPlatformName({
               platformName: result?.data?.platformName,
               bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
               notification: notification as any,
             })
             message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
-            
+
             ElNotification({
               title: 'Success',
               message: message,
@@ -904,7 +915,7 @@ const handlePublishNotification = async (notification: Notification) => {
               duration: 2000,
               dangerouslyUseHTMLString: true,
             })
-            
+
             const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
             if (notificationIndex !== -1) {
               notifications.value[notificationIndex].status = 'published'
@@ -915,7 +926,8 @@ const handlePublishNotification = async (notification: Notification) => {
             // No users received the notification - show warning and keep in draft
             ElNotification({
               title: 'Info',
-              message: 'Notification could not be sent. No users received the notification. It has been kept as a draft.',
+              message:
+                'Notification could not be sent. No users received the notification. It has been kept as a draft.',
               type: 'info',
               duration: 3000,
             })

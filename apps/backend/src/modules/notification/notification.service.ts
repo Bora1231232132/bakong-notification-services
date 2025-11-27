@@ -40,7 +40,9 @@ export class NotificationService {
     return FirebaseManager.getMessaging(bakongPlatform)
   }
 
-  async sendWithTemplate(template: Template): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[] }> {
+  async sendWithTemplate(
+    template: Template,
+  ): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[] }> {
     console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
     console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
 
@@ -170,7 +172,12 @@ export class NotificationService {
       validUsers,
       undefined,
       'individual',
-    )) as { notificationId: number | null; successfulCount: number; failedCount: number; failedUsers?: string[] }
+    )) as {
+      notificationId: number | null
+      successfulCount: number
+      failedCount: number
+      failedUsers?: string[]
+    }
 
     console.log('✅ [sendWithTemplate] Notification send complete:', {
       successfulCount: result.successfulCount,
@@ -243,18 +250,18 @@ export class NotificationService {
       if (dto.accountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
         // Always sync user data again to ensure all fields are up to date
         const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        
+
         console.log(`📤 [sendNow] Syncing user data for ${dto.accountId}`, {
           existingBakongPlatform: user?.bakongPlatform || 'NULL',
           providedBakongPlatform: dto.bakongPlatform || 'NULL',
           accountId: dto.accountId,
           participantCode: dto.participantCode || 'N/A',
         })
-        
+
         // Mobile app ALWAYS provides bakongPlatform in the request
         // This is the primary path - mobile provides all data including bakongPlatform
         let bakongPlatformToSync = dto.bakongPlatform
-        
+
         // Fallback logic (shouldn't normally happen since mobile always provides bakongPlatform):
         // Only used for edge cases like:
         // - Old mobile app versions that don't send bakongPlatform
@@ -293,15 +300,19 @@ export class NotificationService {
           participantCode: dto.participantCode,
           bakongPlatform: bakongPlatformToSync, // Mobile always provides this
         }
-        
-        console.log(`📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`, {
-          accountId: syncData.accountId,
-          language: syncData.language || 'N/A',
-          platform: syncData.platform || 'N/A',
-          participantCode: syncData.participantCode || 'N/A',
-          bakongPlatform: syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
-        })
-        
+
+        console.log(
+          `📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`,
+          {
+            accountId: syncData.accountId,
+            language: syncData.language || 'N/A',
+            platform: syncData.platform || 'N/A',
+            participantCode: syncData.participantCode || 'N/A',
+            bakongPlatform:
+              syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
+          },
+        )
+
         // Always sync all user data - mobile provides all fields including bakongPlatform
         await this.baseFunctionHelper.updateUserData(syncData)
 
@@ -534,18 +545,20 @@ export class NotificationService {
         console.log(
           `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
         )
-        
+
         // Log failed users if any - Make it very visible in Docker logs
         if (fcmResult.failedUsers && fcmResult.failedUsers.length > 0) {
           console.log('')
           console.log('='.repeat(80))
-          console.log(`❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`)
+          console.log(
+            `❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`,
+          )
           console.log('='.repeat(80))
           console.log(JSON.stringify(fcmResult.failedUsers, null, 2))
           console.log('='.repeat(80))
           console.log('')
         }
-        
+
         if (fcmResult.successfulCount === 0 && fcmResult.failedCount > 0) {
           throw new Error(
             `Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`,
@@ -572,7 +585,7 @@ export class NotificationService {
         firstRecord.id,
         firstRecord.sendCount,
       )
-      
+
       // Include successful count and failed users in response
       const responseData: any = { whatnews: whatNews }
       if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
@@ -580,7 +593,7 @@ export class NotificationService {
         responseData.failedCount = fcmResult.failedCount
         responseData.failedUsers = fcmResult.failedUsers || []
       }
-      
+
       return BaseResponseDto.success({
         data: responseData,
         message: `Send ${template.notificationType} to users successfully`,
@@ -755,7 +768,9 @@ export class NotificationService {
         console.log('')
         console.log('Detailed Error Information:')
         allFailedUsers.forEach((failedUser, index) => {
-          console.log(`  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''}`)
+          console.log(
+            `  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''}`,
+          )
         })
         console.log('='.repeat(80))
         console.log('')
@@ -1385,9 +1400,7 @@ export class NotificationService {
 
   async updateNotificationTemplateId(oldTemplateId: number, newTemplateId: number): Promise<void> {
     try {
-      console.log(
-        `Updating notification records: templateId ${oldTemplateId} -> ${newTemplateId}`,
-      )
+      console.log(`Updating notification records: templateId ${oldTemplateId} -> ${newTemplateId}`)
       const result = await this.notiRepo.update(
         { templateId: oldTemplateId },
         { templateId: newTemplateId },

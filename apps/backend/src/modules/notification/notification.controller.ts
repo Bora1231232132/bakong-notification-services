@@ -36,7 +36,10 @@ export class NotificationController {
         // Mobile app ALWAYS provides bakongPlatform in the request
         // Fallback: Only infer if mobile didn't provide it (shouldn't happen, but for backward compatibility)
         if (!dto.bakongPlatform) {
-          const inferredBakongPlatform = this.inferBakongPlatform(dto.participantCode, dto.accountId)
+          const inferredBakongPlatform = this.inferBakongPlatform(
+            dto.participantCode,
+            dto.accountId,
+          )
           if (inferredBakongPlatform) {
             console.warn(
               `⚠️ [sendNotification] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId} -> ${inferredBakongPlatform}`,

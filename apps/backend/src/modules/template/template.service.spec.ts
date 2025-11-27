@@ -7,7 +7,16 @@ import { TemplateTranslation } from 'src/entities/template-translation.entity'
 import { Image } from 'src/entities/image.entity'
 import { User } from 'src/entities/user.entity'
 import { BaseResponseDto } from 'src/common/base-response.dto'
-import { ErrorCode, ResponseMessage, SendType, NotificationType, CategoryType, Platform, Language, BakongApp } from '@bakong/shared'
+import {
+  ErrorCode,
+  ResponseMessage,
+  SendType,
+  NotificationType,
+  CategoryType,
+  Platform,
+  Language,
+  BakongApp,
+} from '@bakong/shared'
 import { plainToClass } from 'class-transformer'
 import { CreateTemplateDto } from './dto/create-template.dto'
 import { UpdateTemplateDto } from './dto/update-template.dto'
@@ -200,9 +209,9 @@ describe('TemplateService', () => {
   })
 
   describe('Service Definition', () => {
-  it('should be defined', () => {
-    expect(service).toBeDefined()
-  })
+    it('should be defined', () => {
+      expect(service).toBeDefined()
+    })
   })
 
   // ============================================
@@ -238,7 +247,10 @@ describe('TemplateService', () => {
       mockQueryBuilder.getOne.mockResolvedValueOnce(templateWithTranslations) // For findOneRaw at end of create()
       mockTranslationRepo.findOne.mockResolvedValue(null) // No existing translation
       mockTranslationRepo.save.mockResolvedValue(sampleTranslations[0])
-      mockNotificationService.sendWithTemplate.mockResolvedValue({ successfulCount: 10, failedCount: 0 }) // 10 users notified
+      mockNotificationService.sendWithTemplate.mockResolvedValue({
+        successfulCount: 10,
+        failedCount: 0,
+      }) // 10 users notified
       mockImageService.validateImageExists.mockResolvedValue(true)
 
       const result = await service.create(createDto, currentUser)
@@ -293,7 +305,7 @@ describe('TemplateService', () => {
       expect(result.sendType).toBe(SendType.SEND_SCHEDULE)
       expect(result.sendSchedule).toBeDefined()
     })
-    })
+  })
 
   describe('Create Flow - TC-CREATE-003: Create → Save Draft', () => {
     it('should create template as draft without sending', async () => {
@@ -348,7 +360,12 @@ describe('TemplateService', () => {
         ],
       }
 
-      const updatedTemplate = { ...draftTemplate, id: templateId, sendType: SendType.SEND_NOW, isSent: true }
+      const updatedTemplate = {
+        ...draftTemplate,
+        id: templateId,
+        sendType: SendType.SEND_NOW,
+        isSent: true,
+      }
       const templateWithTranslations = { ...updatedTemplate, translations: sampleTranslations }
 
       // Mock findOneRaw (uses createQueryBuilder internally)
@@ -364,19 +381,24 @@ describe('TemplateService', () => {
       mockTemplateRepo.findOne.mockResolvedValueOnce(templateWithTranslations)
       mockTranslationRepo.findOneBy.mockResolvedValue(sampleTranslations[0])
       mockTranslationRepo.update.mockResolvedValue({ affected: 1 })
-      mockNotificationService.sendWithTemplate.mockResolvedValue({ successfulCount: 5, failedCount: 0 })
+      mockNotificationService.sendWithTemplate.mockResolvedValue({
+        successfulCount: 5,
+        failedCount: 0,
+      })
       mockImageService.validateImageExists.mockResolvedValue(true)
 
       const result = await service.update(templateId, updateDto, currentUser)
 
-      expect(mockTemplateRepo.update).toHaveBeenCalledWith(templateId, expect.objectContaining({
-        sendType: SendType.SEND_NOW,
-        isSent: true,
-      }))
+      expect(mockTemplateRepo.update).toHaveBeenCalledWith(
+        templateId,
+        expect.objectContaining({
+          sendType: SendType.SEND_NOW,
+          isSent: true,
+        }),
+      )
       expect(mockNotificationService.sendWithTemplate).toHaveBeenCalled()
     })
   })
-
 
   describe('Update Flow - TC-EDIT-003: Edit Draft → Save Draft', () => {
     it('should update draft template without publishing', async () => {
@@ -414,18 +436,13 @@ describe('TemplateService', () => {
     })
   })
 
-
-
   // ============================================
   // PUBLISH NOW FROM TABS TESTS
   // ============================================
 
-
-
   // ============================================
   // EDIT PUBLISHED NOTIFICATION TESTS
   // ============================================
-
 
   // ============================================
   // ERROR HANDLING TESTS
@@ -438,7 +455,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_NOW,
         isSent: true,
         sendSchedule: null,
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -447,10 +464,10 @@ describe('TemplateService', () => {
         })),
       }
 
-      const updatedTemplate = { 
-        ...draftTemplate, 
+      const updatedTemplate = {
+        ...draftTemplate,
         id: templateId,
-        sendType: SendType.SEND_NOW, 
+        sendType: SendType.SEND_NOW,
         isSent: true,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
@@ -470,14 +487,21 @@ describe('TemplateService', () => {
       mockTemplateRepo.save.mockResolvedValue(newTemplate)
       mockTemplateRepo.update.mockResolvedValue({ affected: 1 })
       mockTemplateRepo.delete.mockResolvedValue({ affected: 1 })
-      mockTemplateRepo.findOne.mockResolvedValue({ ...newTemplate, translations: sampleTranslations })
+      mockTemplateRepo.findOne.mockResolvedValue({
+        ...newTemplate,
+        translations: sampleTranslations,
+      })
       mockTranslationRepo.save.mockResolvedValue(sampleTranslations[0])
       mockTranslationRepo.find.mockResolvedValue([])
       mockImageService.validateImageExists.mockResolvedValue(true)
       mockNotificationService.deleteNotificationsByTemplateId.mockResolvedValue(undefined)
 
       // Mock sendWithTemplate to return successfulCount: 0 (no users found scenario)
-      mockNotificationService.sendWithTemplate.mockResolvedValue({ successfulCount: 0, failedCount: 0, failedUsers: [] })
+      mockNotificationService.sendWithTemplate.mockResolvedValue({
+        successfulCount: 0,
+        failedCount: 0,
+        failedUsers: [],
+      })
 
       const result = await service.update(templateId, updateDto, currentUser)
 
@@ -485,7 +509,7 @@ describe('TemplateService', () => {
       // When sendWithTemplate returns successfulCount: 0, it updates the new template (id 4) with isSent: false at line 942
       // Check that update was called on the new template (id 4) OR check the result
       const updateCalls = mockTemplateRepo.update.mock.calls
-      const updateCallForNewTemplate = updateCalls.find(call => call[0] === 4)
+      const updateCallForNewTemplate = updateCalls.find((call) => call[0] === 4)
       // The update might happen, or the result might have savedAsDraftNoUsers flag
       if (updateCallForNewTemplate) {
         expect(updateCallForNewTemplate[1]).toMatchObject({ isSent: false })
@@ -495,7 +519,6 @@ describe('TemplateService', () => {
     })
   })
 
-
   describe('Error Handling - TC-ERROR-003: Publish with Invalid Schedule Format', () => {
     it('should throw error for invalid date format', async () => {
       const updateDto: UpdateTemplateDto = {
@@ -503,7 +526,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_SCHEDULE,
         isSent: false,
         sendSchedule: 'invalid-date-format',
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -525,14 +548,13 @@ describe('TemplateService', () => {
         BadRequestException,
       )
     })
-  })  
-
+  })
 
   describe('Error Handling - Template Not Found', () => {
     it('should throw error when template not found', async () => {
       const updateDto: UpdateTemplateDto = {
         platforms: [Platform.IOS, Platform.ANDROID],
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -558,7 +580,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_NOW,
         isSent: true,
         sendSchedule: null,
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -567,10 +589,10 @@ describe('TemplateService', () => {
         })),
       }
 
-      const updatedTemplate = { 
-        ...draftTemplate, 
+      const updatedTemplate = {
+        ...draftTemplate,
         id: templateId,
-        sendType: SendType.SEND_NOW, 
+        sendType: SendType.SEND_NOW,
         isSent: true,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
@@ -590,7 +612,10 @@ describe('TemplateService', () => {
         .mockResolvedValueOnce(templateWithTranslations)
       mockTranslationRepo.findOneBy.mockResolvedValue(sampleTranslations[0])
       mockTranslationRepo.update.mockResolvedValue({ affected: 1 })
-      mockNotificationService.sendWithTemplate.mockResolvedValue({ successfulCount: 0, failedCount: 0 }) // Zero users
+      mockNotificationService.sendWithTemplate.mockResolvedValue({
+        successfulCount: 0,
+        failedCount: 0,
+      }) // Zero users
 
       const result = await service.update(templateId, updateDto, currentUser)
 
@@ -598,8 +623,7 @@ describe('TemplateService', () => {
       expect(mockNotificationService.sendWithTemplate).toHaveBeenCalled()
       // Template should be marked as published (isSent: true)
     })
-    })
-
+  })
 
   describe('Edge Cases - Schedule Update with Existing Cron Job', () => {
     it('should delete old cron job before creating new one', async () => {
@@ -609,7 +633,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_SCHEDULE,
         isSent: false,
         sendSchedule: newFutureDate.toISOString(),
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -634,14 +658,17 @@ describe('TemplateService', () => {
         sendSchedule: newFutureDate,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
-      
+
       mockQueryBuilder.getOne
         .mockResolvedValueOnce({ ...scheduledTemplate, id: templateId }) // First call at line 556
         .mockResolvedValueOnce(templateAfterUpdate) // Second call at line 748 - MUST have sendType: SEND_SCHEDULE and sendSchedule
         .mockResolvedValueOnce(templateAfterUpdate) // Final call at line 815
 
       mockTemplateRepo.update.mockResolvedValue({ affected: 1 })
-      mockTemplateRepo.findOne.mockResolvedValue({ ...templateAfterUpdate, translations: sampleTranslations })
+      mockTemplateRepo.findOne.mockResolvedValue({
+        ...templateAfterUpdate,
+        translations: sampleTranslations,
+      })
       mockTranslationRepo.findOneBy.mockResolvedValue(sampleTranslations[0])
       mockTranslationRepo.update.mockResolvedValue({ affected: 1 })
       mockSchedulerRegistry.doesExist.mockReturnValue(true)
@@ -678,8 +705,8 @@ describe('TemplateService', () => {
         content: 'English Content',
       }
 
-      const updatedTemplate = { 
-        ...draftTemplate, 
+      const updatedTemplate = {
+        ...draftTemplate,
         id: templateId,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
@@ -718,8 +745,8 @@ describe('TemplateService', () => {
         ],
       }
 
-      const updatedTemplate = { 
-        ...draftTemplate, 
+      const updatedTemplate = {
+        ...draftTemplate,
         id: templateId,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
@@ -756,8 +783,8 @@ describe('TemplateService', () => {
         ],
       }
 
-      const updatedTemplate = { 
-        ...draftTemplate, 
+      const updatedTemplate = {
+        ...draftTemplate,
         id: templateId,
         platforms: [Platform.IOS, Platform.ANDROID],
       }
@@ -796,7 +823,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_NOW,
         isSent: true,
         sendSchedule: null,
-        translations: sampleTranslations.map(t => ({
+        translations: sampleTranslations.map((t) => ({
           language: t.language,
           title: t.title,
           content: t.content,
@@ -818,7 +845,10 @@ describe('TemplateService', () => {
       mockTemplateRepo.findOne.mockResolvedValueOnce(templateWithTranslations)
       mockTranslationRepo.findOneBy.mockResolvedValue(sampleTranslations[0])
       mockTranslationRepo.update.mockResolvedValue({ affected: 1 })
-      mockNotificationService.sendWithTemplate.mockResolvedValue({ successfulCount: 5, failedCount: 0 })
+      mockNotificationService.sendWithTemplate.mockResolvedValue({
+        successfulCount: 5,
+        failedCount: 0,
+      })
 
       await service.update(templateId, updateDto, currentUser)
 
@@ -839,5 +869,4 @@ describe('TemplateService', () => {
   // ============================================
   // LANGUAGE HANDLING TESTS
   // ============================================
-
 })

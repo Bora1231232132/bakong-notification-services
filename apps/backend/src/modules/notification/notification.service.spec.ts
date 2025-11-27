@@ -10,7 +10,15 @@ import { ImageService } from '../image/image.service'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 import { FirebaseManager } from 'src/common/services/firebase-manager.service'
 import SentNotificationDto from './dto/send-notification.dto'
-import { Language, NotificationType, Platform, BakongApp, ErrorCode, ResponseMessage, PaginationUtils } from '@bakong/shared'
+import {
+  Language,
+  NotificationType,
+  Platform,
+  BakongApp,
+  ErrorCode,
+  ResponseMessage,
+  PaginationUtils,
+} from '@bakong/shared'
 import { BaseResponseDto } from 'src/common/base-response.dto'
 import { InboxResponseDto } from './dto/inbox-response.dto'
 
@@ -233,7 +241,11 @@ describe('NotificationService', () => {
         translations: [sampleTranslation],
       }
       const user1 = { ...sampleUser, bakongPlatform: BakongApp.BAKONG }
-      const user2 = { ...sampleUser, accountId: 'test2@bkrt.com', bakongPlatform: BakongApp.BAKONG_JUNIOR }
+      const user2 = {
+        ...sampleUser,
+        accountId: 'test2@bkrt.com',
+        bakongPlatform: BakongApp.BAKONG_JUNIOR,
+      }
 
       mockTemplateRepo.findOne.mockResolvedValue(template)
       mockTemplateService.findBestTranslation.mockReturnValue(sampleTranslation)
@@ -402,7 +414,7 @@ describe('NotificationService', () => {
       })
       mockBakongUserRepo.find.mockResolvedValue([sampleUser])
       mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
-      
+
       // Mock handleFlashNotification to return success
       const handleFlashNotificationSpy = jest
         .spyOn(service as any, 'handleFlashNotification')
@@ -417,7 +429,7 @@ describe('NotificationService', () => {
 
       expect(mockBaseFunctionHelper.updateUserData).toHaveBeenCalled()
       expect(result.responseCode).toBe(0)
-      
+
       handleFlashNotificationSpy.mockRestore()
     })
 
@@ -569,7 +581,11 @@ describe('NotificationService', () => {
 
       const userWithPlatform = { ...sampleUser, bakongPlatform: BakongApp.BAKONG }
       const templateMatching = { ...sampleTemplate, bakongPlatform: BakongApp.BAKONG }
-      const templateNotMatching = { ...sampleTemplate, id: 2, bakongPlatform: BakongApp.BAKONG_JUNIOR }
+      const templateNotMatching = {
+        ...sampleTemplate,
+        id: 2,
+        bakongPlatform: BakongApp.BAKONG_JUNIOR,
+      }
 
       const notification1 = {
         ...sampleNotification,
@@ -591,10 +607,7 @@ describe('NotificationService', () => {
 
       mockBaseFunctionHelper.updateUserData.mockResolvedValue({ isNewUser: false })
       mockBaseFunctionHelper.findUserByAccountId.mockResolvedValue(userWithPlatform)
-      mockNotificationRepo.findAndCount.mockResolvedValue([
-        [notification1, notification2],
-        2,
-      ])
+      mockNotificationRepo.findAndCount.mockResolvedValue([[notification1, notification2], 2])
       mockTemplateRepo.findOne
         .mockResolvedValueOnce({ ...templateMatching, translations: [sampleTranslation] })
         .mockResolvedValueOnce({ ...templateNotMatching, translations: [sampleTranslation] })
@@ -641,7 +654,13 @@ describe('NotificationService', () => {
 
       mockNotificationRepo.update.mockResolvedValue({ affected: 1 })
 
-      await (service as any).updateNotificationRecord(user, template, notificationId, response, 'individual')
+      await (service as any).updateNotificationRecord(
+        user,
+        template,
+        notificationId,
+        response,
+        'individual',
+      )
 
       expect(mockNotificationRepo.update).toHaveBeenCalled()
     })
@@ -655,7 +674,13 @@ describe('NotificationService', () => {
       mockNotificationRepo.findOne.mockResolvedValue(sampleNotification)
       mockNotificationRepo.update.mockResolvedValue({ affected: 1 })
 
-      await (service as any).updateNotificationRecord(user, template, notificationId, response, 'shared')
+      await (service as any).updateNotificationRecord(
+        user,
+        template,
+        notificationId,
+        response,
+        'shared',
+      )
 
       expect(mockNotificationRepo.update).toHaveBeenCalled()
     })
@@ -677,7 +702,9 @@ describe('NotificationService', () => {
 
       mockNotificationRepo.delete.mockRejectedValue(new Error('Database error'))
 
-      await expect(service.deleteNotificationsByTemplateId(templateId)).rejects.toThrow('Database error')
+      await expect(service.deleteNotificationsByTemplateId(templateId)).rejects.toThrow(
+        'Database error',
+      )
     })
   })
 
@@ -779,7 +806,9 @@ describe('NotificationService', () => {
         invalidTokens: 0,
         updatedIds: [],
       })
-      ValidationHelper.validateFCMTokens = jest.fn().mockResolvedValue([sampleUser, sampleUserWithWrongToken])
+      ValidationHelper.validateFCMTokens = jest
+        .fn()
+        .mockResolvedValue([sampleUser, sampleUserWithWrongToken])
 
       const mockFCM = {
         send: jest.fn().mockResolvedValue('message-id-123'),
@@ -791,7 +820,10 @@ describe('NotificationService', () => {
       mockNotificationRepo.update.mockResolvedValue({ affected: 1 })
       mockTemplateService.markAsPublished.mockResolvedValue(undefined)
       mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
-      mockBaseFunctionHelper.filterValidFCMUsers.mockReturnValue([sampleUser, sampleUserWithWrongToken])
+      mockBaseFunctionHelper.filterValidFCMUsers.mockReturnValue([
+        sampleUser,
+        sampleUserWithWrongToken,
+      ])
 
       // Mock getFCM method
       const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
@@ -822,10 +854,11 @@ describe('NotificationService', () => {
 
       // Verify failed users were logged
       const logCalls = consoleSpy.mock.calls
-      const failedUsersLog = logCalls.find((call) =>
-        call[0]?.includes('❌ [sendFCM] Failed to send to user:') ||
-        call[0]?.includes('FAILED USERS SUMMARY') ||
-        call[0]?.includes('Failed to send to user:'),
+      const failedUsersLog = logCalls.find(
+        (call) =>
+          call[0]?.includes('❌ [sendFCM] Failed to send to user:') ||
+          call[0]?.includes('FAILED USERS SUMMARY') ||
+          call[0]?.includes('Failed to send to user:'),
       )
       expect(failedUsersLog).toBeDefined()
 

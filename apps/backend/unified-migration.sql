@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS image (
     id SERIAL PRIMARY KEY,
     "fileId" VARCHAR(255) NOT NULL UNIQUE,
     file BYTEA,
-    "fileHash" VARCHAR(32) UNIQUE,
+    "fileHash" VARCHAR(32),
     "mimeType" VARCHAR(100),
     "originalFileName" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -243,7 +243,15 @@ BEGIN
     END IF;
 END$$;
 
--- Add fileHash to image table (for existing databases)
+-- ============================================================================
+-- Add fileHash column to image table for fast duplicate detection
+-- ============================================================================
+-- This adds a fileHash column with index to optimize image upload
+-- performance by checking duplicates BEFORE compression
+-- ============================================================================
+\echo '🔄 Adding fileHash column to image table...'
+
+-- Add fileHash column (nullable first, will populate then make unique)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -347,7 +355,11 @@ CREATE INDEX IF NOT EXISTS "IDX_image_fileHash" ON image("fileHash");
 -- ============================================================================
 -- Step 7.5: Populate fileHash for existing images and add unique constraint
 -- ============================================================================
+-- This step populates fileHash for existing images (may take time for large tables)
+-- Then adds unique constraint and makes it NOT NULL
+-- ============================================================================
 \echo '📊 Step 7.5: Populating fileHash for existing images...'
+\echo '   This may take a few minutes if you have many images...'
 
 DO $$
 DECLARE
@@ -384,6 +396,7 @@ END$$;
 \echo ''
 
 -- Add unique constraint on fileHash (after population)
+\echo '   Adding unique constraint on fileHash...'
 DO $$
 BEGIN
     -- Check if unique constraint already exists
@@ -407,7 +420,11 @@ BEGIN
     END IF;
 END$$;
 
+\echo '   ✅ Unique constraint added'
+\echo ''
+
 -- Make fileHash NOT NULL (after population and constraint)
+\echo '   Making fileHash NOT NULL...'
 DO $$
 BEGIN
     IF EXISTS (
@@ -423,7 +440,17 @@ BEGIN
     END IF;
 END$$;
 
-\echo '   ✅ fileHash migration completed'
+\echo ''
+\echo '✅ fileHash migration completed successfully!'
+\echo ''
+\echo '📋 fileHash Migration Summary:'
+\echo '   - Added fileHash column to image table'
+\echo '   - Created index on fileHash for fast lookups'
+\echo '   - Populated fileHash for existing images'
+\echo '   - Added unique constraint on fileHash'
+\echo '   - Made fileHash NOT NULL'
+\echo ''
+\echo '🚀 Image upload performance should now be significantly faster!'
 \echo ''
 
 -- ============================================================================
