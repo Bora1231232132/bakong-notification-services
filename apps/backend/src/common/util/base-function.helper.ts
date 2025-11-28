@@ -38,8 +38,8 @@ export class BaseFunctionHelper {
       nodeEnv === 'development'
         ? 'http://localhost:4005'
         : nodeEnv === 'staging'
-          ? 'http://10.20.6.57:4002'
-          : 'https://10.20.6.58:8080'
+        ? 'http://10.20.6.57:4002'
+        : 'https://10.20.6.58:8080'
 
     let baseUrl = defaultBaseUrl
 
@@ -123,7 +123,9 @@ export class BaseFunctionHelper {
       if (updateData.bakongPlatform !== undefined) {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(
-          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${user.bakongPlatform || 'NULL'} -> ${updateData.bakongPlatform}`,
+          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${
+            user.bakongPlatform || 'NULL'
+          } -> ${updateData.bakongPlatform}`,
         )
       }
 
@@ -131,7 +133,9 @@ export class BaseFunctionHelper {
       if (changed) {
         user = await this.bkUserRepo.save(user)
         console.log(
-          `✅ [syncUser] Updated user ${accountId} bakongPlatform: ${user.bakongPlatform || 'NULL'}`,
+          `✅ [syncUser] Updated user ${accountId} bakongPlatform: ${
+            user.bakongPlatform || 'NULL'
+          }`,
         )
       }
       return { isNewUser, savedUser: user }
@@ -148,11 +152,15 @@ export class BaseFunctionHelper {
       bakongPlatform: updateData.bakongPlatform, // Only set if explicitly provided
     })
     console.log(
-      `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${updateData.bakongPlatform || 'NULL'}`,
+      `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${
+        updateData.bakongPlatform || 'NULL'
+      }`,
     )
     const savedUser = await this.bkUserRepo.save(created)
     console.log(
-      `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${savedUser.bakongPlatform || 'NULL'}`,
+      `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${
+        savedUser.bakongPlatform || 'NULL'
+      }`,
     )
     return { isNewUser, savedUser }
   }

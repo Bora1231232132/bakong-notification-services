@@ -77,14 +77,14 @@ export class ConfigService {
     const defaultApiBaseUrl = isDev
       ? 'http://localhost:4005'
       : isStaging
-        ? 'http://10.20.6.57:4002'
-        : 'https://10.20.6.58:8080'
+      ? 'http://10.20.6.57:4002'
+      : 'https://10.20.6.58:8080'
     const defaultDbPort = isDev ? 5437 : isStaging ? 5434 : 5433
     const defaultDbName = isDev
       ? 'bakong_notification_services_dev'
       : isStaging
-        ? 'bakong_notification_services_sit'
-        : 'bakong_notification_services'
+      ? 'bakong_notification_services_sit'
+      : 'bakong_notification_services'
     const defaultDbUser = isDev ? 'bkns_dev' : isStaging ? 'bkns_sit' : 'bkns'
     const defaultDbPassword = isDev ? 'dev' : isStaging ? '0101bkns_sit' : '010110bkns'
 

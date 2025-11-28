@@ -85,7 +85,9 @@ export class ImageService {
       }
     } catch (error) {
       this.logger.warn(
-        `⚠️ Error checking for duplicate image: ${error?.message || String(error)}. Creating new record.`,
+        `⚠️ Error checking for duplicate image: ${
+          error?.message || String(error)
+        }. Creating new record.`,
       )
     }
 

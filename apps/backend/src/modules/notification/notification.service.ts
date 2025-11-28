@@ -91,8 +91,8 @@ export class NotificationService {
           template.bakongPlatform === 'BAKONG_TOURIST'
             ? 'Bakong Tourist'
             : template.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
+            ? 'Bakong Junior'
+            : 'Bakong'
         throw new Error(
           `No users found for ${platformName} app. Please ensure there are registered users for this platform before sending notifications.`,
         )
@@ -280,7 +280,9 @@ export class NotificationService {
             if (inferred) {
               bakongPlatformToSync = inferred
               console.warn(
-                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId}, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
+                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${
+                  dto.accountId
+                }, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
               )
             } else {
               console.error(
@@ -425,8 +427,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -477,8 +479,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -769,7 +771,9 @@ export class NotificationService {
         console.log('Detailed Error Information:')
         allFailedUsers.forEach((failedUser, index) => {
           console.log(
-            `  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''}`,
+            `  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${
+              failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''
+            }`,
           )
         })
         console.log('='.repeat(80))
@@ -1063,15 +1067,12 @@ export class NotificationService {
           return createdAt >= last24Hours && createdAt <= now
         })
 
-        const templateCounts = todayNotifications.reduce(
-          (acc, notif) => {
-            if (notif.templateId) {
-              acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
-            }
-            return acc
-          },
-          {} as Record<number, number>,
-        )
+        const templateCounts = todayNotifications.reduce((acc, notif) => {
+          if (notif.templateId) {
+            acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
+          }
+          return acc
+        }, {} as Record<number, number>)
 
         const templatesAtLimit = Object.entries(templateCounts)
           .filter(([_, count]) => count >= 2)
@@ -1109,7 +1110,9 @@ export class NotificationService {
       selectedTranslation = bestTemplate.translation
 
       console.log(
-        `📤 [handleFlashNotification] Found template ${selectedTemplate.id} for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
+        `📤 [handleFlashNotification] Found template ${
+          selectedTemplate.id
+        } for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
       )
     }
 
@@ -1406,7 +1409,9 @@ export class NotificationService {
         { templateId: newTemplateId },
       )
       console.log(
-        `Updated ${result.affected || 0} notification records from template ${oldTemplateId} to ${newTemplateId}`,
+        `Updated ${
+          result.affected || 0
+        } notification records from template ${oldTemplateId} to ${newTemplateId}`,
       )
     } catch (error) {
       console.error(

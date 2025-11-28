@@ -229,10 +229,10 @@
             <div class="splash-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
-                  <span class="option-title">Show as splash</span>
+                  <span class="option-title">Show as flash</span>
                 </div>
                 <div class="schedule-option-right">
-                  <span class="option-label">Set time and date</span>
+                  <span class="option-label">Set number of showing</span>
                   <label class="toggle-switch">
                     <input v-model="formData.splashEnabled" type="checkbox" />
                     <span class="toggle-slider"></span>
@@ -240,16 +240,41 @@
                 </div>
               </div>
               <div v-if="formData.splashEnabled" class="schedule-datetime-row">
-                <div class="schedule-form-group">
+                <div class="schedule-form-group flash-input-group">
                   <label class="schedule-form-label"
-                    >Number showing per day <span class="required">*</span></label
+                    >Number showing per day: <span class="required">*</span></label
                   >
-                  <ElInputNumber
-                    v-model="num"
-                    :min="1"
-                    :max="10"
-                    @change="handleShowPerDayChange"
-                  />
+                  <div class="flash-input-wrapper">
+                    <ElInputNumber
+                      v-model="formData.showPerDay"
+                      :min="1"
+                      :max="10"
+                      :disabled="true"
+                      controls-position="right"
+                      class="flash-number-input"
+                    />
+                    <el-icon class="flash-dropdown-icon">
+                      <ArrowDown />
+                    </el-icon>
+                  </div>
+                </div>
+                <div class="schedule-form-group flash-input-group">
+                  <label class="schedule-form-label"
+                    >Maximum day showing: <span class="required">*</span></label
+                  >
+                  <div class="flash-input-wrapper">
+                    <ElInputNumber
+                      v-model="formData.maxDayShowing"
+                      :min="1"
+                      :max="30"
+                      :disabled="true"
+                      controls-position="right"
+                      class="flash-number-input"
+                    />
+                    <el-icon class="flash-dropdown-icon">
+                      <ArrowDown />
+                    </el-icon>
+                  </div>
                 </div>
               </div>
             </div>
@@ -375,10 +400,7 @@ const handleLanguageChanged = (tab: { value: string; label: string }) => {
   linkError.value = ''
 }
 
-const num = ref(1)
-const handleShowPerDayChange = (value: number | undefined) => {
-  console.log(value)
-}
+// Flash notification settings - defaults and disabled for first version
 
 const datePlaceholder = ref(getCurrentDatePlaceholder())
 const timePlaceholder = ref(getCurrentTimePlaceholder())
@@ -431,7 +453,8 @@ const formData = reactive({
   notificationType: NotificationType.NOTIFICATION,
   categoryType: CategoryType.OTHER,
   pushToPlatforms: Platform.ALL,
-  showPerDay: 1,
+  showPerDay: 1, // Default: 1 time per day (disabled for first version)
+  maxDayShowing: 3, // Default: 3 days maximum (disabled for first version)
   platform: BakongApp.BAKONG,
   scheduleEnabled: false,
   scheduleDate: getTodayDateString(),
@@ -1625,7 +1648,109 @@ input:checked + .toggle-slider:before {
   font-size: 14px;
   font-weight: 400;
   line-height: 150%;
-  color: #374151;
+}
+
+.field-hint {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 150%;
+  color: #10b981;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.flash-input-group {
+  width: 281.5px !important;
+  min-width: 281.5px !important;
+  max-width: 281.5px !important;
+}
+
+.flash-number-input {
+  width: 281.5px !important;
+  height: 56px !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper) {
+  width: 281.5px !important;
+  height: 56px !important;
+  min-width: 281.5px !important;
+  max-width: 281.5px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  padding: 16px 52px 16px 12px !important;
+  border: 1px solid rgba(0, 19, 70, 0.1) !important;
+  border-radius: 8px !important;
+  background-color: #f9fafb !important;
+  box-shadow: none !important;
+  transition: border-color 0.2s ease !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper:hover) {
+  border-color: rgba(0, 19, 70, 0.2) !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #001346 !important;
+  box-shadow: 0 0 0 3px rgba(0, 19, 70, 0.1) !important;
+}
+
+.flash-number-input :deep(.el-input__inner) {
+  height: 100% !important;
+  line-height: 24px !important;
+  font-size: 14px !important;
+  font-family: 'IBM Plex Sans' !important;
+  color: #6b7280 !important;
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+.flash-number-input :deep(.el-input__inner::placeholder) {
+  color: #9ca3af !important;
+}
+
+.flash-number-input.is-disabled :deep(.el-input__wrapper) {
+  background-color: #f3f4f6 !important;
+  border-color: rgba(0, 19, 70, 0.1) !important;
+  cursor: not-allowed !important;
+}
+
+.flash-number-input.is-disabled :deep(.el-input__inner) {
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+
+.flash-input-wrapper {
+  position: relative;
+  width: 281.5px;
+  height: 56px;
+}
+
+.flash-dropdown-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  pointer-events: none;
+  z-index: 10;
+  font-size: 16px;
+}
+
+.flash-number-input.is-disabled + .flash-dropdown-icon,
+.flash-input-wrapper .flash-number-input.is-disabled ~ .flash-dropdown-icon {
+  color: #9ca3af;
+}
+
+.flash-number-input :deep(.el-input-number__increase),
+.flash-number-input :deep(.el-input-number__decrease) {
+  display: none !important;
 }
 
 .schedule-date-picker,

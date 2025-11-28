@@ -691,7 +691,9 @@ export class TemplateService implements OnModuleInit {
                   imageId = image
                   if (oldImageId !== imageId) {
                     this.logger.log(
-                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId}`,
+                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${
+                        oldImageId || 'null'
+                      } -> ${imageId}`,
                     )
                   }
                 } else {
@@ -727,7 +729,9 @@ export class TemplateService implements OnModuleInit {
 
               if (oldImageId !== imageId) {
                 this.logger.log(
-                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId || 'null'}`,
+                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${
+                    oldImageId || 'null'
+                  } -> ${imageId || 'null'}`,
                 )
               }
             }
@@ -1295,12 +1299,12 @@ export class TemplateService implements OnModuleInit {
                     : null,
                 }
               : translation.imageId
-                ? {
-                    fileId: translation.imageId,
-                    mimeType: null,
-                    originalFileName: null,
-                  }
-                : null,
+              ? {
+                  fileId: translation.imageId,
+                  mimeType: null,
+                  originalFileName: null,
+                }
+              : null,
           }))
         : [],
     }
@@ -1490,8 +1494,9 @@ export class TemplateService implements OnModuleInit {
             })
 
             if (templateWithTranslations && templateWithTranslations.translations) {
-              const sentCount =
-                await this.notificationService.sendWithTemplate(templateWithTranslations)
+              const sentCount = await this.notificationService.sendWithTemplate(
+                templateWithTranslations,
+              )
 
               if (typeof sentCount === 'number' && sentCount > 0) {
                 await this.markAsPublished(template.id)
@@ -1550,8 +1555,9 @@ export class TemplateService implements OnModuleInit {
           })
 
           if (templateWithTranslations && templateWithTranslations.translations) {
-            const sentCount =
-              await this.notificationService.sendWithTemplate(templateWithTranslations)
+            const sentCount = await this.notificationService.sendWithTemplate(
+              templateWithTranslations,
+            )
 
             if (typeof sentCount === 'number' && sentCount > 0) {
               await this.markAsPublished(template.id)
@@ -1671,16 +1677,13 @@ export class TemplateService implements OnModuleInit {
       return isLast24Hours
     })
 
-    const templateViewCounts = todayNotifications.reduce(
-      (acc, notif) => {
-        const templateId = notif.templateId
-        if (templateId) {
-          acc[templateId] = (acc[templateId] || 0) + 1
-        }
-        return acc
-      },
-      {} as Record<number, number>,
-    )
+    const templateViewCounts = todayNotifications.reduce((acc, notif) => {
+      const templateId = notif.templateId
+      if (templateId) {
+        acc[templateId] = (acc[templateId] || 0) + 1
+      }
+      return acc
+    }, {} as Record<number, number>)
 
     // Filter out templates that have been sent 2 or more times in the last 24 hours
     // This prevents users from receiving the same template too frequently
@@ -1690,7 +1693,9 @@ export class TemplateService implements OnModuleInit {
 
     if (seenTemplateIds.length > 0) {
       console.log(
-        `📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(', ')}`,
+        `📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(
+          ', ',
+        )}`,
       )
       console.log(`📋 [findBestTemplateForUser] Template send counts:`, templateViewCounts)
     } else {
@@ -1714,7 +1719,9 @@ export class TemplateService implements OnModuleInit {
     }
 
     console.log(
-      `📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'}`,
+      `📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${
+        seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'
+      }`,
     )
     console.log(`📋 [findBestTemplateForUser] Only including published templates (isSent: true)`)
 
@@ -1766,7 +1773,9 @@ export class TemplateService implements OnModuleInit {
           const translation = this.findBestTranslation(selectedTemplate, language)
           if (translation) {
             console.log(
-              `📋 [findBestTemplateForUser] Using fallback template ${selectedTemplate.id} (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`,
+              `📋 [findBestTemplateForUser] Using fallback template ${
+                selectedTemplate.id
+              } (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`,
             )
             return { template: selectedTemplate, translation }
           }
@@ -1784,7 +1793,9 @@ export class TemplateService implements OnModuleInit {
     if (!translation) return null
 
     console.log(
-      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
+      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${
+        selectedTemplate.bakongPlatform || 'NULL'
+      }`,
     )
     return { template: selectedTemplate, translation }
   }

@@ -147,7 +147,7 @@ const currentDate = computed(() => {
   word-break: keep-all;
   white-space: normal;
   margin-top: 2px;
-  padding-bottom: 12px;
+  padding-bottom: 20px;
 }
 
 .description-placeholder-relative {
@@ -156,7 +156,7 @@ const currentDate = computed(() => {
   flex-direction: column;
   gap: 4px;
   margin-top: 2px;
-  padding-bottom: 12px;
+  padding-bottom: 20px;
 }
 
 .description-container {
