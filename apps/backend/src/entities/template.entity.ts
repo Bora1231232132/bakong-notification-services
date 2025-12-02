@@ -3,12 +3,15 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
-import { SendType, NotificationType, CategoryType, BakongApp } from '@bakong/shared'
+import { SendType, NotificationType, BakongApp } from '@bakong/shared'
 import { TemplateTranslation } from './template-translation.entity'
+import { CategoryType as CategoryTypeEntity } from './category-type.entity'
 
 export type SendIntervalData = { cron: string; startAt: Date; endAt: Date }
 @Entity()
@@ -39,8 +42,12 @@ export class Template {
   })
   notificationType?: NotificationType
 
-  @Column({ nullable: false, type: 'enum', enum: CategoryType, default: CategoryType.NEWS })
-  categoryType?: CategoryType
+  @Column({ nullable: true, type: 'integer' })
+  categoryTypeId?: number
+
+  @ManyToOne(() => CategoryTypeEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'categoryTypeId', referencedColumnName: 'id' })
+  categoryTypeEntity?: CategoryTypeEntity
 
   @Column({ nullable: false, type: 'integer', default: 0 })
   priority?: number

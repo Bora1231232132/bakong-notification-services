@@ -26,7 +26,8 @@
         {{ page }}
       </button>
       <button
-        class="w-8 h-8 flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200"
+        class="w-8 h-8 flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="page >= totalPages"
         @click="$emit('next')"
         aria-label="Next page"
       >
@@ -46,7 +47,7 @@
       <div class="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start">
         <span class="text-sm sm:text-base">Per page</span>
         <select
-          v-model="perPage"
+          v-model="localPerPage"
           class="border border-[#0013461A] rounded-[8px] px-3 py-2 w-[80px] h-[40px] text-center focus:outline-none focus:ring-1 focus:ring-[#0D1C50]"
         >
           <option value="10">10</option>
@@ -60,7 +61,7 @@
           v-model="goTo"
           class="border border-[#0013461A] rounded-[8px] px-3 py-2 w-[70px] h-[40px] text-center focus:outline-none focus:ring-1 focus:ring-[#0D1C50]"
         >
-          <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
+          <option v-for="n in totalPages" :key="n" :value="n">{{ n }}</option>
         </select>
         <button
           class="w-[60px] h-[40px] rounded-full flex items-center justify-center bg-[#0D1C50] text-white font-semibold hover:bg-[#12236d] transition-all duration-200"
@@ -81,9 +82,24 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  perPage: {
+    type: Number,
+    default: 10,
+  },
+  totalPages: {
+    type: Number,
+    required: true,
+  },
 })
 
-const perPage = ref(10)
+const emit = defineEmits<{
+  'update:perPage': [value: number]
+  next: []
+  prev: []
+  goto: [page: number]
+}>()
+
+const localPerPage = ref(props.perPage)
 const goTo = ref(1)
 
 watch(
@@ -92,5 +108,27 @@ watch(
     goTo.value = newPage
   },
   { immediate: true },
+)
+
+watch(
+  () => props.perPage,
+  (newPerPage) => {
+    localPerPage.value = newPerPage
+  },
+  { immediate: true },
+)
+
+watch(localPerPage, (newValue) => {
+  emit('update:perPage', Number(newValue))
+})
+
+watch(
+  () => props.totalPages,
+  (newTotalPages) => {
+    // If current page exceeds total pages, update goTo to last page
+    if (goTo.value > newTotalPages) {
+      goTo.value = newTotalPages
+    }
+  },
 )
 </script>

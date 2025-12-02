@@ -48,12 +48,18 @@
             <div class="form-group">
               <label class="form-label">Category Type<span class="required">*</span></label>
               <el-dropdown
-                @command="(command: CategoryType) => (formData.categoryType = command)"
+                @command="(command: number) => (formData.categoryTypeId = command)"
                 trigger="click"
                 class="custom-dropdown"
+                :disabled="loadingCategoryTypes"
               >
                 <span class="dropdown-trigger">
-                  {{ formatCategoryType(formData.categoryType) }}
+                  {{
+                    formatCategoryType(
+                      categoryTypes.find((ct) => ct.id === formData.categoryTypeId)?.name ||
+                        'Select Category',
+                    )
+                  }}
                   <el-icon class="dropdown-icon">
                     <ArrowDown />
                   </el-icon>
@@ -61,11 +67,11 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item
-                      v-for="category in Object.values(CategoryType)"
-                      :key="category"
-                      :command="category"
+                      v-for="category in categoryTypes"
+                      :key="category.id"
+                      :command="category.id"
                     >
-                      {{ formatCategoryType(category) }}
+                      {{ formatCategoryType(category.name) }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -280,7 +286,7 @@
         :title="currentTitle"
         :description="currentDescription"
         :image="currentImageUrl || ''"
-        :categoryType="formData.categoryType"
+        :categoryType="categoryTypes.find((ct) => ct.id === formData.categoryTypeId)?.name || ''"
       />
     </div>
   </div>
@@ -308,7 +314,6 @@ import { notificationApi, type CreateTemplateRequest } from '@/services/notifica
 import { api } from '@/services/api'
 import {
   NotificationType,
-  CategoryType,
   Platform,
   Language,
   SendType,
@@ -318,6 +323,7 @@ import {
   formatCategoryType,
   getNoUsersAvailableMessage,
 } from '@/utils/helpers'
+import { categoryTypeApi, type CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
 import { DateUtils } from '@bakong/shared'
 import {
   getCurrentDateTimeInCambodia,
@@ -329,7 +335,6 @@ import {
   mapNotificationTypeToFormType,
   mapPlatformToFormPlatform,
   mapTypeToNotificationType,
-  mapTypeToCategoryType,
   mapPlatformToEnum,
   mapLanguageToEnum,
   compressImage,
@@ -413,9 +418,12 @@ const getTodayDateString = (): string => {
   return `${month}/${day}/${year}`
 }
 
+const categoryTypes = ref<CategoryTypeData[]>([])
+const loadingCategoryTypes = ref(false)
+
 const formData = reactive({
   notificationType: NotificationType.NOTIFICATION,
-  categoryType: CategoryType.OTHER,
+  categoryTypeId: null as number | null,
   pushToPlatforms: Platform.ALL,
   showPerDay: 1,
   platform: BakongApp.BAKONG,
@@ -423,6 +431,29 @@ const formData = reactive({
   scheduleDate: getTodayDateString(),
   scheduleTime: null as string | null,
   splashEnabled: false,
+})
+
+// Fetch category types on mount
+const fetchCategoryTypes = async () => {
+  loadingCategoryTypes.value = true
+  try {
+    const types = await categoryTypeApi.getAll()
+    categoryTypes.value = types
+    // Set default to first category or NEWS if available
+    if (types.length > 0) {
+      const newsCategory = types.find((ct) => ct.name === 'NEWS')
+      formData.categoryTypeId = newsCategory?.id || types[0].id
+    }
+  } catch (error) {
+    console.error('Failed to fetch category types:', error)
+  } finally {
+    loadingCategoryTypes.value = false
+  }
+}
+
+onMounted(() => {
+  fetchCategoryTypes()
+  // ... existing onMounted code
 })
 
 const currentTitle = computed({
@@ -487,7 +518,7 @@ const loadNotificationData = async () => {
 
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
-    formData.categoryType = mapTypeToCategoryType(template.categoryType) || CategoryType.OTHER
+    formData.categoryTypeId = template.categoryTypeId || null
     formData.platform = (template.bakongPlatform as BakongApp) || BakongApp.BAKONG
 
     if (template.sendSchedule) {
@@ -717,7 +748,7 @@ const handlePublishNow = async () => {
             return
           }
         } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
-          imageId = existingImageIds[langKey]
+          imageId = existingImageIds[langKey] || undefined
         }
 
         translations.push({
@@ -829,7 +860,7 @@ const handlePublishNow = async () => {
       isSent: isSent,
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
-      categoryType: mapTypeToCategoryType(formData.categoryType),
+      categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
 
@@ -977,7 +1008,7 @@ const handleSaveDraft = async () => {
           return
         }
       } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
-        imageId = existingImageIds[langKey]
+        imageId = existingImageIds[langKey] || undefined
       }
 
       translations.push({
@@ -1080,7 +1111,7 @@ const handleSaveDraft = async () => {
       isSent: false,
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
-      categoryType: mapTypeToCategoryType(formData.categoryType),
+      categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
     if (formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime) {

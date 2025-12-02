@@ -182,8 +182,9 @@ test-report.xml
 .cursor/scripts/
 .cursor/templates/
 
+
 # Ps1
-.ps1/
+*.ps1/
 
 # md
 *.md

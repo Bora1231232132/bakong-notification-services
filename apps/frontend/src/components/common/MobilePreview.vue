@@ -72,21 +72,21 @@
 import { computed } from 'vue'
 import bg from '@/assets/image/Home-Defualt.png'
 import headerImg from '@/assets/image/empty-image.svg'
-import { CategoryType, formatCategoryType } from '@/utils/helpers'
+import { formatCategoryType } from '@/utils/helpers'
 
 interface Props {
   title?: string
   description?: string
   image?: string
   type?: string
-  categoryType?: CategoryType
+  categoryType?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: '',
   description: '',
   image: '',
-  categoryType: CategoryType.PRODUCT_AND_FEATURE as CategoryType,
+  categoryType: '',
 })
 
 const displayImage = computed(() => {

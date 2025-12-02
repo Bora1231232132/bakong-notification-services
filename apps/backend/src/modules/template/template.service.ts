@@ -6,6 +6,7 @@ import moment from 'moment'
 import { Image } from 'src/entities/image.entity'
 import { BaseResponseDto } from 'src/common/base-response.dto'
 import { Template } from 'src/entities/template.entity'
+import { CategoryType } from 'src/entities/category-type.entity'
 import { MoreThanOrEqual, Repository, Not, In } from 'typeorm'
 import { NotificationService } from '../notification/notification.service'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
@@ -18,7 +19,6 @@ import {
   ResponseMessage,
   SendType,
   NotificationType,
-  CategoryType,
   TimezoneUtils,
   Language,
 } from '@bakong/shared'
@@ -32,6 +32,8 @@ export class TemplateService implements OnModuleInit {
     private readonly translationRepo: Repository<TemplateTranslation>,
     @InjectRepository(Image)
     private readonly imageRepo: Repository<Image>,
+    @InjectRepository(CategoryType)
+    private readonly categoryTypeRepo: Repository<CategoryType>,
     @Inject(forwardRef(() => NotificationService))
     public readonly notificationService: NotificationService,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -172,13 +174,22 @@ export class TemplateService implements OnModuleInit {
         ? dto.isSent !== false // Send if not explicitly false (true or undefined)
         : dto.isSent === true
 
+    // Get categoryTypeId - use from DTO or find default "NEWS" category
+    let categoryTypeId = dto.categoryTypeId
+    if (!categoryTypeId) {
+      const defaultCategory = await this.categoryTypeRepo.findOne({
+        where: { name: 'NEWS', deletedAt: null },
+      })
+      categoryTypeId = defaultCategory?.id
+    }
+
     let template = this.repo.create({
       platforms: dto.platforms,
       bakongPlatform: dto.bakongPlatform,
       sendType: dto.sendType,
       isSent: initialIsSent,
       notificationType: dto.notificationType || NotificationType.FLASH_NOTIFICATION,
-      categoryType: dto.categoryType || CategoryType.NEWS,
+      categoryTypeId: categoryTypeId,
       priority: dto.priority || 0,
       sendSchedule: dto.sendSchedule ? moment.utc(dto.sendSchedule).toDate() : null,
       sendInterval: dto.sendInterval
@@ -511,7 +522,7 @@ export class TemplateService implements OnModuleInit {
       bakongPlatform,
       translations,
       notificationType,
-      categoryType,
+      categoryTypeId,
       sendType,
       sendSchedule,
       isSent,
@@ -529,7 +540,7 @@ export class TemplateService implements OnModuleInit {
       if (platforms !== undefined) updateFields.platforms = platforms
       if (bakongPlatform !== undefined) updateFields.bakongPlatform = bakongPlatform
       if (notificationType !== undefined) updateFields.notificationType = notificationType
-      if (categoryType !== undefined) updateFields.categoryType = categoryType
+      if (categoryTypeId !== undefined) updateFields.categoryTypeId = categoryTypeId
 
       if (sendType !== undefined) {
         updateFields.sendType = sendType
@@ -646,7 +657,9 @@ export class TemplateService implements OnModuleInit {
                   imageId = image
                   if (oldImageId !== imageId) {
                     this.logger.log(
-                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId}`,
+                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${
+                        oldImageId || 'null'
+                      } -> ${imageId}`,
                     )
                   }
                 } else {
@@ -679,10 +692,12 @@ export class TemplateService implements OnModuleInit {
                 linkPreview: linkPreview,
                 updatedAt: new Date(),
               })
-              
+
               if (oldImageId !== imageId) {
                 this.logger.log(
-                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${oldImageId || 'null'} -> ${imageId || 'null'}`,
+                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${
+                    oldImageId || 'null'
+                  } -> ${imageId || 'null'}`,
                 )
               }
             }
@@ -781,7 +796,7 @@ export class TemplateService implements OnModuleInit {
         sendSchedule: oldTemplate.sendSchedule,
         sendInterval: oldTemplate.sendInterval,
         notificationType: dto.notificationType || oldTemplate.notificationType,
-        categoryType: dto.categoryType || oldTemplate.categoryType,
+        categoryTypeId: dto.categoryTypeId ?? oldTemplate.categoryTypeId,
         priority: oldTemplate.priority,
         createdBy: currentUser?.username || oldTemplate.createdBy,
         updatedBy: currentUser?.username || oldTemplate.updatedBy,
@@ -1108,7 +1123,8 @@ export class TemplateService implements OnModuleInit {
       bakongPlatform: template.bakongPlatform,
       sendType: template.sendType,
       notificationType: template.notificationType,
-      categoryType: template.categoryType,
+      categoryType: template.categoryTypeEntity?.name,
+      categoryTypeId: template.categoryTypeId,
       priority: template.priority,
       sendInterval: template.sendInterval
         ? {
@@ -1141,12 +1157,12 @@ export class TemplateService implements OnModuleInit {
                     : null,
                 }
               : translation.imageId
-                ? {
-                    fileId: translation.imageId,
-                    mimeType: null,
-                    originalFileName: null,
-                  }
-                : null,
+              ? {
+                  fileId: translation.imageId,
+                  mimeType: null,
+                  originalFileName: null,
+                }
+              : null,
           }))
         : [],
     }
@@ -1326,8 +1342,9 @@ export class TemplateService implements OnModuleInit {
             })
 
             if (templateWithTranslations && templateWithTranslations.translations) {
-              const sentCount =
-                await this.notificationService.sendWithTemplate(templateWithTranslations)
+              const sentCount = await this.notificationService.sendWithTemplate(
+                templateWithTranslations,
+              )
 
               if (typeof sentCount === 'number' && sentCount > 0) {
                 await this.markAsPublished(template.id)
@@ -1386,8 +1403,9 @@ export class TemplateService implements OnModuleInit {
           })
 
           if (templateWithTranslations && templateWithTranslations.translations) {
-            const sentCount =
-              await this.notificationService.sendWithTemplate(templateWithTranslations)
+            const sentCount = await this.notificationService.sendWithTemplate(
+              templateWithTranslations,
+            )
 
             if (typeof sentCount === 'number' && sentCount > 0) {
               await this.markAsPublished(template.id)
@@ -1507,16 +1525,13 @@ export class TemplateService implements OnModuleInit {
       return isLast24Hours
     })
 
-    const templateViewCounts = todayNotifications.reduce(
-      (acc, notif) => {
-        const templateId = notif.templateId
-        if (templateId) {
-          acc[templateId] = (acc[templateId] || 0) + 1
-        }
-        return acc
-      },
-      {} as Record<number, number>,
-    )
+    const templateViewCounts = todayNotifications.reduce((acc, notif) => {
+      const templateId = notif.templateId
+      if (templateId) {
+        acc[templateId] = (acc[templateId] || 0) + 1
+      }
+      return acc
+    }, {} as Record<number, number>)
 
     // Filter out templates that have been sent 2 or more times in the last 24 hours
     // This prevents users from receiving the same template too frequently
@@ -1526,7 +1541,9 @@ export class TemplateService implements OnModuleInit {
 
     if (seenTemplateIds.length > 0) {
       console.log(
-        `📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(', ')}`,
+        `📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(
+          ', ',
+        )}`,
       )
       console.log(`📋 [findBestTemplateForUser] Template send counts:`, templateViewCounts)
     } else {
@@ -1550,7 +1567,9 @@ export class TemplateService implements OnModuleInit {
     }
 
     console.log(
-      `📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'}`,
+      `📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${
+        seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'
+      }`,
     )
     console.log(`📋 [findBestTemplateForUser] Only including published templates (isSent: true)`)
 
@@ -1602,7 +1621,9 @@ export class TemplateService implements OnModuleInit {
           const translation = this.findBestTranslation(selectedTemplate, language)
           if (translation) {
             console.log(
-              `📋 [findBestTemplateForUser] Using fallback template ${selectedTemplate.id} (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`,
+              `📋 [findBestTemplateForUser] Using fallback template ${
+                selectedTemplate.id
+              } (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`,
             )
             return { template: selectedTemplate, translation }
           }
@@ -1620,7 +1641,9 @@ export class TemplateService implements OnModuleInit {
     if (!translation) return null
 
     console.log(
-      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
+      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${
+        selectedTemplate.bakongPlatform || 'NULL'
+      }`,
     )
     return { template: selectedTemplate, translation }
   }

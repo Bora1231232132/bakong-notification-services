@@ -6,12 +6,7 @@ export enum NotificationType {
   FLASH_NOTIFICATION = 'FLASH_NOTIFICATION',
 }
 
-export enum CategoryType {
-  PRODUCT_AND_FEATURE = 'PRODUCT_AND_FEATURE',
-  NEWS = 'NEWS',
-  OTHER = 'OTHER',
-  EVENT = 'EVENT',
-}
+// CategoryType enum removed - use categoryTypeId from API instead
 
 export enum Platform {
   ALL = 'ALL',
@@ -50,18 +45,30 @@ export const formatNotificationType = (type: string): string => {
   }
 }
 
-export const formatCategoryType = (category: string): string => {
-  switch (category?.toUpperCase()) {
-    case CategoryType.EVENT:
+export const formatCategoryType = (category: string | number | undefined): string => {
+  if (!category) return 'Other'
+
+  // If it's a number (categoryTypeId), we'll need the name from API
+  // For now, just return the string value or formatted version
+  const categoryStr = String(category).toUpperCase()
+
+  switch (categoryStr) {
+    case 'EVENT':
       return 'Event'
-    case CategoryType.PRODUCT_AND_FEATURE:
+    case 'PRODUCT_AND_FEATURE':
       return 'Product & features'
-    case CategoryType.NEWS:
+    case 'NEWS':
       return 'News'
-    case CategoryType.OTHER:
+    case 'OTHER':
       return 'Other'
     default:
-      return category || 'Other'
+      // Try to format common patterns
+      return (
+        categoryStr
+          .split('_')
+          .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+          .join(' ') || 'Other'
+      )
   }
 }
 
@@ -273,8 +280,9 @@ export const mapTypeToNotificationType = (type: string): string => {
   return type || NotificationType.ANNOUNCEMENT
 }
 
-export const mapTypeToCategoryType = (type: string): CategoryType => {
-  return (type as CategoryType) || CategoryType.OTHER
+export const mapTypeToCategoryType = (type: string | number | undefined): number | string => {
+  // Return the type as-is (could be categoryTypeId number or name string)
+  return type || 'OTHER'
 }
 
 export const mapPlatformToEnum = (platform: string): string => {
@@ -330,13 +338,13 @@ export const processFile = (
       const img = new Image()
       img.onload = () => {
         const aspectRatio = img.width / img.height
-        const acceptableRatios = [4 / 3, 3 / 2, 16 / 9, 2 / 1, 21 / 9]
+        const acceptableRatios = [1 / 1, 4 / 3, 3 / 2, 16 / 9, 2 / 1, 21 / 9] // Added 1:1 for square images/icons
         const tolerance = 0.1
         const isAcceptable = acceptableRatios.some(
           (ratio) => Math.abs(aspectRatio - ratio) <= tolerance,
         )
         if (!isAcceptable) {
-          const errorMsg = `Image aspect ratio ${aspectRatio.toFixed(2)}:1 is not supported. Please use images with common ratios like 16:9, 3:2, or 2:1.`
+          const errorMsg = `Image aspect ratio ${aspectRatio.toFixed(2)}:1 is not supported. Please use images with common ratios like 1:1 (square), 16:9, 3:2, or 2:1.`
           onError(errorMsg)
           return
         }

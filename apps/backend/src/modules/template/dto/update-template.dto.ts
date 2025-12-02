@@ -1,7 +1,15 @@
-import { IsString, IsOptional, IsArray, ValidateNested, IsEnum, IsBoolean } from 'class-validator'
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+  IsBoolean,
+  IsNumber,
+} from 'class-validator'
 import { Type, Transform } from 'class-transformer'
 import { TemplateTranslationDto } from './template-translation.dto'
-import { CategoryType, NotificationType, Platform, SendType, BakongApp } from '@bakong/shared'
+import { NotificationType, Platform, SendType, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class UpdateTemplateDto {
@@ -32,14 +40,8 @@ export class UpdateTemplateDto {
   notificationType?: NotificationType
 
   @IsOptional()
-  @IsEnum(CategoryType)
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      return ValidationHelper.normalizeEnum(value)
-    }
-    return value
-  })
-  categoryType?: CategoryType
+  @IsNumber()
+  categoryTypeId?: number
 
   @IsOptional()
   @IsEnum(SendType)

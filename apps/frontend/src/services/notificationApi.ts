@@ -21,7 +21,7 @@ export interface CreateTemplateRequest {
     linkPreview?: string
   }[]
   notificationType?: string
-  categoryType?: string
+  categoryTypeId?: number
   priority?: number
 }
 

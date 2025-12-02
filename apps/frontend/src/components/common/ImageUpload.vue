@@ -1,7 +1,7 @@
 ﻿<template>
-  <div class="flex flex-col gap-3 w-[603px]">
+  <div class="flex flex-col gap-3 w-full">
     <div
-      class="w-[603px] h-[213px] border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-4 p-8 bg-white hover:border-[#001346] hover:bg-gray-50"
+      class="w-full h-[213px] border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-4 p-8 bg-white hover:border-[#001346] hover:bg-gray-50"
       :class="{ 'border-[#001346] bg-gray-50': isDragOver }"
       @click="triggerFileUploadHandler"
       @dragover.prevent="handleDragOver"
@@ -43,7 +43,7 @@
         </button>
       </div>
     </div>
-    <div class="w-[603px] h-5 flex justify-between items-center">
+    <div class="w-full h-5 flex justify-between items-center">
       <p
         class="text-[#011246] font-normal text-[13px] leading-[150%] tracking-[0%] font-['IBM_Plex_Sans'] m-0"
       >
@@ -57,11 +57,11 @@
     </div>
     <div
       v-if="errorMessage"
-      class="w-[603px] bg-red-50 border border-red-200 rounded-lg p-4 pr-2 flex items-start gap-3 pl-2"
+      class="w-full bg-red-50 border border-red-200 rounded-lg p-4 pr-2 flex items-start gap-3 pl-2"
       role="alert"
       aria-live="assertive"
     >
-      <el-icon :size="20" color="#DC2626" class="w-5 h-5 flex items-center justify-center flex">
+      <el-icon :size="20" color="#DC2626" class="w-5 h-5 flex items-center justify-center">
         <InfoFilled />
       </el-icon>
 

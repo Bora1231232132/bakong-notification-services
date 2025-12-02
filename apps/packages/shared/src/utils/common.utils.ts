@@ -1,6 +1,5 @@
 import { UserRole } from '../enums/user-role.enum'
 import { ErrorCode, ResponseMessage } from '../enums/error.enums'
-import { CategoryType } from '../enums/category-type.enum'
 import { Platform } from '../enums/platform.enum'
 import { NotificationStatus } from '../enums/notification-status.enum'
 import { Language } from '../enums/language.enum'
@@ -190,37 +189,7 @@ export class ValidationUtils {
     }
   }
 
-  static validateCategoryType(value: string): ValidationResult<CategoryType> {
-    if (!value || typeof value !== 'string') {
-      return {
-        isValid: false,
-        normalizedValue: null,
-        originalValue: value,
-        errorMessage: 'Category type is required and must be a string',
-      }
-    }
-
-    const normalizedValue = this.normalizeEnum(value)
-    const validTypes = Object.values(CategoryType)
-
-    const matchedType = validTypes.find((type) => this.normalizeEnum(type) === normalizedValue)
-
-    if (matchedType) {
-      return {
-        isValid: true,
-        normalizedValue: matchedType,
-        originalValue: value,
-        errorMessage: undefined,
-      }
-    }
-
-    return {
-      isValid: false,
-      normalizedValue: null,
-      originalValue: value,
-      errorMessage: `Invalid category type. Must be one of: ${validTypes.join(', ')}`,
-    }
-  }
+  // validateCategoryType removed - use categoryTypeId from database instead
 
   static validateUserRole(value: string): ValidationResult<UserRole> {
     if (!value || typeof value !== 'string') {

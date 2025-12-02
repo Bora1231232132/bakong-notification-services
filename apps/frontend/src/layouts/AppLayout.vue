@@ -139,13 +139,13 @@ import { Plus, ArrowLeft, Warning, CirclePlus } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
-import nbcLogo from '@/assets/image/NBC-logo.png'
-import homeIcon from '@/assets/image/home.jpg'
-import calendarIcon from '@/assets/image/calendar--heat-map.jpg'
-import typeIcon from '@/assets/image/type-pattern.jpg'
-import chartIcon from '@/assets/image/chart--bar-target.jpg'
-import settingsIcon from '@/assets/image/settings_16.jpg'
-import avatarImage from '@/assets/image/avatar.png'
+import nbcLogo from '@/assets/image/LogoNBC.svg'
+import homeIcon from '@/assets/image/Home.svg'
+import calendarIcon from '@/assets/image/Schedule.svg'
+import typeIcon from '@/assets/image/type-pattern.svg'
+import chartIcon from '@/assets/image/chart--bar-target.svg'
+import settingsIcon from '@/assets/image/settings_16.svg'
+import avatarImage from '@/assets/image/avatar.svg'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -174,7 +174,6 @@ const pageTitle = computed(() => {
       return 'Home'
   }
 })
-
 
 const handleCreateNotification = () => {
   router.push('/notifications/create')
@@ -246,7 +245,6 @@ const confirmLogout = () => {
   color: #001346;
   margin: 0;
 }
-
 
 .header-actions {
   display: flex;
