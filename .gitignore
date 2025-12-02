@@ -189,6 +189,8 @@ test-report.xml
 # md
 *.md
 
-# scripts
+# scripts (root level only)
 scripts/
+# Exception: Track backend migration scripts
+!apps/backend/scripts/
 
