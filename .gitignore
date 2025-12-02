@@ -188,3 +188,7 @@ test-report.xml
 
 # md
 *.md
+
+# scripts
+scripts/
+
