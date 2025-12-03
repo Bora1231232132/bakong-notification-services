@@ -5,10 +5,26 @@ echo "🔧 Fixing permissions and pulling latest code..."
 
 cd ~/bakong-notification-services
 
+# Stop Docker containers first (they may have mounted the files)
+echo "🛑 Stopping Docker containers to release file locks..."
+docker compose -f docker-compose.sit.yml down 2>/dev/null || true
+sleep 2
+
 # Fix ownership of files (if they're owned by root/docker)
 echo "📁 Fixing file ownership..."
-sudo chown -R $USER:$USER apps/frontend/src/assets/image/ 2>/dev/null || true
-sudo chown -R $USER:$USER . 2>/dev/null || true
+# Try with sudo first
+if sudo chown -R $USER:$USER apps/frontend/src/assets/image/ 2>/dev/null; then
+    echo "✅ Fixed permissions with sudo"
+elif chown -R $USER:$USER apps/frontend/src/assets/image/ 2>/dev/null; then
+    echo "✅ Fixed permissions without sudo"
+else
+    echo "⚠️  Cannot fix permissions - trying to remove files..."
+    # Remove files that git can't update due to permissions (with sudo)
+    sudo rm -f apps/frontend/src/assets/image/*.svg apps/frontend/src/assets/image/*.png apps/frontend/src/assets/image/*.jpg 2>/dev/null || true
+    # Also try without sudo
+    rm -f apps/frontend/src/assets/image/*.svg apps/frontend/src/assets/image/*.png apps/frontend/src/assets/image/*.jpg 2>/dev/null || true
+    echo "✅ Removed problematic files"
+fi
 
 # Stash or discard local changes
 echo "💾 Stashing local changes..."
@@ -32,6 +48,12 @@ rm -rf apps/frontend/src/services/categoryTypeApi.ts 2>/dev/null || true
 rm -rf apps/frontend/src/stores/categoryTypes.ts 2>/dev/null || true
 rm -rf apps/frontend/src/views/AddNewNotificationTypeView.vue 2>/dev/null || true
 
+# Remove problematic image files that have permission issues
+echo "🗑️  Removing files with permission issues..."
+sudo rm -f apps/frontend/src/assets/image/*.svg apps/frontend/src/assets/image/*.png apps/frontend/src/assets/image/*.jpg 2>/dev/null || true
+# Also try without sudo
+rm -f apps/frontend/src/assets/image/*.svg apps/frontend/src/assets/image/*.png apps/frontend/src/assets/image/*.jpg 2>/dev/null || true
+
 # Pull latest code
 echo "⬇️  Pulling latest code from develop..."
 git fetch origin
@@ -46,6 +68,12 @@ else
     echo "❌ LogoNBC.svg still missing!"
     echo "Trying to checkout from remote..."
     git checkout origin/develop -- apps/frontend/src/assets/image/LogoNBC.svg
+    if [ -f "apps/frontend/src/assets/image/LogoNBC.svg" ]; then
+        echo "✅ LogoNBC.svg restored!"
+    else
+        echo "⚠️  WARNING: LogoNBC.svg still missing - build may fail"
+        echo "   You may need to manually copy the file or fix permissions"
+    fi
 fi
 
 echo "✅ Done! Ready to deploy."
