@@ -121,10 +121,58 @@ fi
 
 # Run unified migration if database is available
 if [ "$DB_RUNNING" = true ]; then
-    echo "   Running unified migration..."
-    bash utils-server.sh db-migrate || {
-        echo "   ⚠️  Migration warning (may be normal if already applied)"
-    }
+    MIGRATION_FILE="apps/backend/unified-migration.sql"
+    
+    if [ ! -f "$MIGRATION_FILE" ]; then
+        echo "   ❌ Migration file not found: $MIGRATION_FILE"
+        echo "   Trying alternative method..."
+        bash utils-server.sh db-migrate || {
+            echo "   ⚠️  Migration warning (may be normal if already applied)"
+        }
+    else
+        echo "   Running unified migration from: $MIGRATION_FILE"
+        echo "   Database: $DB_NAME"
+        echo "   User: $DB_USER"
+        echo ""
+        
+        # Get database password from environment or docker-compose
+        DB_PASSWORD="${POSTGRES_PASSWORD:-010110bkns}"
+        
+        # Run migration directly
+        export PGPASSWORD="$DB_PASSWORD"
+        if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE"; then
+            echo ""
+            echo "   ✅ Migration completed successfully!"
+            
+            # Verify migration - check if categoryTypeId column exists
+            if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+                echo "   ✅ Verified: categoryTypeId column exists"
+            else
+                echo "   ⚠️  Warning: categoryTypeId column not found (may need manual check)"
+            fi
+            
+            # Verify category_type table exists
+            if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'category_type');" | grep -q t; then
+                echo "   ✅ Verified: category_type table exists"
+            else
+                echo "   ⚠️  Warning: category_type table not found (may need manual check)"
+            fi
+        else
+            echo ""
+            echo "   ⚠️  Migration had warnings (may be normal if already applied)"
+            echo "   Checking if migration is already applied..."
+            
+            # Check if migration was already applied
+            if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+                echo "   ✅ Migration already applied (categoryTypeId exists)"
+            else
+                echo "   ⚠️  Migration may have failed - please check manually"
+                echo "   You can try running manually:"
+                echo "   docker exec -i $DB_CONTAINER psql -U $DB_USER -d $DB_NAME < $MIGRATION_FILE"
+            fi
+        fi
+        unset PGPASSWORD
+    fi
 else
     echo "   ⚠️  Database not running - migration will run on first startup"
 fi

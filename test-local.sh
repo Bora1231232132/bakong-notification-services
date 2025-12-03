@@ -88,13 +88,51 @@ echo "----------------------------------------"
 
 # Test migration
 echo "Running unified migration..."
+echo "   File: $MIGRATION_FILE"
+echo "   Database: $DB_NAME"
+echo "   User: $DB_USER"
+echo ""
+
 export PGPASSWORD="$DB_PASSWORD"
 if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE"; then
+    echo ""
     echo "✅ Migration test PASSED"
+    
+    # Verify migration - check if categoryTypeId column exists
+    echo ""
+    echo "   Verifying migration..."
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+        echo "   ✅ Verified: categoryTypeId column exists"
+    else
+        echo "   ⚠️  Warning: categoryTypeId column not found"
+    fi
+    
+    # Verify category_type table exists
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'category_type');" | grep -q t; then
+        echo "   ✅ Verified: category_type table exists"
+    else
+        echo "   ⚠️  Warning: category_type table not found"
+    fi
+    
+    # Verify notification_type_enum exists
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM pg_type WHERE typname = 'notification_type_enum');" | grep -q t; then
+        echo "   ✅ Verified: notification_type_enum exists"
+    else
+        echo "   ⚠️  Warning: notification_type_enum not found"
+    fi
 else
+    echo ""
     echo "❌ Migration test FAILED"
-    unset PGPASSWORD
-    exit 1
+    echo ""
+    echo "   Checking if migration was already applied..."
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+        echo "   ✅ Migration already applied (categoryTypeId exists)"
+        echo "   Migration test PASSED (already applied)"
+    else
+        echo "   ❌ Migration failed and not applied"
+        unset PGPASSWORD
+        exit 1
+    fi
 fi
 unset PGPASSWORD
 

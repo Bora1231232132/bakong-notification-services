@@ -84,8 +84,24 @@ if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
 elif docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
     echo "   ⚠️  Database container exists but is stopped - starting it..."
     docker start "$DB_CONTAINER"
-    sleep 10
-    DB_RUNNING=true
+    echo "   ⏳ Waiting for database to be ready (15 seconds)..."
+    sleep 15
+    
+    # Wait for healthcheck
+    for i in {1..10}; do
+        if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" -p 5432 > /dev/null 2>&1; then
+            echo "   ✅ Database is ready"
+            DB_RUNNING=true
+            break
+        fi
+        echo "   ⏳ Waiting... ($i/10)"
+        sleep 2
+    done
+    
+    if [ "$DB_RUNNING" != "true" ]; then
+        echo "   ⚠️  Database healthcheck timeout - continuing anyway"
+        DB_RUNNING=true
+    fi
 else
     echo "   ⚠️  Database container not found - will be created by docker-compose"
     DB_RUNNING=false
@@ -93,10 +109,49 @@ fi
 
 # Run unified migration if database is available
 if [ "$DB_RUNNING" = true ]; then
-    echo "   Running unified migration..."
-    bash utils-server.sh db-migrate || {
-        echo "   ⚠️  Migration warning (may be normal if already applied)"
-    }
+    MIGRATION_FILE="apps/backend/unified-migration.sql"
+    
+    if [ ! -f "$MIGRATION_FILE" ]; then
+        echo "   ❌ Migration file not found: $MIGRATION_FILE"
+        echo "   Trying alternative method..."
+        bash utils-server.sh db-migrate || {
+            echo "   ⚠️  Migration warning (may be normal if already applied)"
+        }
+    else
+        echo "   Running unified migration from: $MIGRATION_FILE"
+        echo "   Database: $DB_NAME"
+        echo "   User: $DB_USER"
+        echo ""
+        
+        # Get database password from environment or docker-compose
+        DB_PASSWORD="${POSTGRES_PASSWORD:-0101bkns_sit}"
+        
+        # Run migration directly
+        export PGPASSWORD="$DB_PASSWORD"
+        if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE"; then
+            echo ""
+            echo "   ✅ Migration completed successfully!"
+            
+            # Verify migration - check if categoryTypeId column exists
+            if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+                echo "   ✅ Verified: categoryTypeId column exists"
+            else
+                echo "   ⚠️  Warning: categoryTypeId column not found (may need manual check)"
+            fi
+        else
+            echo ""
+            echo "   ⚠️  Migration had warnings (may be normal if already applied)"
+            echo "   Checking if migration is already applied..."
+            
+            # Check if migration was already applied
+            if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+                echo "   ✅ Migration already applied (categoryTypeId exists)"
+            else
+                echo "   ⚠️  Migration may have failed - please check manually"
+            fi
+        fi
+        unset PGPASSWORD
+    fi
 else
     echo "   ⚠️  Database not running - migration will run on first startup"
 fi
