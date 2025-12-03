@@ -69,6 +69,28 @@ const router = createRouter({
           },
         },
         {
+          path: 'templates/view/:id',
+          name: 'view-template',
+          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'View Template',
+              parent: { name: 'templates', label: 'Templates' },
+            },
+          },
+        },
+        {
+          path: 'templates/edit/:id',
+          name: 'edit-template',
+          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Edit Template',
+              parent: { name: 'templates', label: 'Templates' },
+            },
+          },
+        },
+        {
           path: 'notifications/create',
           name: 'create-notification',
           component: () => import('../views/CreateNotificationView.vue'),

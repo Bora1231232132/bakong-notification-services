@@ -1,10 +1,12 @@
 <template>
-  <div class="relative w-full min-h-[191px] opacity-100">
-    <div class="absolute inset-0 overflow-auto">
+  <div class="relative w-full h-[441px] opacity-100">
+    <div class="absolute inset-0 overflow-y-auto overflow-x-auto">
       <table class="w-full text-sm text-left text-[#001346] border-collapse min-w-[600px]">
         <thead class="text-[14px] font-semibold text-[#001346B3] uppercase bg-[#f2f2f4] bg-cover">
-          <tr class="h-[63px]">
-            <th class="py-3 pl-4 sm:pl-8 pr-2 sm:pr-4 text-left gap-2">
+          <tr class="h-[62px]">
+            <th
+              class="sticky top-0 z-10 py-3 pl-4 sm:pl-8 pr-2 sm:pr-4 text-left gap-2 bg-[#f2f2f4]"
+            >
               <div
                 class="flex items-center justify-start gap-2"
                 style="padding-left: 3px !important"
@@ -19,7 +21,9 @@
                 <span>Icon</span>
               </div>
             </th>
-            <th class="py-3 px-2 sm:px-4 text-center align-middle cursor-pointer w-full">
+            <th
+              class="sticky top-0 z-10 py-3 px-2 sm:px-4 text-center align-middle cursor-pointer w-full bg-[#f2f2f4]"
+            >
               <div class="flex items-center justify-center gap-2 w-full">
                 Name
                 <svg
@@ -35,7 +39,7 @@
               </div>
             </th>
             <th
-              class="py-3 px-2 sm:px-4 text-start whitespace-nowrap w-[200px] sticky right-0 bg-[#f2f2f4] z-10"
+              class="sticky top-0 right-0 z-10 py-3 px-2 sm:px-4 text-start whitespace-nowrap w-[200px] bg-[#f2f2f4]"
             >
               Actions
             </th>
@@ -58,7 +62,16 @@
                   @change="handleSelectItem(i)"
                   class="w-4 h-4 border border-[#001346] rounded bg-white focus:ring-0 focus:ring-offset-0"
                 />
-                <div class="text-xl">{{ item.icon }}</div>
+                <div class="w-8 h-8 flex items-center justify-center">
+                  <img
+                    v-if="item.icon && item.icon.startsWith('blob:')"
+                    :src="item.icon"
+                    :alt="item.name"
+                    class="w-8 h-8 object-contain"
+                    @error="handleIconError($event, item)"
+                  />
+                  <span v-else-if="item.icon" class="text-xl">{{ item.icon }}</span>
+                </div>
               </div>
             </td>
             <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-center align-middle w-full">
@@ -67,7 +80,7 @@
               </div>
             </td>
             <td
-              class="py-3 px-2 sm:px-4 align-middle text-center sticky right-0 bg-white z-10 w-[200px]"
+              class="py-3 px-2 sm:px-4 align-middle text-center sticky right-0 bg-white z-0 w-[200px]"
             >
               <div class="flex justify-center items-center gap-1 sm:gap-2">
                 <button
@@ -154,8 +167,10 @@ import { ref, computed } from 'vue'
 
 const props = defineProps<{
   notifications: Array<{
+    id?: number
     icon: string
     name: string
+    categoryType?: any
   }>
 }>()
 
@@ -186,5 +201,11 @@ const handleSelectItem = (index: number) => {
   } else {
     selectedItems.value.add(index)
   }
+}
+
+const handleIconError = (event: Event, item: any) => {
+  const img = event.target as HTMLImageElement
+  // Hide image if it fails to load (no fallback)
+  img.style.display = 'none'
 }
 </script>

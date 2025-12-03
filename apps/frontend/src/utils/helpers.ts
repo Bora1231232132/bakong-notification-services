@@ -1,4 +1,4 @@
-﻿import { DateUtils } from '@bakong/shared'
+import { DateUtils } from '@bakong/shared'
 
 export enum NotificationType {
   NOTIFICATION = 'NOTIFICATION',
@@ -6,12 +6,7 @@ export enum NotificationType {
   FLASH_NOTIFICATION = 'FLASH_NOTIFICATION',
 }
 
-export enum CategoryType {
-  PRODUCT_AND_FEATURE = 'PRODUCT_AND_FEATURE',
-  NEWS = 'NEWS',
-  OTHER = 'OTHER',
-  EVENT = 'EVENT',
-}
+// CategoryType enum removed - use categoryTypeId from API instead
 
 export enum Platform {
   ALL = 'ALL',
@@ -50,18 +45,30 @@ export const formatNotificationType = (type: string): string => {
   }
 }
 
-export const formatCategoryType = (category: string): string => {
-  switch (category?.toUpperCase()) {
-    case CategoryType.EVENT:
+export const formatCategoryType = (category: string | number | undefined): string => {
+  if (!category) return 'Other'
+
+  // If it's a number (categoryTypeId), we'll need the name from API
+  // For now, just return the string value or formatted version
+  const categoryStr = String(category).toUpperCase()
+
+  switch (categoryStr) {
+    case 'EVENT':
       return 'Event'
-    case CategoryType.PRODUCT_AND_FEATURE:
+    case 'PRODUCT_AND_FEATURE':
       return 'Product & features'
-    case CategoryType.NEWS:
+    case 'NEWS':
       return 'News'
-    case CategoryType.OTHER:
+    case 'OTHER':
       return 'Other'
     default:
-      return category || 'Other'
+      // Try to format common patterns
+      return (
+        categoryStr
+          .split('_')
+          .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+          .join(' ') || 'Other'
+      )
   }
 }
 
@@ -273,8 +280,9 @@ export const mapTypeToNotificationType = (type: string): string => {
   return type || NotificationType.ANNOUNCEMENT
 }
 
-export const mapTypeToCategoryType = (type: string): CategoryType => {
-  return (type as CategoryType) || CategoryType.OTHER
+export const mapTypeToCategoryType = (type: string | number | undefined): number | string => {
+  // Return the type as-is (could be categoryTypeId number or name string)
+  return type || 'OTHER'
 }
 
 export const mapPlatformToEnum = (platform: string): string => {

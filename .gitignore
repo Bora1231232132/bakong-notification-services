@@ -182,8 +182,17 @@ test-report.xml
 .cursor/scripts/
 .cursor/templates/
 
+
 # Ps1
-.ps1/
+*.ps1/
 
 # md
 *.md
+# Exception: Track migration guides and documentation
+!apps/backend/scripts/*.md
+
+# scripts (root level only)
+scripts/
+# Exception: Track backend migration scripts
+!apps/backend/scripts/
+

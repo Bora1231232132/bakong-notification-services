@@ -13,6 +13,7 @@ import moment from 'moment'
 import { Image } from 'src/entities/image.entity'
 import { BaseResponseDto } from 'src/common/base-response.dto'
 import { Template } from 'src/entities/template.entity'
+import { CategoryType } from 'src/entities/category-type.entity'
 import { MoreThanOrEqual, Repository, Not, In } from 'typeorm'
 import { NotificationService } from '../notification/notification.service'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
@@ -26,7 +27,6 @@ import {
   ResponseMessage,
   SendType,
   NotificationType,
-  CategoryType,
   TimezoneUtils,
   Language,
 } from '@bakong/shared'
@@ -43,6 +43,8 @@ export class TemplateService implements OnModuleInit {
     private readonly imageRepo: Repository<Image>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(CategoryType)
+    private readonly categoryTypeRepo: Repository<CategoryType>,
     @Inject(forwardRef(() => NotificationService))
     public readonly notificationService: NotificationService,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -183,23 +185,13 @@ export class TemplateService implements OnModuleInit {
         ? dto.isSent !== false // Send if not explicitly false (true or undefined)
         : dto.isSent === true
 
-    // Normalize platforms: ["IOS", "ANDROID"] -> ["ALL"]
-    const normalizedPlatforms = dto.platforms
-      ? ValidationHelper.parsePlatforms(dto.platforms)
-      : ['ALL']
-    
-    console.log('🔵 [TEMPLATE CREATE] Platform normalization:', {
-      original: dto.platforms,
-      normalized: normalizedPlatforms,
-    })
-
     let template = this.repo.create({
       platforms: normalizedPlatforms,
       bakongPlatform: dto.bakongPlatform,
       sendType: dto.sendType,
       isSent: initialIsSent,
       notificationType: dto.notificationType || NotificationType.FLASH_NOTIFICATION,
-      categoryType: dto.categoryType || CategoryType.NEWS,
+      categoryTypeId: categoryTypeId,
       priority: dto.priority || 0,
       sendSchedule: dto.sendSchedule ? moment.utc(dto.sendSchedule).toDate() : null,
       sendInterval: dto.sendInterval
@@ -593,7 +585,7 @@ export class TemplateService implements OnModuleInit {
       bakongPlatform,
       translations,
       notificationType,
-      categoryType,
+      categoryTypeId,
       sendType,
       sendSchedule,
       isSent,
@@ -648,7 +640,7 @@ export class TemplateService implements OnModuleInit {
       }
       if (bakongPlatform !== undefined) updateFields.bakongPlatform = bakongPlatform
       if (notificationType !== undefined) updateFields.notificationType = notificationType
-      if (categoryType !== undefined) updateFields.categoryType = categoryType
+      if (categoryTypeId !== undefined) updateFields.categoryTypeId = categoryTypeId
 
       if (sendType !== undefined) {
         updateFields.sendType = sendType
@@ -959,7 +951,7 @@ export class TemplateService implements OnModuleInit {
         sendSchedule: isEditingPublished ? null : (dto.sendSchedule !== undefined ? dto.sendSchedule : oldTemplate.sendSchedule),
         sendInterval: isEditingPublished ? null : oldTemplate.sendInterval,
         notificationType: dto.notificationType || oldTemplate.notificationType,
-        categoryType: dto.categoryType || oldTemplate.categoryType,
+        categoryTypeId: dto.categoryTypeId ?? oldTemplate.categoryTypeId,
         priority: oldTemplate.priority,
         createdBy: currentUser?.username || oldTemplate.createdBy,
         updatedBy: currentUser?.username || oldTemplate.updatedBy,
@@ -1380,7 +1372,8 @@ export class TemplateService implements OnModuleInit {
       bakongPlatform: template.bakongPlatform,
       sendType: template.sendType,
       notificationType: template.notificationType,
-      categoryType: template.categoryType,
+      categoryType: template.categoryTypeEntity?.name,
+      categoryTypeId: template.categoryTypeId,
       priority: template.priority,
       sendInterval: template.sendInterval
         ? {
@@ -1864,28 +1857,16 @@ export class TemplateService implements OnModuleInit {
       return createdAt >= todayStart && createdAt <= todayEnd
     })
 
-    // Count how many times each template was shown today
-    const templateTodayCounts = todayNotifications.reduce((acc, notif) => {
-      const templateId = notif.templateId
-      if (templateId) {
-        acc[templateId] = (acc[templateId] || 0) + 1
-      }
-      return acc
-    }, {} as Record<number, number>)
-
-    // Count distinct days for each template
-    const templateDaysCounts: Record<number, Set<string>> = {}
-    userNotifications.forEach((notif) => {
-      const templateId = notif.templateId
-      if (templateId) {
-        if (!templateDaysCounts[templateId]) {
-          templateDaysCounts[templateId] = new Set()
+    const templateViewCounts = todayNotifications.reduce(
+      (acc, notif) => {
+        const templateId = notif.templateId
+        if (templateId) {
+          acc[templateId] = (acc[templateId] || 0) + 1
         }
-        const date = new Date(notif.createdAt)
-        const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-        templateDaysCounts[templateId].add(dayKey)
-      }
-    })
+        return acc
+      },
+      {} as Record<number, number>,
+    )
 
     // Get all published flash templates to check their limits
     const allTemplatesWhere: any = {
@@ -1931,7 +1912,7 @@ export class TemplateService implements OnModuleInit {
 
     if (excludedTemplateIds.length > 0) {
       console.log(
-        `📋 [findBestTemplateForUser] Templates excluded due to limits: ${excludedTemplateIds.join(', ')}`,
+        `📋 [findBestTemplateForUser] Templates sent 2+ times in last 24h (excluding): ${seenTemplateIds.join(', ')}`,
       )
     } else {
       console.log(`📋 [findBestTemplateForUser] No templates excluded due to limits`)
@@ -1955,9 +1936,7 @@ export class TemplateService implements OnModuleInit {
     }
 
     console.log(
-      `📋 [findBestTemplateForUser] Excluding templates that reached limits: ${
-        excludedTemplateIds.length > 0 ? excludedTemplateIds.join(', ') : 'none'
-      }`,
+      `📋 [findBestTemplateForUser] Excluding templates sent 2+ times in last 24h: ${seenTemplateIds.length > 0 ? seenTemplateIds.join(', ') : 'none'}`,
     )
     console.log(`📋 [findBestTemplateForUser] Only including published templates (isSent: true)`)
 

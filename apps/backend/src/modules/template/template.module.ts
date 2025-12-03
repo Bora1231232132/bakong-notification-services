@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm'
 import { ScheduleModule } from '@nestjs/schedule'
 import { Template } from 'src/entities/template.entity'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
+import { CategoryType } from 'src/entities/category-type.entity'
 import { TemplateService } from './template.service'
 import { TemplateController } from './template.controller'
 import { NotificationModule } from '../notification/notification.module'
@@ -18,7 +19,7 @@ import { Logger } from '@nestjs/common'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Template, TemplateTranslation, Image, BakongUser, User]),
+    TypeOrmModule.forFeature([Template, TemplateTranslation, Image, BakongUser, CategoryType , User]),
     forwardRef(() => NotificationModule),
     forwardRef(() => ImageModule),
     ScheduleModule,

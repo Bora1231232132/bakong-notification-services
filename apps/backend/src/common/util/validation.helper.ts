@@ -8,7 +8,7 @@ export class ValidationHelper {
   static validateLanguage = ValidationUtils.validateLanguage
   static validatePlatform = ValidationUtils.validatePlatform
   static validateNotificationType = ValidationUtils.validateNotificationType
-  static validateCategoryType = ValidationUtils.validateCategoryType
+  // validateCategoryType removed - use categoryTypeId from database instead
   static validateUserRole = ValidationUtils.validateUserRole
   static validateSendType = ValidationUtils.validateSendType
   static normalizeEnum = ValidationUtils.normalizeEnum

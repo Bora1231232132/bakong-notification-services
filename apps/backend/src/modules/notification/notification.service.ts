@@ -911,7 +911,7 @@ export class NotificationService {
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
-        categoryType: String(template.categoryType),
+        categoryType: String(template.categoryTypeId || ''),
         language: String(translation.language),
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),

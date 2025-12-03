@@ -5,10 +5,12 @@
     <div class="flex items-center gap-2 w-full sm:w-auto">
       <label class="text-[#001346] text-[16px] font-medium whitespace-nowrap">Category type</label>
       <input
+        v-model="searchValue"
         type="text"
-        placeholder="User input"
+        placeholder="Search by name..."
         class="flex-1 sm:flex-initial sm:w-[313px] h-[56px] px-4 border border-[#0013461A] rounded-[8px] text-[#001346] text-[14px]"
         style="padding-left: 16px !important"
+        @input="handleSearch"
       />
       <button
         class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 w-[140px] px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap"
@@ -16,7 +18,7 @@
         aria-label="Add new"
       >
         <span>Add new</span>
-        <HugeiconsIcon :icon="AddCircleIcon" :size="20" :color="'#001346'" />
+        <img src="@/assets/image/add--alt.svg" alt="Add" class="w-5 h-5" />
       </button>
     </div>
     <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
@@ -26,14 +28,48 @@
         aria-label="Open filter"
       >
         Filter
-        <HugeiconsIcon :icon="FilterIcon" :size="24" color="#001346" :stroke-width="1" />
+        <img src="@/assets/image/filter.svg" alt="Filter" class="w-5 h-5" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { HugeiconsIcon } from '@hugeicons/vue'
-import { AddCircleIcon } from '@hugeicons/core-free-icons'
-import { FilterIcon } from '@hugeicons/core-free-icons'
+import { ref, watch } from 'vue'
+
+const props = defineProps<{
+  modelValue?: string
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+  search: [value: string]
+  addNew: []
+  filter: []
+}>()
+
+const searchValue = ref(props.modelValue || '')
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+
+const handleSearch = () => {
+  emit('update:modelValue', searchValue.value)
+
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+
+  searchTimeout = setTimeout(() => {
+    emit('search', searchValue.value)
+  }, 300)
+}
+
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    if (newValue !== searchValue.value) {
+      searchValue.value = newValue || ''
+    }
+  },
+)
 </script>
