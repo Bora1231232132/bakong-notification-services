@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="create-notification-container">
     <div class="main-content">
       <Tabs v-model="activeLanguage" :tabs="languageTabs" @tab-changed="handleLanguageChanged" />
@@ -8,9 +8,9 @@
             :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
             v-model="currentImageFile"
             accept-types="image/png,image/jpeg"
-            :max-size="10 * 1024 * 1024"
-            format-text="Supported format: PNG, JPG (2:1 W:H)"
-            size-text="Maximum size: 10MB"
+            :max-size="3 * 1024 * 1024"
+            format-text="Supported format: PNG, JPG (2:1 W:H or 880:440)"
+            size-text="Maximum size: 3MB"
             :existing-image-url="currentImageUrl || undefined"
             @file-selected="handleLanguageImageSelected"
             @file-removed="handleLanguageImageRemoved"
@@ -19,7 +19,8 @@
         </div>
         <div class="form-fields">
           <div class="form-row">
-            <div class="form-group">
+            <!-- Commented out: Type field - no longer used -->
+            <!-- <div class="form-group">
               <label class="form-label">Type <span class="required">*</span></label>
               <el-dropdown
                 @command="(command: NotificationType) => (formData.notificationType = command)"
@@ -44,16 +45,22 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-            </div>
+            </div> -->
             <div class="form-group">
-              <label class="form-label">Category Type<span class="required">*</span></label>
+              <label class="form-label">Category <span class="required">*</span></label>
               <el-dropdown
-                @command="(command: CategoryType) => (formData.categoryType = command)"
+                @command="(command: number) => (formData.categoryTypeId = command)"
                 trigger="click"
                 class="custom-dropdown"
+                :disabled="loadingCategoryTypes"
               >
                 <span class="dropdown-trigger">
-                  {{ formatCategoryType(formData.categoryType) }}
+                  {{
+                    formatCategoryType(
+                      categoryTypes.find((ct) => ct.id === formData.categoryTypeId)?.name ||
+                        'Select Category',
+                    )
+                  }}
                   <el-icon class="dropdown-icon">
                     <ArrowDown />
                   </el-icon>
@@ -61,11 +68,37 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item
-                      v-for="category in Object.values(CategoryType)"
-                      :key="category"
-                      :command="category"
+                      v-for="category in categoryTypes"
+                      :key="category.id"
+                      :command="category.id"
                     >
-                      {{ formatCategoryType(category) }}
+                      {{ formatCategoryType(category.name) }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Push to OS Platforms <span class="required">*</span></label>
+              <el-dropdown
+                @command="(command: Platform) => (formData.pushToPlatforms = command)"
+                trigger="click"
+                class="custom-dropdown"
+              >
+                <span class="dropdown-trigger">
+                  {{ formatPlatform(formData.pushToPlatforms) }}
+                  <el-icon class="dropdown-icon">
+                    <ArrowDown />
+                  </el-icon>
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="platform in Object.values(Platform)"
+                      :key="platform"
+                      :command="platform"
+                    >
+                      {{ formatPlatform(platform) }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -104,59 +137,31 @@
               >{{ descriptionError }}</span
             >
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">OS Platforms <span class="required">*</span></label>
-              <el-dropdown
-                @command="(command: Platform) => (formData.pushToPlatforms = command)"
-                trigger="click"
-                class="custom-dropdown"
-              >
-                <span class="dropdown-trigger">
-                  {{ formatPlatform(formData.pushToPlatforms) }}
-                  <el-icon class="dropdown-icon">
-                    <ArrowDown />
-                  </el-icon>
-                </span>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="platform in Object.values(Platform)"
-                      :key="platform"
-                      :command="platform"
-                    >
-                      {{ formatPlatform(platform) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Bakong Platform <span class="required">*</span></label>
-              <el-dropdown
-                @command="(command: BakongApp) => (formData.platform = command)"
-                trigger="click"
-                class="custom-dropdown"
-              >
-                <span class="dropdown-trigger">
-                  {{ formatBakongApp(formData.platform) }}
-                  <el-icon class="dropdown-icon">
-                    <ArrowDown />
-                  </el-icon>
-                </span>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="app in Object.values(BakongApp)"
-                      :key="app"
-                      :command="app"
-                    >
-                      {{ formatBakongApp(app) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
+          <div class="form-group">
+            <label class="form-label">Bakong Platform <span class="required">*</span></label>
+            <el-dropdown
+              @command="(command: BakongApp) => (formData.platform = command)"
+              trigger="click"
+              class="custom-dropdown full-width-dropdown"
+            >
+              <span class="dropdown-trigger full-width-trigger">
+                {{ formatBakongApp(formData.platform) }}
+                <el-icon class="dropdown-icon">
+                  <ArrowDown />
+                </el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="app in Object.values(BakongApp)"
+                    :key="app"
+                    :command="app"
+                  >
+                    {{ formatBakongApp(app) }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
           <div class="form-group">
             <label class="form-label">Link to see more (optional)</label>
@@ -179,7 +184,7 @@
             <div class="schedule-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
-                  <span class="option-title">Schedule Options</span>
+                  <span class="option-title">Posting Schedule</span>
                 </div>
                 <div class="schedule-option-right">
                   <span class="option-label">Set time and date</span>
@@ -199,7 +204,7 @@
                     format="M/D/YYYY"
                     value-format="M/D/YYYY"
                     class="schedule-date-picker"
-                    style="width: 277.5px !important; height: 45px !important; border-radius: 16px"
+                    style="width: 277.5px !important; height: 56px !important; border-radius: 16px"
                     :prefix-icon="null"
                     :clear-icon="null"
                     :disabled-date="disabledDate"
@@ -213,7 +218,7 @@
                     format="HH:mm"
                     value-format="HH:mm"
                     class="schedule-time-picker"
-                    style="width: 277.5px !important; height: 45px !important; border-radius: 16px"
+                    style="width: 277.5px !important; height: 56px !important; border-radius: 16px"
                     :prefix-icon="null"
                     :clear-icon="null"
                     :disabled-hours="() => disabledHours(formData.scheduleDate)"
@@ -229,10 +234,16 @@
             <div class="splash-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
-                  <span class="option-title">Show as splash</span>
+                  <span class="option-title">Show flash on launch</span>
+                  <span class="option-description">
+                    <template v-if="formData.splashEnabled">
+                      Users will see the flash message on next launch.
+                    </template>
+                    <template v-else> </template>
+                  </span>
                 </div>
                 <div class="schedule-option-right">
-                  <span class="option-label">Set time and date</span>
+                  <span class="option-label">Set number of showing</span>
                   <label class="toggle-switch">
                     <input v-model="formData.splashEnabled" type="checkbox" />
                     <span class="toggle-slider"></span>
@@ -240,23 +251,48 @@
                 </div>
               </div>
               <div v-if="formData.splashEnabled" class="schedule-datetime-row">
-                <div class="schedule-form-group">
+                <div class="schedule-form-group flash-input-group">
                   <label class="schedule-form-label"
-                    >Number showing per day <span class="required">*</span></label
+                    >Number showing per day: <span class="required">*</span></label
                   >
-                  <ElInputNumber
-                    v-model="num"
-                    :min="1"
-                    :max="10"
-                    @change="handleShowPerDayChange"
-                  />
+                  <div class="flash-input-wrapper">
+                    <ElInputNumber
+                      v-model="formData.showPerDay"
+                      :min="1"
+                      :max="10"
+                      :disabled="true"
+                      controls-position="right"
+                      class="flash-number-input"
+                    />
+                    <el-icon class="flash-dropdown-icon">
+                      <ArrowDown />
+                    </el-icon>
+                  </div>
+                </div>
+                <div class="schedule-form-group flash-input-group">
+                  <label class="schedule-form-label"
+                    >Maximum day showing: <span class="required">*</span></label
+                  >
+                  <div class="flash-input-wrapper">
+                    <ElInputNumber
+                      v-model="formData.maxDayShowing"
+                      :min="1"
+                      :max="30"
+                      :disabled="true"
+                      controls-position="right"
+                      class="flash-number-input"
+                    />
+                    <el-icon class="flash-dropdown-icon">
+                      <ArrowDown />
+                    </el-icon>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
           <div class="action-buttons">
             <Button
-              text="Publish now"
+              :text="publishButtonText"
               variant="primary"
               size="medium"
               width="123px"
@@ -264,6 +300,7 @@
               @click="handlePublishNow"
             />
             <Button
+              v-if="!isEditingPublished"
               text="Save draft"
               variant="secondary"
               size="medium"
@@ -280,7 +317,7 @@
         :title="currentTitle"
         :description="currentDescription"
         :image="currentImageUrl || ''"
-        :categoryType="formData.categoryType"
+        :categoryType="categoryTypes.find((ct) => ct.id === formData.categoryTypeId)?.name || ''"
       />
     </div>
   </div>
@@ -308,7 +345,6 @@ import { notificationApi, type CreateTemplateRequest } from '@/services/notifica
 import { api } from '@/services/api'
 import {
   NotificationType,
-  CategoryType,
   Platform,
   Language,
   SendType,
@@ -318,6 +354,7 @@ import {
   formatCategoryType,
   getNoUsersAvailableMessage,
 } from '@/utils/helpers'
+import { categoryTypeApi, type CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
 import { DateUtils } from '@bakong/shared'
 import {
   getCurrentDateTimeInCambodia,
@@ -329,7 +366,6 @@ import {
   mapNotificationTypeToFormType,
   mapPlatformToFormPlatform,
   mapTypeToNotificationType,
-  mapTypeToCategoryType,
   mapPlatformToEnum,
   mapLanguageToEnum,
   compressImage,
@@ -340,6 +376,19 @@ const route = useRoute()
 
 const isEditMode = computed(() => route.name === 'edit-notification')
 const notificationId = computed(() => route.params.id as string)
+const fromTab = computed(() => (route.query.fromTab as string) || '')
+const isEditingPublished = ref(false)
+
+// Dynamic button text based on context
+const publishButtonText = computed(() => {
+  if (isEditingPublished.value) {
+    return 'Update now'
+  }
+  if (formData.scheduleEnabled) {
+    return 'Schedule Now'
+  }
+  return 'Publish now'
+})
 
 const languages = [
   { code: Language.KM, name: 'Khmer' },
@@ -361,10 +410,7 @@ const handleLanguageChanged = (tab: { value: string; label: string }) => {
   linkError.value = ''
 }
 
-const num = ref(1)
-const handleShowPerDayChange = (value: number | undefined) => {
-  console.log(value)
-}
+// Flash notification settings - defaults and disabled for first version
 
 const datePlaceholder = ref(getCurrentDatePlaceholder())
 const timePlaceholder = ref(getCurrentTimePlaceholder())
@@ -413,16 +459,43 @@ const getTodayDateString = (): string => {
   return `${month}/${day}/${year}`
 }
 
+const categoryTypes = ref<CategoryTypeData[]>([])
+const loadingCategoryTypes = ref(false)
+
 const formData = reactive({
   notificationType: NotificationType.NOTIFICATION,
-  categoryType: CategoryType.OTHER,
+  categoryTypeId: null as number | null,
   pushToPlatforms: Platform.ALL,
-  showPerDay: 1,
+  showPerDay: 1, // Default: 1 time per day (disabled for first version)
+  maxDayShowing: 1, // Default: 1 days maximum (disabled for first version)
   platform: BakongApp.BAKONG,
   scheduleEnabled: false,
   scheduleDate: getTodayDateString(),
   scheduleTime: null as string | null,
   splashEnabled: false,
+})
+
+// Fetch category types on mount
+const fetchCategoryTypes = async () => {
+  loadingCategoryTypes.value = true
+  try {
+    const types = await categoryTypeApi.getAll()
+    categoryTypes.value = types
+    // Set default to first category or NEWS if available
+    if (types.length > 0) {
+      const newsCategory = types.find((ct) => ct.name === 'NEWS')
+      formData.categoryTypeId = newsCategory?.id || types[0].id
+    }
+  } catch (error) {
+    console.error('Failed to fetch category types:', error)
+  } finally {
+    loadingCategoryTypes.value = false
+  }
+}
+
+onMounted(() => {
+  fetchCategoryTypes()
+  // ... existing onMounted code
 })
 
 const currentTitle = computed({
@@ -485,9 +558,12 @@ const loadNotificationData = async () => {
 
     if (!template) return
 
+    // Check if editing a published notification (either from fromTab query or isSent status)
+    isEditingPublished.value = fromTab.value === 'published' || template.isSent === true
+
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
-    formData.categoryType = mapTypeToCategoryType(template.categoryType) || CategoryType.OTHER
+    formData.categoryTypeId = template.categoryTypeId || null
     formData.platform = (template.bakongPlatform as BakongApp) || BakongApp.BAKONG
 
     if (template.sendSchedule) {
@@ -551,6 +627,20 @@ onMounted(async () => {
 })
 
 const showConfirmationDialog = ref(false)
+
+// Watch splashEnabled toggle to update notificationType
+watch(
+  () => formData.splashEnabled,
+  (isEnabled) => {
+    if (isEnabled) {
+      // When "Show as flash" is turned ON, set to FLASH_NOTIFICATION
+      formData.notificationType = NotificationType.FLASH_NOTIFICATION
+    } else {
+      // When "Show as flash" is turned OFF, set to ANNOUNCEMENT
+      formData.notificationType = NotificationType.ANNOUNCEMENT
+    }
+  },
+)
 
 const titleError = ref('')
 const descriptionError = ref('')
@@ -659,25 +749,37 @@ const handlePublishNow = async () => {
     let isSent = true
     let redirectTab = 'published'
 
-    const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
-    const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
-
-    if (formData.scheduleEnabled) {
-      if (!hasValidDate || !hasValidTime) {
-        ElNotification({
-          title: 'Error',
-          message: 'Please select both Date and Time for scheduling',
-          type: 'error',
-          duration: 2000,
-        })
-        loadingNotification.close()
-        return
-      }
-      sendType = SendType.SEND_SCHEDULE
-      isSent = false
-      redirectTab = 'scheduled'
-    } else {
+    // When editing a published notification, always keep it published
+    // Don't allow changing to scheduled or draft - ignore schedule settings
+    if (isEditMode.value && isEditingPublished.value) {
+      sendType = SendType.SEND_NOW
+      isSent = true
       redirectTab = 'published'
+      // Clear schedule fields to prevent any scheduling
+      formData.scheduleEnabled = false
+      formData.scheduleDate = ''
+      formData.scheduleTime = ''
+    } else {
+      const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
+      const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
+
+      if (formData.scheduleEnabled) {
+        if (!hasValidDate || !hasValidTime) {
+          ElNotification({
+            title: 'Error',
+            message: 'Please select both Date and Time for scheduling',
+            type: 'error',
+            duration: 2000,
+          })
+          loadingNotification.close()
+          return
+        }
+        sendType = SendType.SEND_SCHEDULE
+        isSent = false
+        redirectTab = 'scheduled'
+      } else {
+        redirectTab = 'published'
+      }
     }
     const imagesToUpload: { file: File; language: string }[] = []
     const translations = []
@@ -698,8 +800,10 @@ const handlePublishNow = async () => {
         if (langData.imageFile) {
           try {
             const { file: compressed, dataUrl } = await compressImage(langData.imageFile, {
-              maxBytes: 5 * 1024 * 1024,
+              maxBytes: 10 * 1024 * 1024,
               maxWidth: 2000,
+              targetAspectRatio: 2 / 1, // 2:1 aspect ratio as shown in UI
+              correctAspectRatio: true, // Automatically correct aspect ratio
             })
             imagesToUpload.push({ file: compressed, language: langKey })
             if (languageFormData[langKey]) {
@@ -717,7 +821,7 @@ const handlePublishNow = async () => {
             return
           }
         } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
-          imageId = existingImageIds[langKey]
+          imageId = existingImageIds[langKey] || undefined
         }
 
         translations.push({
@@ -758,7 +862,7 @@ const handlePublishNow = async () => {
         console.error('Error uploading images:', error)
         ElNotification({
           title: 'Error',
-          message: 'Failed to upload images. Please ensure each is <= 5MB and try again.',
+          message: 'Failed to upload images. Please ensure each is <= 10MB and try again.',
           type: 'error',
           duration: 2000,
         })
@@ -829,16 +933,20 @@ const handlePublishNow = async () => {
       isSent: isSent,
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
-      categoryType: mapTypeToCategoryType(formData.categoryType),
+      categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
 
-    if (formData.scheduleEnabled) {
+    // Only set schedule if not editing a published notification
+    if (formData.scheduleEnabled && !(isEditMode.value && isEditingPublished.value)) {
       const scheduleDateTime = DateUtils.parseScheduleDateTime(
         String(formData.scheduleDate),
         String(formData.scheduleTime),
       )
       templateData.sendSchedule = scheduleDateTime.toISOString()
+    } else if (isEditMode.value && isEditingPublished.value) {
+      // Explicitly clear schedule when editing published notification
+      templateData.sendSchedule = undefined
     }
 
     let result
@@ -873,14 +981,63 @@ const handlePublishNow = async () => {
         duration: 2000,
       })
     } else {
+      // Get successful count from response if available
+      // Debug: log the full result to see the structure
+      console.log('📊 [CreateNotificationView] Full result:', result)
+      console.log('📊 [CreateNotificationView] result.data:', result?.data)
+
+      const successfulCount = result?.data?.successfulCount
+      const failedCount = result?.data?.failedCount
+      const failedUsers = result?.data?.failedUsers || []
+
+      console.log('📊 [CreateNotificationView] Send result:', {
+        successfulCount,
+        failedCount,
+        failedUsers,
+      })
+
+      // Check if this is a flash notification
+      const isFlashNotification = formData.notificationType === NotificationType.FLASH_NOTIFICATION
+
+      let message = isFlashNotification
+        ? isEditMode.value
+          ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
+          : 'Flash notification created and published successfully, and when user open bakongPlatform it will saw it!'
+        : isEditMode.value
+          ? 'Notification updated and published successfully!'
+          : 'Notification created and published successfully!'
+
+      // Add user count if available (only for non-flash notifications)
+      if (
+        !isFlashNotification &&
+        successfulCount !== undefined &&
+        successfulCount !== null &&
+        successfulCount > 0
+      ) {
+        const userText = successfulCount === 1 ? 'user' : 'users'
+        message = isEditMode.value
+          ? `Notification updated and published to ${successfulCount} ${userText} successfully!`
+          : `Notification created and published to ${successfulCount} ${userText} successfully!`
+      }
+
+      // For flash notifications, replace bakongPlatform with bold platform name
+      if (isFlashNotification) {
+        const platformName = formatBakongApp(formData.platform)
+        message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+      }
+
       ElNotification({
         title: 'Success',
-        message: isEditMode.value
-          ? 'Notification updated and published successfully!'
-          : 'Notification created and published successfully!',
+        message: message,
         type: 'success',
         duration: 2000,
+        dangerouslyUseHTMLString: isFlashNotification,
       })
+
+      // Log failed users to console if any
+      if (failedCount > 0 && failedUsers.length > 0) {
+        console.warn(`⚠️ Failed to send notification to ${failedCount} user(s):`, failedUsers)
+      }
     }
     try {
       localStorage.removeItem('notifications_cache')
@@ -898,15 +1055,47 @@ const handlePublishNow = async () => {
     }
   } catch (error: any) {
     console.error('Error creating notification:', error)
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response,
+      responseData: error.response?.data,
+      status: error.response?.status,
+    })
 
     loadingNotification.close()
-    const errorMessage =
-      error.response?.data?.responseMessage || error.response?.data?.message || error.message
+
+    // Extract error message with better fallbacks
+    let errorMessage =
+      error.response?.data?.responseMessage ||
+      error.response?.data?.message ||
+      error.message ||
+      'An unexpected error occurred while creating the notification'
+
+    // If we still don't have a message, provide a status-based message
+    if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
+      const status = error.response?.status
+      if (status === 500) {
+        errorMessage =
+          'Internal server error. Please try again or contact support if the problem persists.'
+      } else if (status === 400) {
+        errorMessage = 'Invalid request. Please check your input and try again.'
+      } else if (status === 401) {
+        errorMessage = 'Authentication failed. Please log in again.'
+      } else if (status === 403) {
+        errorMessage = 'You do not have permission to perform this action.'
+      } else if (status === 404) {
+        errorMessage = 'The requested resource was not found.'
+      } else {
+        errorMessage = `Request failed with status ${status || 'unknown'}. Please try again.`
+      }
+    }
+
     ElNotification({
       title: 'Error',
-      message: `${errorMessage}`,
+      message: errorMessage,
       type: 'error',
-      duration: 2000,
+      duration: 5000, // Increased from 2000ms to 5000ms for better visibility
+      showClose: true, // Allow user to manually close
     })
   }
 }
@@ -958,8 +1147,10 @@ const handleSaveDraft = async () => {
       if (langData.imageFile) {
         try {
           const { file: compressed, dataUrl } = await compressImage(langData.imageFile, {
-            maxBytes: 5 * 1024 * 1024,
+            maxBytes: 10 * 1024 * 1024,
             maxWidth: 2000,
+            targetAspectRatio: 2 / 1, // 2:1 aspect ratio as shown in UI
+            correctAspectRatio: true, // Automatically correct aspect ratio
           })
           imagesToUpload.push({ file: compressed, language: langKey })
           if (languageFormData[langKey]) {
@@ -977,7 +1168,17 @@ const handleSaveDraft = async () => {
           return
         }
       } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
-        imageId = existingImageIds[langKey]
+        imageId = existingImageIds[langKey] || undefined
+      }
+
+      // For drafts: include translation if it has title OR content OR image
+      // This allows saving drafts with just an image, or just title/content, or any combination
+      const hasTitle = title && title.trim() !== ''
+      const hasContent = content && content.trim() !== ''
+      const hasImage = !!imageId || !!langData.imageFile
+
+      if (!hasTitle && !hasContent && !hasImage) {
+        continue
       }
 
       translations.push({
@@ -1080,7 +1281,7 @@ const handleSaveDraft = async () => {
       isSent: false,
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
-      categoryType: mapTypeToCategoryType(formData.categoryType),
+      categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
     if (formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime) {
@@ -1125,15 +1326,47 @@ const handleSaveDraft = async () => {
     }
   } catch (error: any) {
     console.error('Error saving draft:', error)
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response,
+      responseData: error.response?.data,
+      status: error.response?.status,
+    })
 
     loadingNotification.close()
-    const errorMessage =
-      error.response?.data?.responseMessage || error.response?.data?.message || error.message
+
+    // Extract error message with better fallbacks
+    let errorMessage =
+      error.response?.data?.responseMessage ||
+      error.response?.data?.message ||
+      error.message ||
+      'An unexpected error occurred while saving the draft'
+
+    // If we still don't have a message, provide a status-based message
+    if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
+      const status = error.response?.status
+      if (status === 500) {
+        errorMessage =
+          'Internal server error. Please try again or contact support if the problem persists.'
+      } else if (status === 400) {
+        errorMessage = 'Invalid request. Please check your input and try again.'
+      } else if (status === 401) {
+        errorMessage = 'Authentication failed. Please log in again.'
+      } else if (status === 403) {
+        errorMessage = 'You do not have permission to perform this action.'
+      } else if (status === 404) {
+        errorMessage = 'The requested resource was not found.'
+      } else {
+        errorMessage = `Request failed with status ${status || 'unknown'}. Please try again.`
+      }
+    }
+
     ElNotification({
       title: 'Error',
-      message: `${errorMessage}`,
+      message: errorMessage,
       type: 'error',
-      duration: 2000,
+      duration: 5000, // Increased from 2000ms to 5000ms for better visibility
+      showClose: true, // Allow user to manually close
     })
   }
 }
@@ -1187,6 +1420,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .el-date-editor .el-input__suffix-inner,
@@ -1196,6 +1430,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .el-date-editor .el-icon,
@@ -1207,6 +1442,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 </style>
 
@@ -1406,6 +1642,14 @@ body::-webkit-scrollbar {
   transform: rotate(180deg);
 }
 
+.full-width-dropdown {
+  width: 100%;
+}
+
+.full-width-trigger {
+  width: 603px !important;
+}
+
 .schedule-options {
   display: flex;
   flex-direction: column;
@@ -1425,8 +1669,9 @@ body::-webkit-scrollbar {
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  align-items: center;
-  gap: 218px;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
 }
 
 .splash-options {
@@ -1446,24 +1691,39 @@ body::-webkit-scrollbar {
 
 .schedule-option-left {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .schedule-option-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .option-label {
   font-size: 14px;
   color: #001346;
+  white-space: nowrap;
 }
 
 .option-title {
   font-size: 16px;
   font-weight: 600;
   color: #001346;
+}
+
+.option-description {
+  font-size: 14px;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.4;
+  max-width: 100%;
 }
 
 .toggle-switch {
@@ -1545,7 +1805,109 @@ input:checked + .toggle-slider:before {
   font-size: 14px;
   font-weight: 400;
   line-height: 150%;
-  color: #374151;
+}
+
+.field-hint {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 150%;
+  color: #10b981;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.flash-input-group {
+  width: 281.5px !important;
+  min-width: 281.5px !important;
+  max-width: 281.5px !important;
+}
+
+.flash-number-input {
+  width: 281.5px !important;
+  height: 56px !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper) {
+  width: 281.5px !important;
+  height: 56px !important;
+  min-width: 281.5px !important;
+  max-width: 281.5px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  padding: 16px 52px 16px 12px !important;
+  border: 1px solid rgba(0, 19, 70, 0.1) !important;
+  border-radius: 8px !important;
+  background-color: #f9fafb !important;
+  box-shadow: none !important;
+  transition: border-color 0.2s ease !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper:hover) {
+  border-color: rgba(0, 19, 70, 0.2) !important;
+}
+
+.flash-number-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #001346 !important;
+  box-shadow: 0 0 0 3px rgba(0, 19, 70, 0.1) !important;
+}
+
+.flash-number-input :deep(.el-input__inner) {
+  height: 100% !important;
+  line-height: 24px !important;
+  font-size: 14px !important;
+  font-family: 'IBM Plex Sans' !important;
+  color: #6b7280 !important;
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+.flash-number-input :deep(.el-input__inner::placeholder) {
+  color: #9ca3af !important;
+}
+
+.flash-number-input.is-disabled :deep(.el-input__wrapper) {
+  background-color: #f3f4f6 !important;
+  border-color: rgba(0, 19, 70, 0.1) !important;
+  cursor: not-allowed !important;
+}
+
+.flash-number-input.is-disabled :deep(.el-input__inner) {
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+
+.flash-input-wrapper {
+  position: relative;
+  width: 281.5px;
+  height: 56px;
+}
+
+.flash-dropdown-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  pointer-events: none;
+  z-index: 10;
+  font-size: 16px;
+}
+
+.flash-number-input.is-disabled + .flash-dropdown-icon,
+.flash-input-wrapper .flash-number-input.is-disabled ~ .flash-dropdown-icon {
+  color: #9ca3af;
+}
+
+.flash-number-input :deep(.el-input-number__increase),
+.flash-number-input :deep(.el-input-number__decrease) {
+  display: none !important;
 }
 
 .schedule-date-picker,
@@ -1603,7 +1965,16 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__suffix,
-.schedule-time-picker .el-input__suffix,
+.schedule-time-picker .el-input__suffix {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__prefix,
 .schedule-time-picker .el-input__prefix {
   display: none !important;
@@ -1614,7 +1985,16 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__suffix-inner,
-.schedule-time-picker .el-input__suffix-inner,
+.schedule-time-picker .el-input__suffix-inner {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__prefix-inner,
 .schedule-time-picker .el-input__prefix-inner {
   display: none !important;
@@ -1622,16 +2002,35 @@ input:checked + .toggle-slider:before {
   opacity: 0 !important;
 }
 
-.schedule-date-picker .el-icon,
-.schedule-time-picker .el-icon,
-.schedule-date-picker .el-input__icon,
-.schedule-time-picker .el-input__icon,
-.schedule-date-picker [class*='icon'],
-.schedule-time-picker [class*='icon'],
-.schedule-date-picker svg,
-.schedule-time-picker svg,
-.schedule-date-picker i,
-.schedule-time-picker i {
+.schedule-date-picker .el-input__suffix .el-icon,
+.schedule-time-picker .el-input__suffix .el-icon,
+.schedule-date-picker .el-input__suffix .el-input__icon,
+.schedule-time-picker .el-input__suffix .el-input__icon,
+.schedule-date-picker .el-input__suffix [class*='icon'],
+.schedule-time-picker .el-input__suffix [class*='icon'],
+.schedule-date-picker .el-input__suffix svg,
+.schedule-time-picker .el-input__suffix svg,
+.schedule-date-picker .el-input__suffix i,
+.schedule-time-picker .el-input__suffix i {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 16px !important;
+  color: #6b7280 !important;
+}
+
+.schedule-date-picker .el-icon:not(.el-input__suffix .el-icon),
+.schedule-time-picker .el-icon:not(.el-input__suffix .el-icon),
+.schedule-date-picker .el-input__icon:not(.el-input__suffix .el-input__icon),
+.schedule-time-picker .el-input__icon:not(.el-input__suffix .el-input__icon),
+.schedule-date-picker [class*='icon']:not(.el-input__suffix [class*='icon']),
+.schedule-time-picker [class*='icon']:not(.el-input__suffix [class*='icon']),
+.schedule-date-picker svg:not(.el-input__suffix svg),
+.schedule-time-picker svg:not(.el-input__suffix svg),
+.schedule-date-picker i:not(.el-input__suffix i),
+.schedule-time-picker i:not(.el-input__suffix i) {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1651,32 +2050,42 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__wrapper .el-input__suffix,
-.schedule-time-picker .el-input__wrapper .el-input__suffix,
+.schedule-time-picker .el-input__wrapper .el-input__suffix {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__wrapper .el-input__prefix,
 .schedule-time-picker .el-input__wrapper .el-input__prefix {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .schedule-date-picker.el-date-editor,
 .schedule-time-picker.el-time-picker {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 
 .schedule-date-picker.el-date-editor .el-input,
 .schedule-time-picker.el-time-picker .el-input {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 
 .schedule-date-picker.el-date-editor .el-input__wrapper,
 .schedule-time-picker.el-time-picker .el-input__wrapper {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 

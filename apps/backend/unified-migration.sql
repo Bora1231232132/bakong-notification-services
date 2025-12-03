@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS bakong_user (
     "participantCode" VARCHAR(50),
     platform VARCHAR(50),
     language VARCHAR(10) DEFAULT 'EN',
+    "bakongPlatform" bakong_platform_enum,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS image (
     id SERIAL PRIMARY KEY,
     "fileId" VARCHAR(255) NOT NULL UNIQUE,
     file BYTEA,
+    "fileHash" VARCHAR(32),
     "mimeType" VARCHAR(100),
     "originalFileName" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -137,9 +139,15 @@ CREATE TABLE IF NOT EXISTS template (
     "notificationType" VARCHAR(50),
     "categoryType" VARCHAR(50),
     priority INTEGER DEFAULT 1,
-    "sendInterval" INTEGER,
+    "sendInterval" JSON,
     "isSent" BOOLEAN DEFAULT FALSE,
     "sendSchedule" TIMESTAMPTZ,
+    "createdBy" VARCHAR(255),
+    "updatedBy" VARCHAR(255),
+    "publishedBy" VARCHAR(255),
+    "bakongPlatform" bakong_platform_enum,
+    "showPerDay" INTEGER DEFAULT 1,
+    "maxDayShowing" INTEGER DEFAULT 1,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "deletedAt" TIMESTAMPTZ NULL
@@ -240,6 +248,78 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  template.publishedBy already exists';
     END IF;
+    
+    -- Add showPerDay column for flash notification limits
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'showPerDay'
+    ) THEN
+        ALTER TABLE template ADD COLUMN "showPerDay" INTEGER DEFAULT 1;
+        RAISE NOTICE '✅ Added showPerDay to template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.showPerDay already exists';
+    END IF;
+    
+    -- Add maxDayShowing column for flash notification limits
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'maxDayShowing'
+    ) THEN
+        ALTER TABLE template ADD COLUMN "maxDayShowing" INTEGER DEFAULT 1;
+        RAISE NOTICE '✅ Added maxDayShowing to template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.maxDayShowing already exists';
+    END IF;
+END$$;
+
+-- Fix sendInterval column type from INTEGER to JSON (if needed)
+DO $$
+BEGIN
+    -- Check if sendInterval exists and is INTEGER type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'sendInterval'
+        AND data_type = 'integer'
+    ) THEN
+        -- Change column type from INTEGER to JSON
+        ALTER TABLE template ALTER COLUMN "sendInterval" TYPE JSON USING NULL;
+        RAISE NOTICE '✅ Changed sendInterval from INTEGER to JSON';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'sendInterval'
+        AND data_type = 'json'
+    ) THEN
+        RAISE NOTICE 'ℹ️  template.sendInterval is already JSON type';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.sendInterval column does not exist (will be created as JSON)';
+    END IF;
+END$$;
+
+-- ============================================================================
+-- Add fileHash column to image table for fast duplicate detection
+-- ============================================================================
+-- This adds a fileHash column with index to optimize image upload
+-- performance by checking duplicates BEFORE compression
+-- ============================================================================
+\echo '🔄 Adding fileHash column to image table...'
+
+-- Add fileHash column (nullable first, will populate then make unique)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'fileHash'
+    ) THEN
+        ALTER TABLE image ADD COLUMN "fileHash" VARCHAR(32);
+        RAISE NOTICE '✅ Added fileHash column to image table';
+    ELSE
+        RAISE NOTICE 'ℹ️  image.fileHash already exists';
+    END IF;
 END$$;
 
 \echo '   ✅ Columns migration completed'
@@ -323,8 +403,110 @@ CREATE INDEX IF NOT EXISTS "IDX_template_translation_language" ON template_trans
 CREATE INDEX IF NOT EXISTS "IDX_user_username" ON "user"(username);
 CREATE INDEX IF NOT EXISTS "IDX_user_role" ON "user"(role);
 CREATE INDEX IF NOT EXISTS "IDX_image_fileId" ON image("fileId");
+CREATE INDEX IF NOT EXISTS "IDX_image_fileHash" ON image("fileHash");
 
 \echo '   ✅ Indexes created'
+\echo ''
+
+-- ============================================================================
+-- Step 7.5: Populate fileHash for existing images and add unique constraint
+-- ============================================================================
+-- This step populates fileHash for existing images (may take time for large tables)
+-- Then adds unique constraint and makes it NOT NULL
+-- ============================================================================
+\echo '📊 Step 7.5: Populating fileHash for existing images...'
+\echo '   This may take a few minutes if you have many images...'
+
+DO $$
+DECLARE
+    image_record RECORD;
+    hash_value TEXT;
+    processed_count INTEGER := 0;
+BEGIN
+    -- Populate fileHash for existing images that don't have it
+    FOR image_record IN 
+        SELECT id, file FROM image WHERE "fileHash" IS NULL AND file IS NOT NULL
+    LOOP
+        -- Compute MD5 hash of the file
+        SELECT md5(image_record.file) INTO hash_value;
+        
+        -- Update the record with the hash
+        UPDATE image SET "fileHash" = hash_value WHERE id = image_record.id;
+        
+        processed_count := processed_count + 1;
+        
+        -- Log progress every 100 records
+        IF processed_count % 100 = 0 THEN
+            RAISE NOTICE '   Processed % images...', processed_count;
+        END IF;
+    END LOOP;
+    
+    IF processed_count > 0 THEN
+        RAISE NOTICE '✅ Populated fileHash for % existing images', processed_count;
+    ELSE
+        RAISE NOTICE 'ℹ️  No existing images need fileHash population';
+    END IF;
+END$$;
+
+\echo '   ✅ Existing images processed'
+\echo ''
+
+-- Add unique constraint on fileHash (after population)
+\echo '   Adding unique constraint on fileHash...'
+DO $$
+BEGIN
+    -- Check if unique constraint already exists
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'UQ_image_fileHash'
+    ) THEN
+        -- First, handle any duplicate hashes (shouldn't happen, but just in case)
+        -- Keep the oldest record for each hash
+        DELETE FROM image a
+        USING image b
+        WHERE a.id > b.id 
+        AND a."fileHash" = b."fileHash"
+        AND a."fileHash" IS NOT NULL;
+        
+        -- Now add unique constraint
+        ALTER TABLE image ADD CONSTRAINT "UQ_image_fileHash" UNIQUE ("fileHash");
+        RAISE NOTICE '✅ Added unique constraint on fileHash';
+    ELSE
+        RAISE NOTICE 'ℹ️  Unique constraint on fileHash already exists';
+    END IF;
+END$$;
+
+\echo '   ✅ Unique constraint added'
+\echo ''
+
+-- Make fileHash NOT NULL (after population and constraint)
+\echo '   Making fileHash NOT NULL...'
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'fileHash'
+        AND is_nullable = 'YES'
+    ) THEN
+        ALTER TABLE image ALTER COLUMN "fileHash" SET NOT NULL;
+        RAISE NOTICE '✅ Made fileHash NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  fileHash is already NOT NULL';
+    END IF;
+END$$;
+
+\echo ''
+\echo '✅ fileHash migration completed successfully!'
+\echo ''
+\echo '📋 fileHash Migration Summary:'
+\echo '   - Added fileHash column to image table'
+\echo '   - Created index on fileHash for fast lookups'
+\echo '   - Populated fileHash for existing images'
+\echo '   - Added unique constraint on fileHash'
+\echo '   - Made fileHash NOT NULL'
+\echo ''
+\echo '🚀 Image upload performance should now be significantly faster!'
 \echo ''
 
 -- ============================================================================

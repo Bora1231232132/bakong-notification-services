@@ -230,10 +230,16 @@ export class NotificationSchedulerService {
         timeDifferenceSeconds: timeDifferenceSeconds.toFixed(0),
       })
 
+      // When scheduled notification is sent, mark as published and clear schedule
+      // This moves it from Scheduled tab to Published tab
       const updateResult = await this.templateRepo
         .createQueryBuilder()
         .update(Template)
-        .set({ isSent: true })
+        .set({
+          isSent: true,
+          sendType: SendType.SEND_NOW, // Change to SEND_NOW so it appears in Published tab
+          sendSchedule: null, // Clear schedule since it's been sent
+        })
         .where('id = :id', { id: template.id })
         .andWhere('isSent = :isSent', { isSent: false })
         .execute()

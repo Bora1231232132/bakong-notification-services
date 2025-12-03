@@ -128,7 +128,7 @@ export class ErrorHandler {
         ErrorCode.ACCOUNT_TIMEOUT,
         ErrorCode.VALIDATION_FAILED,
       ]
-      
+
       if (useApiMessageDirectly.includes(errorCode)) {
         return responseMessage
       }
@@ -139,7 +139,10 @@ export class ErrorHandler {
         return 'Operation completed successfully'
 
       case ErrorCode.INVALID_USERNAME_OR_PASSWORD:
-        return responseMessage || 'Invalid username or password. Please check your credentials and try again.'
+        return (
+          responseMessage ||
+          'Invalid username or password. Please check your credentials and try again.'
+        )
 
       case ErrorCode.FAILED_AUTHENTICATION:
         return 'Authentication failed. Please log in again.'
@@ -151,7 +154,9 @@ export class ErrorHandler {
         return 'You do not have permission to perform this action.'
 
       case ErrorCode.ACCOUNT_TIMEOUT:
-        return responseMessage || 'Your account has been temporarily locked. Please contact support.'
+        return (
+          responseMessage || 'Your account has been temporarily locked. Please contact support.'
+        )
 
       case ErrorCode.VALIDATION_FAILED:
         return responseMessage || 'Please check your input and try again.'

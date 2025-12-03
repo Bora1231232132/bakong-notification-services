@@ -12,7 +12,7 @@ import {
 import { Type, Transform } from 'class-transformer'
 import { SendType } from '@bakong/shared'
 import { TemplateTranslationDto } from './template-translation.dto'
-import { CategoryType, NotificationType, Platform, BakongApp } from '@bakong/shared'
+import { NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export class SendIntervalDto {
@@ -85,14 +85,8 @@ export class CreateTemplateDto {
   notificationType?: NotificationType
 
   @IsOptional()
-  @IsEnum(CategoryType)
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      return ValidationHelper.normalizeEnum(value)
-    }
-    return value
-  })
-  categoryType?: CategoryType
+  @IsNumber()
+  categoryTypeId?: number
 
   @IsOptional()
   @IsNumber()
@@ -107,4 +101,22 @@ export class CreateTemplateDto {
     return value
   })
   bakongPlatform?: BakongApp
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return 1 // Default: 1 per day
+    const num = Number(value)
+    return isNaN(num) ? 1 : Math.max(1, Math.min(10, num)) // Clamp between 1-10
+  })
+  showPerDay?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return 1 // Default: 1 day
+    const num = Number(value)
+    return isNaN(num) ? 1 : Math.max(1, Math.min(30, num)) // Clamp between 1-30
+  })
+  maxDayShowing?: number
 }

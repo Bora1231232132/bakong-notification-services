@@ -12,7 +12,10 @@ import { BaseResponseDto } from 'src/common/base-response.dto'
 
 @Injectable()
 export class AuthService implements OnModuleInit {
-  constructor(private readonly userService: UserService, private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async onModuleInit() {
     const admin = await this.userService.findByUsername(k.API_ADMIN_USERNAME)
@@ -90,11 +93,11 @@ export class AuthService implements OnModuleInit {
 
     // Password incorrect - increment failLoginAttempt
     await this.userService.increementFailLoginAttempt(user.id)
-    
+
     // Get updated user to check current attempt count
     const updatedUser = await this.userService.findByUsername(username)
     const remainingAttempts = 6 - (updatedUser?.failLoginAttempt || 0)
-    
+
     if (remainingAttempts <= 0) {
       // Account is now locked
       throw new BaseResponseDto({
@@ -108,7 +111,9 @@ export class AuthService implements OnModuleInit {
     throw new BaseResponseDto({
       responseCode: 1,
       errorCode: ErrorCode.INVALID_USERNAME_OR_PASSWORD,
-      responseMessage: `Invalid password. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining before account lockout.`,
+      responseMessage: `Invalid password. ${remainingAttempts} attempt${
+        remainingAttempts > 1 ? 's' : ''
+      } remaining before account lockout.`,
     })
   }
 

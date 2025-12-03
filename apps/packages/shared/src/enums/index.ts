@@ -27,11 +27,3 @@ export enum NotificationType {
   TRANSACTIONAL = 'TRANSACTIONAL',
   SYSTEM = 'SYSTEM',
 }
-
-export enum CategoryType {
-  PAYMENT = 'PAYMENT',
-  TRANSFER = 'TRANSFER',
-  BALANCE = 'BALANCE',
-  SECURITY = 'SECURITY',
-  PROMOTION = 'PROMOTION',
-}

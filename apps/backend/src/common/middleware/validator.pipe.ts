@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common'
 import { BaseResponseDto } from '../base-response.dto'
 import { ErrorCode, ResponseMessage } from '@bakong/shared'
+import { BaseFunctionHelper } from '../util/base-function.helper'
 
 function groupValidationErrors(errors: any[]): any {
   const errorProperties = []
@@ -10,7 +11,9 @@ function groupValidationErrors(errors: any[]): any {
   for (const err of errors) {
     if (err.constraints) {
       errorProperties.push(err.property)
-      errorValues.push(err.value)
+      // Safely serialize error values to prevent logging large buffers/arrays
+      const safeValue = BaseFunctionHelper.safeLogObject(err.value, 5, 20)
+      errorValues.push(safeValue)
 
       for (const [, message] of Object.entries(err.constraints)) {
         errorMessages[err.property] = message

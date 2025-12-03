@@ -21,7 +21,7 @@
               {{ notification.title }}
             </h3>
             <p class="description-text">
-              {{ notification.description }}
+              <span v-html="notification.description || ''"></span>
             </p>
           </div>
 

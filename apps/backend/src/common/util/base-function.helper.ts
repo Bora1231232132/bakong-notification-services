@@ -46,15 +46,15 @@ export class BaseFunctionHelper {
     if (req) {
       let protocol = req.protocol || (req.secure ? 'https' : 'http')
       const host = req.get('host') || req.headers?.host
-      
+
       if (host) {
         // Force HTTPS for production/staging domains (even if request came via HTTP proxy)
-        const isProductionDomain = 
-          host.includes('nbc.gov.kh') || 
+        const isProductionDomain =
+          host.includes('nbc.gov.kh') ||
           host.includes('bakong-notification') ||
           nodeEnv === 'production' ||
           nodeEnv === 'staging'
-        
+
         if (isProductionDomain && protocol === 'http') {
           // Check if X-Forwarded-Proto header indicates HTTPS (common with reverse proxies)
           const forwardedProto = req.get('x-forwarded-proto') || req.headers?.['x-forwarded-proto']
@@ -62,7 +62,7 @@ export class BaseFunctionHelper {
             protocol = 'https'
           }
         }
-        
+
         baseUrl = `${protocol}://${host}`
       }
     }
@@ -79,7 +79,12 @@ export class BaseFunctionHelper {
   }
 
   async findUserByAccountId(accountId: string): Promise<BakongUser | null> {
-    return this.bkUserRepo.findOne({ where: { accountId } })
+    // Use query builder to ensure fresh data from database (no cache)
+    // This ensures we always get the latest data, especially after updates
+    return this.bkUserRepo
+      .createQueryBuilder('user')
+      .where('user.accountId = :accountId', { accountId })
+      .getOne()
   }
 
   async updateUserData(
@@ -96,16 +101,38 @@ export class BaseFunctionHelper {
     const isNewUser = !user
 
     if (user) {
-      // For existing users: only update fields that are provided and not empty
-      // Don't overwrite existing fcmToken with empty string
+      // For existing users: only update fields that are provided
+      // Always update fcmToken if explicitly provided (even if empty string)
+      // Empty string means "no token" (app deleted/reinstalled), so we should clear old token
       const updatesToApply: any = {}
 
-      if (updateData.fcmToken !== undefined && updateData.fcmToken !== '') {
-        // Only update fcmToken if provided and not empty
+      // CRITICAL: Always process fcmToken if provided (even if empty string)
+      // Empty string means app was deleted - we MUST clear the old token
+      if (updateData.fcmToken !== undefined) {
+        const currentToken = user.fcmToken || ''
+        const newToken = updateData.fcmToken || ''
+
+        // Check if token format is valid (if not empty)
+        if (newToken && newToken.length < 50) {
+          console.warn(
+            `⚠️ [syncUser] User ${accountId} provided suspiciously short fcmToken: "${newToken}" (length: ${newToken.length}). This might be invalid!`,
+          )
+        }
+
+        // ALWAYS add to updatesToApply - we will update even if same value
         updatesToApply.fcmToken = updateData.fcmToken
-      } else if (updateData.fcmToken === '' && !user.fcmToken) {
-        // Only set empty fcmToken if user doesn't have one yet
-        updatesToApply.fcmToken = ''
+        console.log(`📝 [syncUser] fcmToken WILL BE UPDATED for user ${accountId}:`, {
+          current: currentToken
+            ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
+            : 'EMPTY',
+          new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+          tokensMatch: currentToken.trim() === newToken.trim(),
+          willUpdate: true, // Always update when provided
+        })
+      } else {
+        console.log(
+          `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (not provided in sync data - undefined)`,
+        )
       }
 
       if (updateData.participantCode !== undefined) {
@@ -123,15 +150,135 @@ export class BaseFunctionHelper {
       if (updateData.bakongPlatform !== undefined) {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(
-          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${user.bakongPlatform || 'NULL'} -> ${updateData.bakongPlatform}`,
+          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${
+            user.bakongPlatform || 'NULL'
+          } -> ${updateData.bakongPlatform}`,
         )
       }
 
-      const changed = ValidationHelper.updateUserFields(user, updatesToApply)
-      if (changed) {
-        user = await this.bkUserRepo.save(user)
+      console.log(`🔍 [syncUser] About to call updateUserFields with updatesToApply:`, {
+        accountId,
+        updatesToApply: {
+          fcmToken: updatesToApply.fcmToken
+            ? `${updatesToApply.fcmToken.substring(0, 30)}... (length: ${
+                updatesToApply.fcmToken.length
+              })`
+            : updatesToApply.fcmToken === ''
+              ? 'EMPTY STRING'
+              : 'NOT IN updatesToApply',
+          participantCode: updatesToApply.participantCode || 'NOT IN updatesToApply',
+          platform: updatesToApply.platform || 'NOT IN updatesToApply',
+          language: updatesToApply.language || 'NOT IN updatesToApply',
+          bakongPlatform: updatesToApply.bakongPlatform || 'NOT IN updatesToApply',
+        },
+        currentUserState: {
+          fcmToken: user.fcmToken
+            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+            : 'EMPTY',
+          participantCode: user.participantCode || 'NULL',
+          platform: user.platform || 'NULL',
+          language: user.language || 'NULL',
+          bakongPlatform: user.bakongPlatform || 'NULL',
+        },
+      })
+
+      // Update the user object in memory (for logging)
+      ValidationHelper.updateUserFields(user, updatesToApply)
+
+      console.log(`🔍 [syncUser] After updateUserFields (in-memory):`, {
+        accountId,
+        userStateAfterUpdate: {
+          fcmToken: user.fcmToken
+            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+            : 'EMPTY',
+          participantCode: user.participantCode || 'NULL',
+          platform: user.platform || 'NULL',
+          language: user.language || 'NULL',
+          bakongPlatform: user.bakongPlatform || 'NULL',
+        },
+      })
+
+      // ALWAYS update database when we have updates to apply
+      // This ensures we sync all data from mobile app, even if values appear the same
+      if (Object.keys(updatesToApply).length > 0) {
         console.log(
-          `✅ [syncUser] Updated user ${accountId} bakongPlatform: ${user.bakongPlatform || 'NULL'}`,
+          `💾 [syncUser] Updating user ${accountId} in database with:`,
+          Object.keys(updatesToApply),
+        )
+        try {
+          // Use direct update() for existing users - more reliable than save()
+          const updateResult = await this.bkUserRepo.update({ accountId }, updatesToApply)
+          console.log(
+            `✅ [syncUser] Direct update() executed for ${accountId}. Rows affected: ${
+              updateResult.affected || 0
+            }`,
+          )
+
+          // Force reload from database to get updated values
+          // Use a small delay and query builder to ensure we get fresh data
+          await new Promise((resolve) => setTimeout(resolve, 50)) // Small delay to ensure DB commit
+          user = await this.bkUserRepo
+            .createQueryBuilder('user')
+            .where('user.accountId = :accountId', { accountId })
+            .getOne()
+          if (!user) {
+            throw new Error(`User ${accountId} not found after update`)
+          }
+
+          console.log(
+            `✅ [syncUser] Successfully updated and reloaded user ${accountId}. Current fcmToken: ${
+              user.fcmToken
+                ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+                : 'EMPTY'
+            }, bakongPlatform: ${user.bakongPlatform || 'NULL'}`,
+          )
+
+          // Verify the update matches what we tried to save
+          const expectedToken = updatesToApply.fcmToken
+          if (expectedToken !== undefined) {
+            const actualToken = user.fcmToken
+            if (actualToken !== expectedToken) {
+              console.error(
+                `❌ [syncUser] CRITICAL: Token mismatch after update! Expected: ${
+                  expectedToken ? `${expectedToken.substring(0, 30)}...` : 'EMPTY'
+                }, Got: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'}`,
+              )
+              // Try one more time with explicit update
+              console.log(
+                `🔄 [syncUser] Retrying update with explicit fcmToken for ${accountId}...`,
+              )
+              await this.bkUserRepo.update({ accountId }, { fcmToken: expectedToken })
+              await new Promise((resolve) => setTimeout(resolve, 50)) // Small delay
+              user = await this.bkUserRepo
+                .createQueryBuilder('user')
+                .where('user.accountId = :accountId', { accountId })
+                .getOne()
+              console.log(
+                `🔄 [syncUser] Retry update completed. Final fcmToken: ${
+                  user?.fcmToken
+                    ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+                    : 'EMPTY'
+                }`,
+              )
+            } else {
+              console.log(
+                `✅ [syncUser] Token verification passed: ${
+                  actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'
+                }`,
+              )
+            }
+          }
+        } catch (updateError: any) {
+          console.error(
+            `❌ [syncUser] ERROR updating user ${accountId} in database:`,
+            updateError.message,
+            updateError.stack,
+          )
+          throw updateError
+        }
+      } else {
+        console.log(
+          `⏭️ [syncUser] No updates to apply for user ${accountId} (updatesToApply is empty)`,
         )
       }
       return { isNewUser, savedUser: user }
@@ -148,11 +295,15 @@ export class BaseFunctionHelper {
       bakongPlatform: updateData.bakongPlatform, // Only set if explicitly provided
     })
     console.log(
-      `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${updateData.bakongPlatform || 'NULL'}`,
+      `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${
+        updateData.bakongPlatform || 'NULL'
+      }`,
     )
     const savedUser = await this.bkUserRepo.save(created)
     console.log(
-      `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${savedUser.bakongPlatform || 'NULL'}`,
+      `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${
+        savedUser.bakongPlatform || 'NULL'
+      }`,
     )
     return { isNewUser, savedUser }
   }
@@ -199,7 +350,7 @@ export class BaseFunctionHelper {
           !user.fcmToken.startsWith('eyJ')
 
         if (!isValidToken) {
-          Logger.warn(`⚠️ Skip ${user.accountId}: invalid FCM token`)
+          this.logger.warn(`⚠️ Skip ${user.accountId}: invalid FCM token`)
         }
 
         return isValidToken
@@ -279,6 +430,59 @@ export class BaseFunctionHelper {
     }
 
     return null
+  }
+
+  /**
+   * Safely serialize an object for logging by truncating buffers and large arrays
+   * @param obj The object to serialize
+   * @param maxArrayLength Maximum length for arrays before truncation (default: 10)
+   * @param maxBufferPreview Maximum bytes to show from buffers (default: 50)
+   * @returns A safe object for logging
+   */
+  static safeLogObject(obj: any, maxArrayLength = 10, maxBufferPreview = 50): any {
+    if (obj === null || obj === undefined) {
+      return obj
+    }
+
+    // Handle Buffer objects
+    if (Buffer.isBuffer(obj)) {
+      const preview = obj.slice(0, maxBufferPreview)
+      return `<Buffer[${obj.length} bytes]: ${Array.from(preview).join(',')}${
+        obj.length > maxBufferPreview ? '...' : ''
+      }>`
+    }
+
+    // Handle arrays
+    if (Array.isArray(obj)) {
+      if (obj.length > maxArrayLength) {
+        return [
+          ...obj
+            .slice(0, maxArrayLength)
+            .map((item) => this.safeLogObject(item, maxArrayLength, maxBufferPreview)),
+          `... (${obj.length - maxArrayLength} more items)`,
+        ]
+      }
+      return obj.map((item) => this.safeLogObject(item, maxArrayLength, maxBufferPreview))
+    }
+
+    // Handle objects
+    if (typeof obj === 'object' && obj.constructor === Object) {
+      const safeObj: any = {}
+      for (const [key, value] of Object.entries(obj)) {
+        // Skip file buffers and large binary data
+        if (key === 'file' && Buffer.isBuffer(value)) {
+          safeObj[key] = `<Buffer[${value.length} bytes] (truncated)>`
+        } else if (Array.isArray(value) && value.length > 100) {
+          safeObj[key] = `<Array[${value.length} items] (truncated)>`
+        } else {
+          safeObj[key] = this.safeLogObject(value, maxArrayLength, maxBufferPreview)
+        }
+      }
+      return safeObj
+    }
+
+    // Handle other types (strings, numbers, booleans, etc.)
+    return obj
   }
 
   static async initializeFirebase(): Promise<boolean> {

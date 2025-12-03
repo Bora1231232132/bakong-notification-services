@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common'
 import { UserRole } from '@bakong/shared'
 import { Roles } from 'src/common/middleware/roles.guard'
 import { BaseResponseDto } from 'src/common/base-response.dto'
+import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { CreateTemplateDto } from './dto/create-template.dto'
 import { UpdateTemplateDto } from './dto/update-template.dto'
 import { TemplateService } from './template.service'
@@ -43,7 +44,7 @@ export class TemplateController {
       console.error('🎯 [CONTROLLER] ❌ ERROR in create endpoint:', {
         message: error?.message,
         stack: error?.stack,
-        error: error,
+        error: BaseFunctionHelper.safeLogObject(error),
       })
 
       throw error
@@ -53,8 +54,26 @@ export class TemplateController {
   @Roles(UserRole.ADMIN_USER)
   @Post(':id/update')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateTemplateDto, @Req() req: any) {
+    console.log('🎯 [CONTROLLER] /template/:id/update endpoint called for template:', id)
+    // Use safe logging to prevent logging large image buffers or content
+    const safeDto = BaseFunctionHelper.safeLogObject({
+      platforms: updateUserDto.platforms,
+      isSent: updateUserDto.isSent,
+      sendType: updateUserDto.sendType,
+      hasTranslations: updateUserDto.translations?.length > 0,
+      translationCount: updateUserDto.translations?.length || 0,
+    })
+    console.log('🎯 [CONTROLLER] Update request data:', safeDto)
+
     const currentUser = req.user
     const template = await this.templateService.update(+id, updateUserDto, currentUser)
+
+    console.log('🎯 [CONTROLLER] Update result:', {
+      templateId: template.templateId,
+      platforms: template.platforms,
+      isSent: template.isSent,
+    })
+
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: `Update ${template.notificationType} successfully`,

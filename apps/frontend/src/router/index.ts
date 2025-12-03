@@ -26,63 +26,139 @@ const router = createRouter({
     {
       path: '/',
       component: () => import('../layouts/AppLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, breadcrumb: { label: 'Notification' } },
       children: [
         {
           path: '',
           name: 'home',
           component: () => import('../views/HomeView.vue'),
+          meta: { breadcrumb: { label: 'Home' } },
         },
         {
           path: 'schedule',
           name: 'schedule',
           component: () => import('../views/ScheduleView.vue'),
+          meta: { breadcrumb: { label: 'Schedule' } },
         },
         {
           path: 'schedule/:id',
           name: 'schedule-detail',
           component: () => import('../views/ScheduleDetailView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Schedule Detail',
+              parent: { name: 'schedule', label: 'Schedule' },
+            },
+          },
         },
         {
           path: 'templates',
           name: 'templates',
           component: () => import('../views/TypeView.vue'),
+          meta: { breadcrumb: { label: 'Templates' } },
+        },
+        {
+          path: 'templates/create',
+          name: 'create-template',
+          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Create Template',
+              parent: { name: 'templates', label: 'Templates' },
+            },
+          },
+        },
+        {
+          path: 'templates/view/:id',
+          name: 'view-template',
+          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'View Template',
+              parent: { name: 'templates', label: 'Templates' },
+            },
+          },
+        },
+        {
+          path: 'templates/edit/:id',
+          name: 'edit-template',
+          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Edit Template',
+              parent: { name: 'templates', label: 'Templates' },
+            },
+          },
         },
         {
           path: 'notifications/create',
           name: 'create-notification',
           component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Create Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
         },
         {
           path: 'notifications/edit/:id',
           name: 'edit-notification',
           component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Edit Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
         },
         {
           path: 'users',
           name: 'users',
           component: () => import('../views/UsersView.vue'),
-          meta: { requiredRole: UserRole.ADMIN_USER },
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: { label: 'Users' },
+          },
         },
         {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingView.vue'),
+          meta: { breadcrumb: { label: 'Settings' } },
         },
         {
           path: 'settings/change-password',
           name: 'settings-change-password',
           component: () => import('../views/SettingChangePasswordView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Change Password',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
         {
           path: 'settings/change-profile',
           name: 'settings-change-profile',
           component: () => import('../views/SettingChangeProfileView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Change Profile',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
         {
           path: 'profile-notification-setup',
           name: 'profile-notification-setup',
           component: () => import('../views/ProfileNotificationSetup.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Profile Notification Setup',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
       ],
     },

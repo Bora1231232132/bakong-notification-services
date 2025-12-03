@@ -11,6 +11,7 @@ import { NotificationModule } from './notification/notification.module'
 import { TemplateModule } from './template/template.module'
 import { UserModule } from './user/user.module'
 import { ImageModule } from './image/image.module'
+import { CategoryTypeModule } from './category-type/category-type.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ConfigService } from '../common/services/config.service'
 import { FirebaseManager } from '../common/services/firebase-manager.service'
@@ -27,6 +28,7 @@ import { AppService } from '../app.service'
     UserModule,
     TemplateModule,
     ImageModule,
+    CategoryTypeModule,
   ],
   controllers: [AppController],
   providers: [

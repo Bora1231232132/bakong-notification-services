@@ -8,7 +8,7 @@ import {
   ValidateNested,
   ValidateIf,
 } from 'class-validator'
-import { CategoryType, Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
+import { Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
 export default class SentNotificationDto {
@@ -74,17 +74,7 @@ export default class SentNotificationDto {
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      const validation = ValidationHelper.validateCategoryType(value)
-      return validation.isValid ? validation.normalizedValue : value
-    }
-    return value
-  })
-  @IsEnum(CategoryType, {
-    message: 'CategoryType must be a valid category type : EVENT, PRODUCT_AND_FEATURE, NEWS, OTHER',
-  })
-  categoryType?: CategoryType
+  categoryType?: string
 
   @IsOptional()
   @IsNumber()

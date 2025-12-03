@@ -5,7 +5,7 @@ import { Message, ApnsConfig } from 'firebase-admin/messaging'
 import { TemplateService } from '../../template/template.service'
 import { ImageService } from '../../image/image.service'
 import { PaginationMeta } from '@bakong/shared'
-import { Language, NotificationType, CategoryType } from '@bakong/shared'
+import { Language, NotificationType } from '@bakong/shared'
 
 export interface NotificationData {
   id: number
@@ -58,7 +58,7 @@ export class InboxResponseDto implements NotificationData {
     this.templateId = data.templateId || 0
     this.language = language
     this.notificationType = data.template?.notificationType || NotificationType.ANNOUNCEMENT
-    this.categoryType = data.template?.categoryType || CategoryType.NEWS
+    this.categoryType = data.template?.categoryTypeEntity?.name || 'NEWS'
     this.bakongPlatform = data.template?.bakongPlatform
 
     this.createdDate = DateFormatter.formatDateByLanguage(data.createdAt, language)
@@ -124,7 +124,7 @@ export class InboxResponseDto implements NotificationData {
       templateId: Number(template.id),
       language: translation.language,
       notificationType: template.notificationType,
-      categoryType: template.categoryType,
+      categoryType: template.categoryTypeEntity?.name || template.categoryTypeId?.toString() || '',
       bakongPlatform: template.bakongPlatform,
       createdDate: DateFormatter.formatDateByLanguage(template.createdAt, language as Language),
       timestamp: new Date().toISOString(),
@@ -173,18 +173,21 @@ export class InboxResponseDto implements NotificationData {
     sharedNotificationId?: number,
     sharedSuccessfulCount?: number,
     sharedFailedCount?: number,
+    sharedFailedUsers?: Array<{ accountId: string; error: string; errorCode?: string }>,
   ) {
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
         successfulCount: successfulNotifications.length,
         failedCount: failedUsers.length,
+        failedUsers: failedUsers.map((u) => u.accountId),
       }
     } else {
       return {
         notificationId: sharedNotificationId || null,
         successfulCount: sharedSuccessfulCount ?? 0,
         failedCount: sharedFailedCount ?? 0,
+        failedUsers: (sharedFailedUsers || []).map((u) => u.accountId),
       }
     }
   }
@@ -291,6 +294,20 @@ export class InboxResponseDto implements NotificationData {
       notification: notification || {},
     }
 
+    // Build data payload for iOS (accessible when app is opened from notification)
+    // Data fields must be strings for FCM
+    // Note: Mobile app will determine redirect screen based on notificationType field
+    const dataPayload: Record<string, string> = {
+      notificationId: String(notificationId),
+    }
+
+    // Add other notification data fields if present
+    if (notification) {
+      Object.entries(notification).forEach(([key, value]) => {
+        dataPayload[key] = String(value)
+      })
+    }
+
     const apns: ApnsConfig = {
       headers: {
         'apns-push-type': 'alert',
@@ -299,7 +316,8 @@ export class InboxResponseDto implements NotificationData {
       payload: { aps },
     }
 
-    return { token, apns }
+    // Return Message with data at root level (not inside apns.payload)
+    return { token, apns, data: dataPayload }
   }
 
   static buildIOSPayload(
@@ -310,9 +328,8 @@ export class InboxResponseDto implements NotificationData {
     notificationId: string,
     notification?: Record<string, string | number>,
   ): Message {
-    if (type === NotificationType.FLASH_NOTIFICATION) {
-      throw new Error('Flash notifications should not send FCM - use API only')
-    }
+    // FLASH_NOTIFICATION now sends FCM push like other notification types
+    // Mobile app will display it differently (as popup/flash screen)
     return this.buildIOSAlertPayload(token, title, body, notificationId, notification)
   }
 }

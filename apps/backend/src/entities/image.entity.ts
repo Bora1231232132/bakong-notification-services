@@ -29,6 +29,9 @@ export class Image {
   @Column({ nullable: false, type: 'bytea' })
   file: Buffer
 
+  @Column({ nullable: true, type: 'varchar', length: 32, unique: true })
+  fileHash: string
+
   @Column({ nullable: false, length: 255 })
   mimeType: string
 

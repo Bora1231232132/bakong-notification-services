@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="home-page">
     <div class="main-content">
       <Tabs v-model="activeTab" :tabs="filterTabs" @tab-changed="handleTabChanged" />
@@ -97,6 +97,8 @@ import type { Notification } from '@/types/notification'
 import { ElNotification } from 'element-plus'
 import {
   NotificationType,
+  SendType,
+  Platform,
   formatNotificationType,
   formatBakongApp,
   getFormattedPlatformName,
@@ -104,6 +106,7 @@ import {
 } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
+import { api } from '@/services/api'
 
 const route = useRoute()
 
@@ -369,8 +372,8 @@ let fetchNotificationTimeout: ReturnType<typeof setTimeout> | null = null
 let isFetching = false
 let lastFetchTime = 0
 const MIN_FETCH_INTERVAL = 1000
-const DATA_CACHE_DURATION = 30000
-const SCHEDULED_TAB_CACHE_DURATION = 25000
+const DATA_CACHE_DURATION = 840000 // 14 minutes (slightly less than polling interval)
+const SCHEDULED_TAB_CACHE_DURATION = 270000 // 4.5 minutes (more frequent for scheduled items)
 const DUE_NOTIFICATION_CHECK_INTERVAL = 60000
 const CACHE_STORAGE_KEY = 'notifications_cache'
 const CACHE_TIMESTAMP_KEY = 'notifications_cache_timestamp'
@@ -552,6 +555,9 @@ const fetchNotifications = async (forceRefresh = false) => {
     isFetching = true
     lastFetchTime = Date.now()
     loading.value = true
+    console.log(
+      `📡 [API] Fetching notifications (forceRefresh: ${forceRefresh}, tab: ${activeTab.value})`,
+    )
     if (USE_MOCK_DATA) {
       dateRange.value = mockDateRange.value
       selectedLabel.value = 'All Time (Mock Data)'
@@ -597,6 +603,7 @@ const fetchNotifications = async (forceRefresh = false) => {
       cachedNotifications = mappedNotifications
       cacheTimestamp = Date.now()
       saveCacheToStorage(mappedNotifications, cacheTimestamp)
+      console.log(`✅ [API] Successfully fetched ${mappedNotifications.length} notifications`)
     }
 
     applyFilters()
@@ -759,63 +766,242 @@ const handlePublishNotification = async (notification: Notification) => {
         })
       }
     } else {
-      // Use the notification's actual language instead of hardcoded 'EN'
-      const notificationLanguage = notification.language || 'KM'
+      // Publish the template by updating it with sendType=SEND_NOW and isSent=true
+      // This will trigger the backend to send the notification and mark it as published
+      // Clear sendSchedule if it exists since we're publishing immediately
+      try {
+        // First, fetch the full template data to get platforms and translations
+        const fullTemplate = await api.get(`/api/v1/template/${notificationId}`)
+        const template = fullTemplate.data?.data || fullTemplate.data
 
-      const result = await notificationApi.sendNotification(
-        Number(notificationId),
-        notificationLanguage,
-        notification.type,
-      )
+        // Check if notification is already sent
+        const isAlreadySent = template?.isSent === true || notification.isSent === true
 
-      // Check if error response (no users found)
-      if (result?.responseCode !== 0 || result?.errorCode !== 0) {
-        const errorMessage =
-          result?.responseMessage || result?.message || 'Failed to publish notification'
+        if (isAlreadySent) {
+          // Notification is already sent - just move it to published tab and show info message
+          ElNotification({
+            title: 'Info',
+            message:
+              'This notification has already been sent to users. It has been moved to the Published tab.',
+            type: 'info',
+            duration: 3000,
+          })
 
-        // Get platform name from response data or notification
-        const platformName = getFormattedPlatformName({
-          platformName: result?.data?.platformName,
-          bakongPlatform: result?.data?.bakongPlatform,
-          notification: notification as any,
-        })
+          // Update local state and move to published tab
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
+          cachedNotifications = null
+          cacheTimestamp = 0
+          clearCacheFromStorage()
+          await fetchNotifications(true)
+          applyFilters()
+          return
+        }
 
-        ElNotification({
-          title: 'Info',
-          message: errorMessage.includes('No users found')
-            ? getNoUsersAvailableMessage(platformName)
-            : errorMessage,
-          type: 'info',
-          duration: 3000,
-          dangerouslyUseHTMLString: true,
-        })
-        // Keep in draft tab
-        activeTab.value = 'draft'
+        // Prepare update payload with existing template data
+        const updatePayload: any = {
+          sendType: SendType.SEND_NOW,
+          isSent: true,
+          sendSchedule: null, // Clear schedule when publishing immediately
+        }
+
+        // Include platforms from template (default to [IOS, ANDROID] if not set)
+        if (
+          template?.platforms &&
+          Array.isArray(template.platforms) &&
+          template.platforms.length > 0
+        ) {
+          updatePayload.platforms = template.platforms
+        } else {
+          // Default to both platforms if not set (ALL)
+          updatePayload.platforms = [Platform.IOS, Platform.ANDROID]
+        }
+
+        // Include translations from template
+        if (
+          template?.translations &&
+          Array.isArray(template.translations) &&
+          template.translations.length > 0
+        ) {
+          updatePayload.translations = template.translations.map((t: any) => ({
+            language: t.language,
+            title: t.title,
+            content: t.content,
+            image: t.image?.fileId || t.imageId || t.image?.id || '',
+            linkPreview: t.linkPreview || undefined,
+          }))
+        }
+
+        const result = await notificationApi.updateTemplate(Number(notificationId), updatePayload)
+
+        // Check if error response (no users found)
+        if (result?.responseCode !== 0 || result?.errorCode !== 0) {
+          const errorMessage =
+            result?.responseMessage || result?.message || 'Failed to publish notification'
+
+          // Get platform name from response data or notification
+          const platformName = getFormattedPlatformName({
+            platformName: result?.data?.platformName,
+            bakongPlatform: result?.data?.bakongPlatform,
+            notification: notification as any,
+          })
+
+          ElNotification({
+            title: 'Info',
+            message: errorMessage.includes('No users found')
+              ? getNoUsersAvailableMessage(platformName)
+              : errorMessage,
+            type: 'info',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          // Keep in draft tab
+          activeTab.value = 'draft'
+          cachedNotifications = null
+          cacheTimestamp = 0
+          clearCacheFromStorage()
+          await fetchNotifications(true)
+          applyFilters()
+          return
+        }
+
+        // Check if template was saved as draft due to no users
+        if (result?.data?.savedAsDraftNoUsers) {
+          // Template was kept as draft - show info message and stay in draft tab
+          const platformName = getFormattedPlatformName({
+            platformName: result?.data?.platformName,
+            bakongPlatform: result?.data?.bakongPlatform,
+            notification: notification as any,
+          })
+
+          ElNotification({
+            title: 'Info',
+            message: getNoUsersAvailableMessage(platformName),
+            type: 'info',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          activeTab.value = 'draft'
+        } else if (
+          result?.data?.successfulCount !== undefined &&
+          result?.data?.successfulCount > 0
+        ) {
+          // Successfully published and sent to users
+          const successfulCount = result?.data?.successfulCount ?? 0
+          const userText = successfulCount === 1 ? 'user' : 'users'
+
+          // Check if this is a flash notification - check result data first, then template, then notification
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
+          const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
+
+          let message = isFlashNotification
+            ? 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            : `Notification published and sent to ${successfulCount} ${userText} successfully!`
+
+          // For flash notifications, replace bakongPlatform with bold platform name
+          if (isFlashNotification) {
+            const platformName = getFormattedPlatformName({
+              platformName: result?.data?.platformName,
+              bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
+              notification: notification as any,
+            })
+            message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+          }
+
+          ElNotification({
+            title: 'Success',
+            message: message,
+            type: 'success',
+            duration: 2000,
+            dangerouslyUseHTMLString: isFlashNotification,
+          })
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
+        } else {
+          // Check if this is a flash notification - even if no successfulCount, show flash message
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
+          const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
+
+          if (isFlashNotification) {
+            // For flash notifications, show success message even if no user count
+            let message =
+              'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            const platformName = getFormattedPlatformName({
+              platformName: result?.data?.platformName,
+              bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
+              notification: notification as any,
+            })
+            message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+
+            ElNotification({
+              title: 'Success',
+              message: message,
+              type: 'success',
+              duration: 2000,
+              dangerouslyUseHTMLString: true,
+            })
+
+            const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+            if (notificationIndex !== -1) {
+              notifications.value[notificationIndex].status = 'published'
+              notifications.value[notificationIndex].isSent = true
+            }
+            activeTab.value = 'published'
+          } else {
+            // Check if notification was already sent (successfulCount might be 0 but isSent is true)
+            // This can happen for flash notifications or if it was already sent via scheduler
+            const isAlreadySent = result?.data?.isSent === true || template?.isSent === true
+
+            if (isAlreadySent) {
+              // Notification was already sent - move to published tab
+              ElNotification({
+                title: 'Info',
+                message:
+                  'This notification has already been sent. It has been moved to the Published tab.',
+                type: 'info',
+                duration: 3000,
+              })
+
+              const notificationIndex = notifications.value.findIndex(
+                (n) => n.id === notification.id,
+              )
+              if (notificationIndex !== -1) {
+                notifications.value[notificationIndex].status = 'published'
+                notifications.value[notificationIndex].isSent = true
+              }
+              activeTab.value = 'published'
+            } else {
+              // No users received the notification - show warning and keep in draft
+              ElNotification({
+                title: 'Info',
+                message:
+                  'Notification could not be sent. No users received the notification. It has been kept as a draft.',
+                type: 'info',
+                duration: 3000,
+              })
+              activeTab.value = 'draft'
+            }
+          }
+        }
         cachedNotifications = null
         cacheTimestamp = 0
         clearCacheFromStorage()
         await fetchNotifications(true)
         applyFilters()
-        return
+      } catch (updateError: any) {
+        // If updateTemplate fails, throw to be caught by outer catch block
+        throw updateError
       }
-
-      ElNotification({
-        title: 'Success',
-        message: `Notification published successfully!`,
-        type: 'success',
-        duration: 2000,
-      })
-      const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
-      if (notificationIndex !== -1) {
-        notifications.value[notificationIndex].status = 'published'
-        notifications.value[notificationIndex].isSent = true
-      }
-      activeTab.value = 'published'
-      cachedNotifications = null
-      cacheTimestamp = 0
-      clearCacheFromStorage()
-      await fetchNotifications(true)
-      applyFilters()
     }
   } catch (error: any) {
     console.error('Failed to publish notification:', error)
@@ -901,14 +1087,20 @@ onMounted(async () => {
     if (pollingInterval) {
       clearInterval(pollingInterval)
     }
-    const pollingIntervalDuration = 60000
+    const pollingIntervalDuration = 900000 // 15 minutes
 
     pollingInterval = setInterval(() => {
       const now = Date.now()
       const cacheAge = now - cacheTimestamp
       const cacheDuration =
         activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
+
+      console.log(
+        `🔄 [Polling Check] Active tab: ${activeTab.value}, Cache age: ${Math.round(cacheAge / 1000)}s, Cache duration: ${Math.round(cacheDuration / 1000)}s`,
+      )
+
       if (activeTab.value === 'scheduled' && checkForDueScheduledNotifications()) {
+        console.log('✅ [Polling] Triggering refresh - scheduled notification due')
         fetchNotifications(true)
         return
       }
@@ -916,9 +1108,18 @@ onMounted(async () => {
         (activeTab.value === 'scheduled' || activeTab.value === 'published') &&
         cacheAge >= cacheDuration
       ) {
+        console.log(
+          `✅ [Polling] Triggering refresh - cache expired (${Math.round(cacheAge / 1000)}s >= ${Math.round(cacheDuration / 1000)}s)`,
+        )
         fetchNotifications(true)
+      } else {
+        console.log('⏭️ [Polling] Skipping refresh - cache still valid')
       }
     }, pollingIntervalDuration)
+
+    console.log(
+      `🔄 [Polling] Started with interval: ${pollingIntervalDuration / 1000}s (${pollingIntervalDuration / 60000} minutes)`,
+    )
   }
   setupPolling()
   watch(activeTab, () => {
