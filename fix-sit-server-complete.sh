@@ -37,17 +37,16 @@ rm -rf apps/frontend/src/views/AddNewNotificationTypeView.vue 2>/dev/null || tru
 echo "✅ Conflicting files removed"
 echo ""
 
-# Step 4: Fix permissions on image directory (with sudo)
-echo "📁 Step 4: Fixing permissions on image directory..."
-sudo chown -R $USER:$USER apps/frontend/src/assets/image/ 2>/dev/null || {
-    echo "⚠️  sudo chown failed, trying without sudo..."
-    chown -R $USER:$USER apps/frontend/src/assets/image/ 2>/dev/null || true
-}
-
-# Remove ALL image files (they'll be recreated from git)
-echo "🗑️  Removing all image files (will be recreated from git)..."
-sudo rm -rf apps/frontend/src/assets/image/* 2>/dev/null || rm -rf apps/frontend/src/assets/image/* 2>/dev/null || true
-echo "✅ Image files removed"
+# Step 4: Completely remove and recreate image directory
+echo "📁 Step 4: Fixing image directory permissions..."
+# Remove entire directory if permission issues persist
+if [ -d "apps/frontend/src/assets/image" ]; then
+    sudo rm -rf apps/frontend/src/assets/image 2>/dev/null || rm -rf apps/frontend/src/assets/image 2>/dev/null || true
+fi
+# Recreate directory with correct permissions
+mkdir -p apps/frontend/src/assets/image
+chmod 755 apps/frontend/src/assets/image
+echo "✅ Image directory recreated"
 echo ""
 
 # Step 5: Pull latest code
