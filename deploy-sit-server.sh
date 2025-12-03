@@ -219,7 +219,23 @@ echo ""
 # Step 6: Build and Start Services
 # ============================================================================
 echo "🏗️  Step 6: Building backend (this will take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" build --no-cache backend
+echo "   ℹ️  If build fails with network errors, wait a moment and retry"
+# Try building with cache first (faster), fallback to --no-cache if needed
+if ! docker compose -f "$COMPOSE_FILE" build backend 2>&1 | tee /tmp/docker-build.log; then
+    echo "   ⚠️  Build failed, checking if it's a network error..."
+    if grep -q "ECONNRESET\|network\|ETIMEDOUT" /tmp/docker-build.log 2>/dev/null; then
+        echo "   🔄 Network error detected - waiting 10 seconds and retrying..."
+        sleep 10
+        echo "   🔄 Retrying build..."
+        docker compose -f "$COMPOSE_FILE" build backend || {
+            echo "   ❌ Build failed again - please check network connectivity"
+            exit 1
+        }
+    else
+        echo "   ❌ Build failed - see error above"
+        exit 1
+    fi
+fi
 
 echo ""
 echo "🚀 Step 7: Starting services..."
