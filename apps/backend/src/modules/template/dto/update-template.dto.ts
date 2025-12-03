@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, ValidateNested, IsEnum, IsBoolean } from 'class-validator'
+import { IsString, IsOptional, IsArray, ValidateNested, IsEnum, IsBoolean, IsNumber } from 'class-validator'
 import { Type, Transform } from 'class-transformer'
 import { TemplateTranslationDto } from './template-translation.dto'
 import { CategoryType, NotificationType, Platform, SendType, BakongApp } from '@bakong/shared'
@@ -70,4 +70,22 @@ export class UpdateTemplateDto {
     return value
   })
   bakongPlatform?: BakongApp
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined // Don't set default on update
+    const num = Number(value)
+    return isNaN(num) ? undefined : Math.max(1, Math.min(10, num)) // Clamp between 1-10
+  })
+  showPerDay?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined // Don't set default on update
+    const num = Number(value)
+    return isNaN(num) ? undefined : Math.max(1, Math.min(30, num)) // Clamp between 1-30
+  })
+  maxDayShowing?: number
 }

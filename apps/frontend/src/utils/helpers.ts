@@ -336,11 +336,10 @@ export const processFile = async (
               const img = new Image()
               img.onload = () => {
                 const aspectRatio = img.width / img.height
-                const acceptableRatios = [4 / 3, 3 / 2, 16 / 9, 2 / 1, 21 / 9]
-                const tolerance = 0.1
-                const isAcceptable = acceptableRatios.some(
-                  (ratio) => Math.abs(aspectRatio - ratio) <= tolerance,
-                )
+                // Only accept 2:1 aspect ratio (or 880:440 which is also 2:1)
+                const targetRatio = 2 / 1
+                const tolerance = 0.05 // 5% tolerance for rounding
+                const isAcceptable = Math.abs(aspectRatio - targetRatio) <= tolerance
                 resolve({ needsConversion: !isAcceptable, aspectRatio })
               }
               img.onerror = () => resolve({ needsConversion: false, aspectRatio: 1 })
@@ -397,13 +396,12 @@ export const processFile = async (
       const img = new Image()
       img.onload = () => {
         const aspectRatio = img.width / img.height
-        const acceptableRatios = [4 / 3, 3 / 2, 16 / 9, 2 / 1, 21 / 9]
-        const tolerance = 0.1
-        const isAcceptable = acceptableRatios.some(
-          (ratio) => Math.abs(aspectRatio - ratio) <= tolerance,
-        )
+        // Only accept 2:1 aspect ratio (or 880:440 which is also 2:1)
+        const targetRatio = 2 / 1
+        const tolerance = 0.05 // 5% tolerance for rounding
+        const isAcceptable = Math.abs(aspectRatio - targetRatio) <= tolerance
         if (!isAcceptable) {
-          const errorMsg = `Image aspect ratio ${aspectRatio.toFixed(2)}:1 is not supported. Please use images with common ratios like 16:9, 3:2, or 2:1.`
+          const errorMsg = `Image aspect ratio ${aspectRatio.toFixed(2)}:1 is not supported. Please use images with 2:1 aspect ratio (e.g., 880:440).`
           onError(errorMsg)
           return
         }

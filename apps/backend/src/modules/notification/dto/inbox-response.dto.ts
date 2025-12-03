@@ -294,6 +294,20 @@ export class InboxResponseDto implements NotificationData {
       notification: notification || {},
     }
 
+    // Build data payload for iOS (accessible when app is opened from notification)
+    // Data fields must be strings for FCM
+    // Note: Mobile app will determine redirect screen based on notificationType field
+    const dataPayload: Record<string, string> = {
+      notificationId: String(notificationId),
+    }
+    
+    // Add other notification data fields if present
+    if (notification) {
+      Object.entries(notification).forEach(([key, value]) => {
+        dataPayload[key] = String(value)
+      })
+    }
+
     const apns: ApnsConfig = {
       headers: {
         'apns-push-type': 'alert',
@@ -302,7 +316,8 @@ export class InboxResponseDto implements NotificationData {
       payload: { aps },
     }
 
-    return { token, apns }
+    // Return Message with data at root level (not inside apns.payload)
+    return { token, apns, data: dataPayload }
   }
 
   static buildIOSPayload(
@@ -313,9 +328,8 @@ export class InboxResponseDto implements NotificationData {
     notificationId: string,
     notification?: Record<string, string | number>,
   ): Message {
-    if (type === NotificationType.FLASH_NOTIFICATION) {
-      throw new Error('Flash notifications should not send FCM - use API only')
-    }
+    // FLASH_NOTIFICATION now sends FCM push like other notification types
+    // Mobile app will display it differently (as popup/flash screen)
     return this.buildIOSAlertPayload(token, title, body, notificationId, notification)
   }
 }

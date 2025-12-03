@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="flex flex-col gap-3 w-[603px]">
     <div
       class="w-[603px] h-[213px] border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-4 p-8 bg-white hover:border-[#001346] hover:bg-gray-50"
@@ -8,7 +8,7 @@
       @drop.prevent="handleFileDropHandler"
       @dragleave="handleDragLeave"
     >
-      <div v-if="!selectedFile && !props.existingImageUrl" class="flex flex-col items-center gap-4">
+      <div v-if="showUploadArea" class="flex flex-col items-center gap-4">
         <div class="w-[72px] h-[72px] flex items-center justify-center">
           <img
             src="@/assets/image/copy--file.png"
@@ -24,7 +24,7 @@
       </div>
       <div v-else class="relative w-full h-full flex items-center justify-center py-[5px]">
         <img
-          :src="selectedFile ? filePreview : props.existingImageUrl || ''"
+          :src="imageSource"
           alt="Preview"
           class="w-full max-h-[200px] object-contain rounded-lg"
         />
@@ -111,7 +111,7 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   acceptTypes: 'image/png,image/jpeg',
   maxSize: 3 * 1024 * 1024,
-  formatText: 'Supported format: PNG, JPG (2:1 W:H)',
+  formatText: 'Supported format: PNG, JPG (2:1 W:H or 880:440)',
   sizeText: 'Maximum size: 3MB',
   validateAspectRatio: true,
 })
@@ -123,19 +123,37 @@ const filePreview = ref('')
 const fileInput = ref<HTMLInputElement>()
 const isDragOver = ref(false)
 const errorMessage = ref('')
+
+// Initialize preview if modelValue exists
+if (props.modelValue) {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    filePreview.value = e.target?.result as string
+  }
+  reader.readAsDataURL(props.modelValue)
+}
+
 watch(
   () => props.modelValue,
   (newValue) => {
+    const previousFile = selectedFile.value
     selectedFile.value = newValue as File | null
+    
     if (newValue) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        filePreview.value = e.target?.result as string
+      // Only read file if it's a different file or we don't have a preview yet
+      if (!filePreview.value || previousFile !== newValue) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          filePreview.value = e.target?.result as string
+        }
+        reader.readAsDataURL(newValue)
       }
-      reader.readAsDataURL(newValue)
     } else {
-      filePreview.value = ''
-      if (fileInput.value) {
+      // Don't clear filePreview when modelValue becomes null
+      // This preserves the preview when modelValue temporarily becomes null (e.g., during validation errors)
+      // The preview will only be cleared when the user explicitly removes the file via removeFile()
+      // Only clear the file input value, but keep the preview
+      if (fileInput.value && !props.existingImageUrl && !filePreview.value) {
         fileInput.value.value = ''
       }
     }
@@ -150,6 +168,16 @@ const maxSizeText = computed(() => {
     return `${Math.round(props.maxSize / 1024)}KB`
   }
   return `${props.maxSize} bytes`
+})
+
+// Computed property to check if we should show the upload area
+const showUploadArea = computed(() => {
+  return !selectedFile.value && !props.existingImageUrl && !filePreview.value
+})
+
+// Computed property for image source
+const imageSource = computed(() => {
+  return filePreview.value || props.existingImageUrl || ''
 })
 
 const triggerFileUploadHandler = () => {
@@ -189,7 +217,7 @@ const processFileSuccess = (file: File, previewUrl: string, wasConverted?: boole
   if (wasConverted) {
     ElNotification({
       title: 'Image Converted',
-      message: 'Image has been automatically adjusted to correct size and aspect ratio (2:1).',
+      message: 'Image has been automatically adjusted to correct size (max 3MB) and aspect ratio (2:1 W:H or 880:440).',
       type: 'success',
       duration: 3000,
     })

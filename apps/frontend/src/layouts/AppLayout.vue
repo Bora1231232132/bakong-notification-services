@@ -1,6 +1,6 @@
-﻿<template>
+<template>
   <div class="app-layout">
-    <div class="header">
+    <div class="header" :class="{ expanded: isSidebarCollapsed }">
       <div class="header-content">
         <div class="page-title">
           <h1>{{ pageTitle }}</h1>
@@ -31,77 +31,80 @@
       </div>
     </div>
 
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <img :src="nbcLogo" alt="NBC Logo" class="logo-image" />
+    <div class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-content" :class="{ collapsed: isSidebarCollapsed }">
+        <div class="sidebar-header">
+          <div class="logo">
+            <img :src="nbcLogo" alt="NBC Logo" class="logo-image" />
+          </div>
         </div>
+        <nav class="sidebar-nav">
+          <div class="nav-section">
+            <div class="nav-section-title">Notification</div>
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'home' }"
+              @click="$router.push('/')"
+            >
+              <img :src="homeIcon" alt="Home" class="nav-icon" />
+              <span>Home</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'schedule' }"
+              @click="$router.push('/schedule')"
+            >
+              <img :src="calendarIcon" alt="Schedule" class="nav-icon" />
+              <span>Schedule</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'templates' }"
+              @click="$router.push('/templates')"
+            >
+              <img :src="typeIcon" alt="Type" class="nav-icon" />
+              <span>Type</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-section-title">Tools</div>
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'insight' }"
+              @click="handleInsightClick"
+            >
+              <img :src="chartIcon" alt="Insight" class="nav-icon" />
+              <span>Insight</span>
+            </div>
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'settings' }"
+              @click="$router.push('/settings')"
+            >
+              <img :src="settingsIcon" alt="Setting" class="nav-icon" />
+              <span>Setting</span>
+            </div>
+          </div>
+        </nav>
       </div>
-      <nav class="sidebar-nav">
-        <div class="nav-section">
-          <div class="nav-section-title">Notification</div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'home' }"
-            @click="$router.push('/')"
-          >
-            <img :src="homeIcon" alt="Home" class="nav-icon" />
-            <span>Home</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'schedule' }"
-            @click="$router.push('/schedule')"
-          >
-            <img :src="calendarIcon" alt="Schedule" class="nav-icon" />
-            <span>Schedule</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'templates' }"
-            @click="$router.push('/templates')"
-          >
-            <img :src="typeIcon" alt="Type" class="nav-icon" />
-            <span>Type</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-section-title">Tools</div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'insight' }"
-            @click="handleInsightClick"
-          >
-            <img :src="chartIcon" alt="Insight" class="nav-icon" />
-            <span>Insight</span>
-          </div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'settings' }"
-            @click="$router.push('/settings')"
-          >
-            <img :src="settingsIcon" alt="Setting" class="nav-icon" />
-            <span>Setting</span>
-          </div>
-        </div>
-      </nav>
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" @click="toggleSidebar">
         <div class="collapse-btn">
           <el-icon class="collapse-icon">
-            <ArrowLeft />
+            <ArrowRight v-if="isSidebarCollapsed" />
+            <ArrowLeft v-else />
           </el-icon>
         </div>
       </div>
     </div>
 
-    <div class="main-content">
+    <div class="main-content" :class="{ expanded: isSidebarCollapsed }">
       <router-view />
     </div>
 
@@ -135,7 +138,7 @@ import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
-import { Plus, ArrowLeft, Warning, CirclePlus } from '@element-plus/icons-vue'
+import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
@@ -153,6 +156,11 @@ const route = useRoute()
 
 const { user } = authStore
 const logoutDialogVisible = ref(false)
+const isSidebarCollapsed = ref(false)
+
+const toggleSidebar = () => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
+}
 
 const userAvatar = ref(
   'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face',
@@ -231,6 +239,12 @@ const confirmLogout = () => {
   border-bottom: 1px solid rgba(0, 19, 70, 0.05);
   background: #fff;
   z-index: 1000;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+.header.expanded {
+  left: 64px;
+  width: calc(100vw - 64px);
 }
 
 .header-content {
@@ -339,6 +353,23 @@ const confirmLogout = () => {
   border-right: 1px solid rgba(0, 19, 70, 0.1);
   background: #fff;
   z-index: 999;
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 48px;
+}
+
+.sidebar-content {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-content.collapsed {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .sidebar-header {
@@ -444,6 +475,16 @@ const confirmLogout = () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  cursor: pointer;
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  justify-content: center;
+  padding: 16px;
 }
 
 .collapse-btn {
@@ -466,6 +507,7 @@ const confirmLogout = () => {
   color: #001346;
 }
 
+
 .main-content {
   position: fixed;
   left: 200px;
@@ -475,6 +517,12 @@ const confirmLogout = () => {
   padding: 25px 25px 0px 32px;
   overflow: hidden;
   background: #fff;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+.main-content.expanded {
+  left: 64px;
+  width: calc(100vw - 64px);
 }
 
 .dialog-footer {

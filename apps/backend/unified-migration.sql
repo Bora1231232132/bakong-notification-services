@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS bakong_user (
     "participantCode" VARCHAR(50),
     platform VARCHAR(50),
     language VARCHAR(10) DEFAULT 'EN',
+    "bakongPlatform" bakong_platform_enum,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -138,9 +139,15 @@ CREATE TABLE IF NOT EXISTS template (
     "notificationType" VARCHAR(50),
     "categoryType" VARCHAR(50),
     priority INTEGER DEFAULT 1,
-    "sendInterval" INTEGER,
+    "sendInterval" JSON,
     "isSent" BOOLEAN DEFAULT FALSE,
     "sendSchedule" TIMESTAMPTZ,
+    "createdBy" VARCHAR(255),
+    "updatedBy" VARCHAR(255),
+    "publishedBy" VARCHAR(255),
+    "bakongPlatform" bakong_platform_enum,
+    "showPerDay" INTEGER DEFAULT 1,
+    "maxDayShowing" INTEGER DEFAULT 1,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "deletedAt" TIMESTAMPTZ NULL
@@ -240,6 +247,55 @@ BEGIN
         RAISE NOTICE '✅ Added publishedBy to template table';
     ELSE
         RAISE NOTICE 'ℹ️  template.publishedBy already exists';
+    END IF;
+    
+    -- Add showPerDay column for flash notification limits
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'showPerDay'
+    ) THEN
+        ALTER TABLE template ADD COLUMN "showPerDay" INTEGER DEFAULT 1;
+        RAISE NOTICE '✅ Added showPerDay to template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.showPerDay already exists';
+    END IF;
+    
+    -- Add maxDayShowing column for flash notification limits
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'maxDayShowing'
+    ) THEN
+        ALTER TABLE template ADD COLUMN "maxDayShowing" INTEGER DEFAULT 1;
+        RAISE NOTICE '✅ Added maxDayShowing to template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.maxDayShowing already exists';
+    END IF;
+END$$;
+
+-- Fix sendInterval column type from INTEGER to JSON (if needed)
+DO $$
+BEGIN
+    -- Check if sendInterval exists and is INTEGER type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'sendInterval'
+        AND data_type = 'integer'
+    ) THEN
+        -- Change column type from INTEGER to JSON
+        ALTER TABLE template ALTER COLUMN "sendInterval" TYPE JSON USING NULL;
+        RAISE NOTICE '✅ Changed sendInterval from INTEGER to JSON';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'sendInterval'
+        AND data_type = 'json'
+    ) THEN
+        RAISE NOTICE 'ℹ️  template.sendInterval is already JSON type';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.sendInterval column does not exist (will be created as JSON)';
     END IF;
 END$$;
 

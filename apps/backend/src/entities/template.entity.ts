@@ -63,6 +63,12 @@ export class Template {
   @Column({ nullable: true })
   publishedBy?: string
 
+  @Column({ type: 'integer', nullable: true, default: 1 })
+  showPerDay?: number
+
+  @Column({ type: 'integer', nullable: true, default: 1 })
+  maxDayShowing?: number
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date
 

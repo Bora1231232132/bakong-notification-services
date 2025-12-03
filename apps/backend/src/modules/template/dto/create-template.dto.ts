@@ -107,4 +107,22 @@ export class CreateTemplateDto {
     return value
   })
   bakongPlatform?: BakongApp
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return 1 // Default: 1 per day
+    const num = Number(value)
+    return isNaN(num) ? 1 : Math.max(1, Math.min(10, num)) // Clamp between 1-10
+  })
+  showPerDay?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return 1 // Default: 1 day
+    const num = Number(value)
+    return isNaN(num) ? 1 : Math.max(1, Math.min(30, num)) // Clamp between 1-30
+  })
+  maxDayShowing?: number
 }

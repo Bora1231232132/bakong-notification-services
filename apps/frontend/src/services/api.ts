@@ -1,4 +1,4 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 // In dev mode, uses Vite proxy (configured in vite.config.ts)
 // In production, uses VITE_API_BASE_URL environment variable
 // Empty string means use relative URLs (same protocol as page)
@@ -10,7 +10,7 @@ const API_BASE_URL = import.meta.env.DEV
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // Increased to 120 seconds for large template updates
   headers: {
     'Content-Type': 'application/json',
   },

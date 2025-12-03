@@ -72,6 +72,7 @@ describe('NotificationService', () => {
     findNotificationTemplate: jest.fn(),
     findBestTranslation: jest.fn(),
     markAsPublished: jest.fn(),
+    findBestTemplateForUser: jest.fn(),
   }
 
   const mockImageService = {
@@ -924,6 +925,680 @@ describe('NotificationService', () => {
 
       getFCMSpy.mockRestore()
       sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+  })
+
+  describe('Flash Notification Limits - showPerDay and maxDayShowing', () => {
+    const flashTemplateWithLimits = {
+      ...sampleTemplate,
+      id: 1,
+      notificationType: NotificationType.FLASH_NOTIFICATION,
+      showPerDay: 2,
+      maxDayShowing: 3,
+      bakongPlatform: BakongApp.BAKONG,
+      translations: [sampleTranslation],
+    } as any
+
+    const flashTemplateDefaultLimits = {
+      ...sampleTemplate,
+      id: 2,
+      notificationType: NotificationType.FLASH_NOTIFICATION,
+      showPerDay: 1, // Default
+      maxDayShowing: 1, // Default
+      bakongPlatform: BakongApp.BAKONG,
+      translations: [sampleTranslation],
+    } as any
+
+    beforeEach(() => {
+      jest.clearAllMocks()
+    })
+
+    // Helper function to setup mocks for flash notification flow
+    const setupFlashNotificationMocks = (template: any, translation: any = sampleTranslation) => {
+      mockBaseFunctionHelper.findUserByAccountId
+        .mockResolvedValueOnce(sampleUser) // First call in sendNow
+        .mockResolvedValueOnce(sampleUser) // Second call in handleFlashNotification
+      mockBaseFunctionHelper.updateUserData.mockResolvedValue({})
+      mockBakongUserRepo.find.mockResolvedValue([sampleUser])
+      mockTemplateRepo.find.mockResolvedValue([template])
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: template,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+      })
+      ValidationHelper.validateTranslation = jest.fn().mockReturnValue({
+        isValid: true,
+        translation: translation,
+      })
+      mockTemplateService.findBestTemplateForUser.mockResolvedValue({
+        template: template,
+        translation: translation,
+      })
+      mockTemplateService.findBestTranslation.mockReturnValue(translation)
+    }
+
+    it('should send flash notification successfully when within daily limit', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      // No notifications sent today (within limit)
+      mockNotificationRepo.count.mockResolvedValue(0)
+      mockNotificationRepo.find.mockResolvedValue([]) // No previous notifications
+      
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(0)
+      expect(result.data).toHaveProperty('whatnews')
+      expect(mockNotificationRepo.count).toHaveBeenCalled()
+      expect(mockNotificationRepo.find).toHaveBeenCalled()
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+
+    it('should reject flash notification when daily limit (showPerDay) is reached', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      // User has already received 2 notifications today (limit is 2)
+      mockNotificationRepo.count.mockResolvedValue(2) // showPerDay limit reached
+      mockNotificationRepo.find.mockResolvedValue([])
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY)
+      expect(result.data).toHaveProperty('limit', 2) // showPerDay
+      expect(result.data).toHaveProperty('sendCount', 2)
+      expect(mockNotificationRepo.count).toHaveBeenCalled()
+    })
+
+    it('should reject flash notification when max days limit (maxDayShowing) is reached', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      // Create notifications from 3 different days
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const twoDaysAgo = new Date()
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+      const threeDaysAgo = new Date()
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+
+      const notificationsFromDifferentDays = [
+        { createdAt: yesterday },
+        { createdAt: twoDaysAgo },
+        { createdAt: threeDaysAgo },
+      ]
+
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      // No notifications today, but has been shown for 3 days (limit is 3)
+      mockNotificationRepo.count.mockResolvedValue(0) // Not reached daily limit
+      mockNotificationRepo.find.mockResolvedValue(notificationsFromDifferentDays) // 3 distinct days
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY)
+      expect(result.data).toHaveProperty('limit', 3) // maxDayShowing
+      expect(result.data).toHaveProperty('daysCount', 3)
+      expect(mockNotificationRepo.find).toHaveBeenCalled()
+    })
+
+    it('should use default limits (1 per day, 1 day max) when not specified', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(flashTemplateDefaultLimits)
+      
+      // User has already received 1 notification today (default limit is 1)
+      mockNotificationRepo.count.mockResolvedValue(1) // Default showPerDay limit reached
+      mockNotificationRepo.find.mockResolvedValue([])
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY)
+      expect(result.data).toHaveProperty('limit', 1) // Default showPerDay
+    })
+
+    it('should allow sending when within both daily and max days limits', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      // 1 notification today (limit is 2, so OK)
+      mockNotificationRepo.count.mockResolvedValue(1)
+      // 1 notification from yesterday (2 days total, limit is 3, so OK)
+      mockNotificationRepo.find.mockResolvedValue([{ createdAt: yesterday }])
+      
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(0)
+      expect(result.data).toHaveProperty('whatnews')
+      expect(mockNotificationRepo.save).toHaveBeenCalled()
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+
+    it('should handle flash notification with custom showPerDay=3 and maxDayShowing=5', async () => {
+      const customTemplate = {
+        ...sampleTemplate,
+        id: 3,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        showPerDay: 3,
+        maxDayShowing: 5,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(customTemplate)
+      
+      // 2 notifications today (limit is 3, so OK)
+      mockNotificationRepo.count.mockResolvedValue(2)
+      mockNotificationRepo.find.mockResolvedValue([])
+      
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(0)
+      expect(result.data).toHaveProperty('whatnews')
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+  })
+
+  describe('Announcement Notification - No Limits', () => {
+    it('should send announcement notification without daily or max days limits', async () => {
+      const announcementTemplate = {
+        ...sampleTemplate,
+        id: 1,
+        notificationType: NotificationType.ANNOUNCEMENT,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        language: Language.EN,
+        notificationType: NotificationType.ANNOUNCEMENT,
+      } as SentNotificationDto
+
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: announcementTemplate,
+        notificationType: NotificationType.ANNOUNCEMENT,
+      })
+      ValidationHelper.validateTranslation = jest.fn().mockReturnValue({
+        isValid: true,
+        translation: sampleTranslation,
+      })
+      mockBakongUserRepo.find
+        .mockResolvedValueOnce([sampleUser])
+        .mockResolvedValueOnce([sampleUser])
+      mockBaseFunctionHelper.syncAllUsers.mockResolvedValue({
+        updatedCount: 0,
+        totalCount: 1,
+        platformUpdates: 0,
+        languageUpdates: 0,
+        invalidTokens: 0,
+        updatedIds: [],
+      })
+      ValidationHelper.validateFCMTokens = jest.fn().mockResolvedValue([sampleUser])
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockNotificationRepo.update.mockResolvedValue({ affected: 1 })
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockTemplateService.findBestTranslation.mockReturnValue(sampleTranslation)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+      mockBaseFunctionHelper.filterValidFCMUsers.mockReturnValue([sampleUser])
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+      mockQueryBuilder.getOne.mockResolvedValue(null)
+      const updateNotificationRecordSpy = jest
+        .spyOn(service as any, 'updateNotificationRecord')
+        .mockResolvedValue(undefined)
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(0)
+      expect(result.data).toHaveProperty('whatnews')
+      // Announcements should not check daily or max days limits
+      expect(mockNotificationRepo.count).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            templateId: announcementTemplate.id,
+          }),
+        }),
+      )
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+      updateNotificationRecordSpy.mockRestore()
+    })
+
+    it('should allow multiple announcement notifications to same user without limits', async () => {
+      const announcementTemplate = {
+        ...sampleTemplate,
+        id: 1,
+        notificationType: NotificationType.ANNOUNCEMENT,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        language: Language.EN,
+        notificationType: NotificationType.ANNOUNCEMENT,
+      } as SentNotificationDto
+
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: announcementTemplate,
+        notificationType: NotificationType.ANNOUNCEMENT,
+      })
+      ValidationHelper.validateTranslation = jest.fn().mockReturnValue({
+        isValid: true,
+        translation: sampleTranslation,
+      })
+      mockBakongUserRepo.find
+        .mockResolvedValueOnce([sampleUser])
+        .mockResolvedValueOnce([sampleUser])
+        .mockResolvedValueOnce([sampleUser])
+        .mockResolvedValueOnce([sampleUser])
+      mockBaseFunctionHelper.syncAllUsers.mockResolvedValue({
+        updatedCount: 0,
+        totalCount: 1,
+        platformUpdates: 0,
+        languageUpdates: 0,
+        invalidTokens: 0,
+        updatedIds: [],
+      })
+      ValidationHelper.validateFCMTokens = jest.fn().mockResolvedValue([sampleUser])
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockNotificationRepo.update.mockResolvedValue({ affected: 1 })
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockTemplateService.findBestTranslation.mockReturnValue(sampleTranslation)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+      mockBaseFunctionHelper.filterValidFCMUsers.mockReturnValue([sampleUser])
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+      mockQueryBuilder.getOne.mockResolvedValue(null)
+      const updateNotificationRecordSpy = jest
+        .spyOn(service as any, 'updateNotificationRecord')
+        .mockResolvedValue(undefined)
+
+      // Send first announcement
+      const result1 = await service.sendNow(dto)
+      expect(result1.responseCode).toBe(0)
+
+      // Send second announcement immediately (should work, no limits)
+      const result2 = await service.sendNow(dto)
+      expect(result2.responseCode).toBe(0)
+
+      // Both should succeed
+      expect(result1.data).toHaveProperty('whatnews')
+      expect(result2.data).toHaveProperty('whatnews')
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+      updateNotificationRecordSpy.mockRestore()
+    })
+  })
+
+  describe('Flash Notification Edge Cases', () => {
+    beforeEach(() => {
+      jest.clearAllMocks()
+    })
+
+    // Helper function to setup mocks for flash notification flow
+    const setupFlashNotificationMocks = (template: any, translation: any = sampleTranslation) => {
+      mockBaseFunctionHelper.findUserByAccountId
+        .mockResolvedValueOnce(sampleUser) // First call in sendNow
+        .mockResolvedValueOnce(sampleUser) // Second call in handleFlashNotification
+      mockBaseFunctionHelper.updateUserData.mockResolvedValue({})
+      mockBakongUserRepo.find.mockResolvedValue([sampleUser])
+      mockTemplateRepo.find.mockResolvedValue([template])
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: template,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+      })
+      ValidationHelper.validateTranslation = jest.fn().mockReturnValue({
+        isValid: true,
+        translation: translation,
+      })
+      mockTemplateService.findBestTemplateForUser.mockResolvedValue({
+        template: template,
+        translation: translation,
+      })
+      mockTemplateService.findBestTranslation.mockReturnValue(translation)
+    }
+
+    it('should use default limits (1, 1) when template has null/undefined showPerDay and maxDayShowing', async () => {
+      const templateWithNullLimits = {
+        ...sampleTemplate,
+        id: 4,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        showPerDay: null,
+        maxDayShowing: undefined,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(templateWithNullLimits)
+      
+      mockNotificationRepo.count.mockResolvedValue(1)
+      mockNotificationRepo.find.mockResolvedValue([])
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY)
+      expect(result.data).toHaveProperty('limit', 1)
+    })
+
+    it('should handle flash notification with specific templateId (bypasses findBestTemplateForUser)', async () => {
+      const flashTemplateWithLimits = {
+        ...sampleTemplate,
+        id: 1,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        showPerDay: 2,
+        maxDayShowing: 3,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+        isSent: true, // Must be published
+      } as any
+
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        templateId: 1,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      mockBaseFunctionHelper.findUserByAccountId
+        .mockResolvedValueOnce(sampleUser) // First call in sendNow
+        .mockResolvedValueOnce(sampleUser) // Second call in handleFlashNotification
+      mockBaseFunctionHelper.updateUserData.mockResolvedValue({})
+      mockBakongUserRepo.find.mockResolvedValue([sampleUser])
+      // When templateId is provided, sendNow uses findNotificationTemplate which calls findOne
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: flashTemplateWithLimits,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+      })
+      // handleFlashNotification also calls findOne when templateId is provided
+      mockTemplateRepo.findOne
+        .mockResolvedValueOnce(flashTemplateWithLimits) // First call in sendNow (via findNotificationTemplate)
+        .mockResolvedValueOnce(flashTemplateWithLimits) // Second call in handleFlashNotification
+      ValidationHelper.validateTranslation = jest.fn().mockReturnValue({
+        isValid: true,
+        translation: sampleTranslation,
+      })
+      mockTemplateService.findBestTranslation.mockReturnValue(sampleTranslation)
+      
+      // handleFlashNotification still checks limits even with templateId
+      mockNotificationRepo.count.mockResolvedValue(0)
+      mockNotificationRepo.find.mockResolvedValue([])
+      
+      mockNotificationRepo.create.mockReturnValue(sampleNotification)
+      mockNotificationRepo.save.mockResolvedValue(sampleNotification)
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(0)
+      expect(result.data).toHaveProperty('whatnews')
+      // When templateId is provided, it uses findOne instead of find
+      expect(mockTemplateRepo.findOne).toHaveBeenCalled()
+      // findBestTemplateForUser is not called when templateId is provided
+      expect(mockTemplateService.findBestTemplateForUser).not.toHaveBeenCalled()
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+
+    it('should correctly increment sendCount when sending multiple times in same day', async () => {
+      const flashTemplateWithLimits = {
+        ...sampleTemplate,
+        id: 1,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        showPerDay: 2,
+        maxDayShowing: 3,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      // First send
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      mockNotificationRepo.count.mockResolvedValue(0)
+      mockNotificationRepo.find.mockResolvedValue([])
+      
+      const firstNotification = { ...sampleNotification, id: 1, sendCount: 1 }
+      mockNotificationRepo.create.mockReturnValue(firstNotification)
+      mockNotificationRepo.save.mockResolvedValue(firstNotification)
+      mockTemplateService.markAsPublished.mockResolvedValue(undefined)
+      mockImageService.buildImageUrl.mockReturnValue('http://localhost:3000/api/v1/image/image-123')
+
+      const mockFCM = {
+        send: jest.fn().mockResolvedValue('message-id-123'),
+      }
+      FirebaseManager.getMessaging = jest.fn().mockReturnValue(mockFCM)
+      const getFCMSpy = jest.spyOn(service as any, 'getFCM').mockReturnValue(mockFCM)
+      const sendFCMPayloadToPlatformSpy = jest
+        .spyOn(service as any, 'sendFCMPayloadToPlatform')
+        .mockResolvedValue('message-id-123')
+
+      const result1 = await service.sendNow(dto)
+      expect(result1.responseCode).toBe(0)
+
+      // Second send
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      mockNotificationRepo.count.mockResolvedValue(1)
+      const secondNotification = { ...sampleNotification, id: 2, sendCount: 2 }
+      mockNotificationRepo.create.mockReturnValue(secondNotification)
+      mockNotificationRepo.save.mockResolvedValue(secondNotification)
+
+      const result2 = await service.sendNow(dto)
+      expect(result2.responseCode).toBe(0)
+
+      getFCMSpy.mockRestore()
+      sendFCMPayloadToPlatformSpy.mockRestore()
+    })
+
+    it('should handle boundary condition: exactly at showPerDay limit (should reject)', async () => {
+      const flashTemplateWithLimits = {
+        ...sampleTemplate,
+        id: 1,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        showPerDay: 2,
+        maxDayShowing: 3,
+        bakongPlatform: BakongApp.BAKONG,
+        translations: [sampleTranslation],
+      } as any
+
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      setupFlashNotificationMocks(flashTemplateWithLimits)
+      
+      mockNotificationRepo.count.mockResolvedValue(2)
+      mockNotificationRepo.find.mockResolvedValue([])
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY)
+      expect(result.data).toHaveProperty('limit', 2)
+      expect(result.data).toHaveProperty('sendCount', 2)
+    })
+
+    it('should handle when findBestTemplateForUser returns null (all templates at limit)', async () => {
+      const dto: SentNotificationDto = {
+        accountId: 'test@bkrt.com',
+        language: Language.EN,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+        bakongPlatform: BakongApp.BAKONG,
+        fcmToken: 'test-token',
+        platform: Platform.IOS,
+      } as SentNotificationDto
+
+      mockBaseFunctionHelper.findUserByAccountId
+        .mockResolvedValueOnce(sampleUser)
+        .mockResolvedValueOnce(sampleUser)
+      mockBaseFunctionHelper.updateUserData.mockResolvedValue({})
+      mockBakongUserRepo.find.mockResolvedValue([sampleUser])
+      mockTemplateRepo.find.mockResolvedValue([])
+      mockTemplateService.findNotificationTemplate.mockResolvedValue({
+        template: null,
+        notificationType: NotificationType.FLASH_NOTIFICATION,
+      })
+      mockTemplateService.findBestTemplateForUser.mockResolvedValue(null)
+
+      const result = await service.sendNow(dto)
+
+      expect(result.responseCode).toBe(1)
+      expect(result.errorCode).toBe(ErrorCode.INTERNAL_SERVER_ERROR)
     })
   })
 })

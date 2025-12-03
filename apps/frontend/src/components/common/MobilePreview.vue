@@ -5,23 +5,34 @@
     >
       <img :src="bg" alt="" class="absolute inset-0 h-full w-full object-top" />
       <section
-        class="absolute bottom-[0px] left-[2px] bottom-[2px] w-[319.00px] h-[521.19px] justify-center items-center bg-white/90 backdrop-blur-[3.01882px] border ring-1 ring-black/5 rounded-t-[18.1129px] rounded-b-[39.2447px] shadow-[0_12px_40px_rgba(0,0,0,0.25)] overflow-hidden"
+        class="absolute bottom-[0px] left-[2px] bottom-[2px] w-[319.00px] h-[521.19px] justify-center items-center bg-white/97 backdrop-blur-[3.01882px] border ring-1 ring-black/5 rounded-t-[18.1129px] rounded-b-[39.2447px] shadow-[0_12px_40px_rgba(0,0,0,0.25)] overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
         <div
-          class="absolute inset-x-0 top-0 h-[164.53px] bg-[#E2E2E2] rounded-t-[18.1129px] overflow-hidden"
+          class="absolute inset-x-0 top-0 h-[159.5px] rounded-t-[18.1129px] overflow-hidden"
+          :class="props.image ? 'bg-transparent' : 'bg-[#E2E2E2]'"
         >
           <div
-            class="absolute left-1/2 -translate-x-1/2 top-[5px] w-[46px] h-[6px] rounded-full bg-white/85"
+            class="absolute left-1/2 -translate-x-1/2 top-[5px] w-[46px] h-[6px] rounded-full bg-gray-400 z-10"
           ></div>
-          <div class="grid place-items-center h-full">
-            <img :src="displayImage" alt="" class="w-full h-full object-cover" />
+          <img 
+            v-if="props.image"
+            :src="displayImage" 
+            alt="" 
+            class="absolute inset-0 w-full h-full object-cover rounded-t-[18.1129px]"
+          />
+          <div v-else class="grid place-items-center h-full w-full">
+            <img 
+              :src="displayImage" 
+              alt="" 
+              class="w-full h-full object-contain"
+            />
           </div>
-          <div class="absolute bottom-0 inset-x-0 h-[1px] bg-black/10"></div>
+          <div class="absolute bottom-0 inset-x-0 h-[1px] bg-black/10 z-10"></div>
         </div>
         <div
-          class="scrollable-content absolute left-[12.08px] top-[176.6px] bottom-[61px] w-[307.92px] flex flex-col items-start gap-[6.04px] px-[30px] pt-[30px] pb-[20px] overflow-y-auto overflow-x-hidden"
+          class="scrollable-content absolute left-[12.08px] top-[171.57px] bottom-[61px] w-[307.92px] flex flex-col items-start gap-[6.04px] px-[30px] pt-[30px] pb-[20px] overflow-y-auto overflow-x-hidden"
         >
           <div class="title-container">
             {{ displayTitle || 'No title' }}

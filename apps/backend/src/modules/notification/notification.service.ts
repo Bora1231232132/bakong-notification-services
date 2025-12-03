@@ -51,23 +51,26 @@ export class NotificationService {
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
-    // Parse platforms - handle both array and JSON string formats
-    let platformsArray: string[] = []
-    if (Array.isArray(template.platforms)) {
-      platformsArray = template.platforms
-    } else if (typeof template.platforms === 'string') {
-      try {
-        platformsArray = JSON.parse(template.platforms)
-      } catch (e) {
-        console.warn('⚠️ [sendWithTemplate] Failed to parse platforms JSON, using default ALL:', e)
-        platformsArray = ['ALL']
-      }
-    } else {
-      console.warn('⚠️ [sendWithTemplate] Platforms is not array or string, using default ALL')
-      platformsArray = ['ALL']
-    }
+    // Parse platforms using shared helper function
+    const platformsArray = ValidationHelper.parsePlatforms(template.platforms)
+    
+    console.log('📤 [sendWithTemplate] Parsed platforms:', {
+      raw: template.platforms,
+      parsed: platformsArray,
+      type: typeof template.platforms,
+      isArray: Array.isArray(template.platforms),
+    })
 
-    const normalizedPlatforms = platformsArray.map((p) => ValidationHelper.normalizeEnum(p))
+    // Normalize platforms and ensure they're valid Platform enum values
+    const normalizedPlatforms = platformsArray
+      .map((p) => ValidationHelper.normalizeEnum(p))
+      .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID') // Only allow valid platform values
+    
+    if (normalizedPlatforms.length === 0) {
+      console.warn('⚠️ [sendWithTemplate] No valid platforms found, defaulting to ALL')
+      normalizedPlatforms.push('ALL')
+    }
+    
     console.log('📤 [sendWithTemplate] Target platforms:', {
       raw: template.platforms,
       parsed: platformsArray,
@@ -110,26 +113,67 @@ export class NotificationService {
       console.log('📤 [sendWithTemplate] Targeting specific platforms:', normalizedPlatforms)
     }
 
+    // Log user platforms before filtering for debugging
+    const userPlatformBreakdown: Record<string, number> = {}
+    users.forEach((user) => {
+      const platform = user.platform || 'NULL'
+      const normalizedUserPlatform = user.platform
+        ? ValidationHelper.normalizeEnum(user.platform)
+        : 'NULL'
+      const key = `${platform} (normalized: ${normalizedUserPlatform})`
+      userPlatformBreakdown[key] = (userPlatformBreakdown[key] || 0) + 1
+    })
+    console.log('📤 [sendWithTemplate] User platforms BEFORE filtering:', userPlatformBreakdown)
+
     const matchingUsers = users.filter((user) => {
-      if (!user.platform) return false
-      if (targetsAllPlatforms) return true
-      return normalizedPlatforms.some((p) => ValidationHelper.normalizeEnum(user.platform) === p)
+      if (!user.platform) {
+        console.log(
+          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: no platform set`,
+        )
+        return false
+      }
+      if (targetsAllPlatforms) {
+        return true
+      }
+      const normalizedUserPlatform = ValidationHelper.normalizeEnum(user.platform)
+      const matches = normalizedPlatforms.some((p) => normalizedUserPlatform === p)
+      if (!matches) {
+        console.log(
+          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: platform "${user.platform}" (normalized: "${normalizedUserPlatform}") not in target platforms [${normalizedPlatforms.join(', ')}]`,
+        )
+      }
+      return matches
     })
 
     // Log platform breakdown for debugging
     if (matchingUsers.length > 0) {
-      const platformBreakdown = {}
+      const platformBreakdown: Record<string, number> = {}
       matchingUsers.forEach((user) => {
         const platform = user.platform || 'NULL'
-        platformBreakdown[platform] = (platformBreakdown[platform] || 0) + 1
+        const normalizedPlatform = user.platform
+          ? ValidationHelper.normalizeEnum(user.platform)
+          : 'NULL'
+        const key = `${platform} (normalized: ${normalizedPlatform})`
+        platformBreakdown[key] = (platformBreakdown[key] || 0) + 1
       })
-      console.log('📤 [sendWithTemplate] Platform breakdown:', platformBreakdown)
+      console.log('📤 [sendWithTemplate] Platform breakdown AFTER filtering:', platformBreakdown)
+    } else {
+      console.log('📤 [sendWithTemplate] No users match platform filter')
     }
 
     console.log('📤 [sendWithTemplate] Users matching platform filter:', matchingUsers.length)
 
     if (!matchingUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users match the platform filter')
+      console.warn(
+        `⚠️ [sendWithTemplate] Template platform requirement: ${normalizedPlatforms.join(', ')}`,
+      )
+      console.warn(
+        `⚠️ [sendWithTemplate] Total users checked: ${users.length}, Users filtered out: ${users.length - matchingUsers.length}`,
+      )
+      console.warn(
+        '⚠️ [sendWithTemplate] Template will be kept as draft - no matching users found',
+      )
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
@@ -244,91 +288,33 @@ export class NotificationService {
         })
       }
 
-      // For flash notifications: Always sync user data and ensure bakongPlatform is set
-      // Priority: Use user's registered bakongPlatform > Infer from accountId/participantCode > Infer from template
+      // For flash notifications: User data was already synced in controller when app opened
+      // Just fetch the user to get bakongPlatform (already synced in controller)
       let userBakongPlatform: string | undefined = undefined
       if (dto.accountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
-        // Always sync user data again to ensure all fields are up to date
+        // User data was already synced in controller - just fetch to get bakongPlatform
         const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
 
-        console.log(`📤 [sendNow] Syncing user data for ${dto.accountId}`, {
-          existingBakongPlatform: user?.bakongPlatform || 'NULL',
-          providedBakongPlatform: dto.bakongPlatform || 'NULL',
-          accountId: dto.accountId,
-          participantCode: dto.participantCode || 'N/A',
-        })
-
-        // Mobile app ALWAYS provides bakongPlatform in the request
-        // This is the primary path - mobile provides all data including bakongPlatform
-        let bakongPlatformToSync = dto.bakongPlatform
-
-        // Fallback logic (shouldn't normally happen since mobile always provides bakongPlatform):
-        // Only used for edge cases like:
-        // - Old mobile app versions that don't send bakongPlatform
-        // - API calls from other sources
-        // - Backward compatibility
-        if (!bakongPlatformToSync) {
-          // Try existing user value first
-          if (user?.bakongPlatform) {
-            bakongPlatformToSync = user.bakongPlatform
-            console.warn(
-              `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), using existing from user: ${bakongPlatformToSync}`,
-            )
-          } else {
-            // Last resort: try to infer from accountId/participantCode
-            const inferred = this.inferBakongPlatform(dto.participantCode, dto.accountId)
-            if (inferred) {
-              bakongPlatformToSync = inferred
-              console.warn(
-                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${
-                  dto.accountId
-                }, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
-              )
-            } else {
-              console.error(
-                `❌ [sendNow] CRITICAL: bakongPlatform not provided by mobile and cannot be determined for ${dto.accountId}`,
-              )
-            }
-          }
-        }
-
-        // Always sync ALL user data from mobile app
-        // Mobile app always provides all data including: language, fcmToken, platform, participantCode, bakongPlatform
-        const syncData: any = {
-          accountId: dto.accountId,
-          language: dto.language,
-          fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
-          platform: dto.platform,
-          participantCode: dto.participantCode,
-          bakongPlatform: bakongPlatformToSync, // Mobile always provides this
-        }
-
-        console.log(
-          `📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`,
-          {
-            accountId: syncData.accountId,
-            language: syncData.language || 'N/A',
-            platform: syncData.platform || 'N/A',
-            participantCode: syncData.participantCode || 'N/A',
-            bakongPlatform:
-              syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
-          },
-        )
-
-        // Always sync all user data - mobile provides all fields including bakongPlatform
-        await this.baseFunctionHelper.updateUserData(syncData)
-
-        // Re-fetch user to get the latest bakongPlatform
-        const updatedUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        if (updatedUser && updatedUser.bakongPlatform) {
-          userBakongPlatform = updatedUser.bakongPlatform
+        if (user && user.bakongPlatform) {
+          userBakongPlatform = user.bakongPlatform
           console.log(
-            `✅ [sendNow] User ${dto.accountId} bakongPlatform after sync: ${userBakongPlatform}`,
+            `✅ [sendNow] Using user ${dto.accountId} bakongPlatform (already synced in controller): ${userBakongPlatform}`,
+          )
+        } else if (dto.bakongPlatform) {
+          // Fallback: Use bakongPlatform from request if user doesn't have it
+          userBakongPlatform = dto.bakongPlatform
+          console.log(
+            `⚠️ [sendNow] User ${dto.accountId} has no bakongPlatform in DB, using from request: ${userBakongPlatform}`,
           )
         } else {
-          console.log(
-            `⚠️ [sendNow] User ${dto.accountId} still has no bakongPlatform after sync attempt`,
-          )
+          // Last resort: try to infer
+          const inferred = this.inferBakongPlatform(dto.participantCode, dto.accountId)
+          if (inferred) {
+            userBakongPlatform = inferred
+            console.warn(
+              `⚠️ [sendNow] Inferring bakongPlatform for ${dto.accountId}: ${inferred}`,
+            )
+          }
         }
       }
 
@@ -675,13 +661,9 @@ export class NotificationService {
 
           const notificationIdStr = String(notificationId)
 
-          if (
-            mode === 'shared' &&
-            template.notificationType === NotificationType.FLASH_NOTIFICATION
-          ) {
-            console.log('📨 [sendFCM] Skipping FLASH_NOTIFICATION in shared mode')
-            continue
-          }
+          // FLASH_NOTIFICATION now sends FCM push like other notification types
+          // Mobile app will display it differently (as popup/flash screen)
+          // No need to skip - send FCM push for all notification types
 
           console.log('📨 [sendFCM] Calling sendFCMPayloadToPlatform for user:', user.accountId)
           const response = await this.sendFCMPayloadToPlatform(
@@ -819,9 +801,37 @@ export class NotificationService {
     imageUrlString: string,
     mode: 'individual' | 'shared',
   ): Promise<string | null> {
+    // Parse template platforms using shared helper function
+    const templatePlatformsArray = ValidationHelper.parsePlatforms(template.platforms)
+
+    const normalizedTemplatePlatforms = templatePlatformsArray
+      .map((p) => ValidationHelper.normalizeEnum(p))
+      .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID')
+    
+    const targetsAllPlatforms = normalizedTemplatePlatforms.includes('ALL')
+    const normalizedUserPlatform = user.platform
+      ? ValidationHelper.normalizeEnum(user.platform)
+      : null
+
+    // CRITICAL: Double-check platform match before sending
+    if (!targetsAllPlatforms && normalizedUserPlatform) {
+      const platformMatches = normalizedTemplatePlatforms.some(
+        (p) => normalizedUserPlatform === p,
+      )
+      if (!platformMatches) {
+        console.warn(
+          `⚠️ [sendFCMPayloadToPlatform] SKIPPING user ${user.accountId}: platform "${user.platform}" (normalized: "${normalizedUserPlatform}") does NOT match template platforms [${normalizedTemplatePlatforms.join(', ')}]`,
+        )
+        return null
+      }
+    }
+
     const platform = ValidationHelper.isPlatform(user.platform)
     console.log('📱 [sendFCMPayloadToPlatform] Platform detection:', {
       userPlatform: user.platform,
+      normalizedUserPlatform: normalizedUserPlatform,
+      templatePlatforms: normalizedTemplatePlatforms,
+      targetsAllPlatforms: targetsAllPlatforms,
       isIOS: platform.ios,
       isAndroid: platform.android,
       mode: mode,
@@ -831,6 +841,7 @@ export class NotificationService {
 
     if (platform.ios) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing iOS notification...')
+      
       const whatNews = InboxResponseDto.buildBaseNotificationData(
         template,
         translation,
@@ -838,6 +849,10 @@ export class NotificationService {
         imageUrlString,
         parseInt(notificationIdStr),
       )
+      
+      // Note: Mobile app will determine redirect screen based on notificationType:
+      // - FLASH_NOTIFICATION → Home screen
+      // - ANNOUNCEMENT → Notification Center screen
 
       const iosPayloadResponse =
         mode === 'individual'
@@ -892,6 +907,7 @@ export class NotificationService {
     }
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
+      
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
@@ -905,10 +921,13 @@ export class NotificationService {
         createdDate: template.createdAt
           ? DateFormatter.formatDateByLanguage(template.createdAt, translation.language)
           : DateFormatter.formatDateByLanguage(new Date(), translation.language),
-
         notification_title: title,
         notification_body: body,
       }
+      
+      // Note: Mobile app will determine redirect screen based on notificationType:
+      // - FLASH_NOTIFICATION → Home screen
+      // - ANNOUNCEMENT → Notification Center screen
 
       const msg = InboxResponseDto.buildAndroidDataOnlyPayload(
         user.fcmToken,
@@ -1078,22 +1097,23 @@ export class NotificationService {
           .filter(([_, count]) => count >= 2)
           .map(([templateId]) => parseInt(templateId))
 
-        // If all available templates have been sent 2+ times, return limit error
+        // If all available templates have reached their limits, return limit error
+        // Note: This check is now handled by findBestTemplateForUser which checks per-template limits
+        // This is kept for backward compatibility
         if (
           allAvailableTemplates.length > 0 &&
           templatesAtLimit.length === allAvailableTemplates.length &&
           allAvailableTemplates.every((t) => templatesAtLimit.includes(t.id))
         ) {
           console.warn(
-            `⚠️ [handleFlashNotification] All ${allAvailableTemplates.length} templates have been sent 2+ times for user ${accountId}`,
+            `⚠️ [handleFlashNotification] All ${allAvailableTemplates.length} templates have reached their limits for user ${accountId}`,
           )
           return BaseResponseDto.error({
             errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
             message: ResponseMessage.FLASH_LIMIT_REACHED_IN_TODAY,
             data: {
               message:
-                'You have reached the daily limit for flash notifications. All available templates have been sent 2 times. Please try again tomorrow.',
-              limit: 2,
+                'You have reached the limit for flash notifications. All available templates have reached their daily or maximum day limits. Please try again later.',
               templatesAtLimit: templatesAtLimit,
               totalTemplates: allAvailableTemplates.length,
             },
@@ -1123,25 +1143,35 @@ export class NotificationService {
       })
     }
 
+    // Get flash notification limit settings from template (default: 1 per day, 1 day max)
+    const showPerDay = selectedTemplate.showPerDay ?? 1
+    const maxDayShowing = selectedTemplate.maxDayShowing ?? 1
+
+    console.log(
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} limits: showPerDay=${showPerDay}, maxDayShowing=${maxDayShowing}`,
+    )
+
+    // Check 1: Has user seen this template showPerDay times TODAY?
     const now = new Date()
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    const existingCount = await this.notiRepo.count({
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    const todayCount = await this.notiRepo.count({
       where: {
         accountId,
         templateId: selectedTemplate.id,
-        createdAt: Between(twentyFourHoursAgo, now),
+        createdAt: Between(todayStart, todayEnd),
       },
     })
 
     console.log(
-      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been sent ${existingCount} times to user ${accountId} in last 24h`,
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been sent ${todayCount} times to user ${accountId} today (limit: ${showPerDay} per day)`,
     )
 
-    // Check if user has already received this template 2+ times in last 24 hours
-    // IMPORTANT: Check BEFORE storing notification to prevent sending
-    if (existingCount >= 2) {
+    // Check if user has already received this template showPerDay times today
+    if (todayCount >= showPerDay) {
       console.warn(
-        `⚠️ [handleFlashNotification] LIMIT REACHED: User ${accountId} has already received template ${selectedTemplate.id} ${existingCount} times in last 24h (limit: 2)`,
+        `⚠️ [handleFlashNotification] DAILY LIMIT REACHED: User ${accountId} has already received template ${selectedTemplate.id} ${todayCount} times today (limit: ${showPerDay} per day)`,
       )
       return BaseResponseDto.error({
         errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
@@ -1149,16 +1179,57 @@ export class NotificationService {
         data: {
           templateId: selectedTemplate.id,
           templateTitle: selectedTranslation?.title || 'Unknown',
-          sendCount: existingCount,
-          limit: 2,
-          message: `You have already received this notification ${existingCount} times today. Please try again tomorrow.`,
+          sendCount: todayCount,
+          limit: showPerDay,
+          message: `You have already received this notification ${todayCount} time(s) today. Please try again tomorrow.`,
         },
       })
     }
 
-    const newSendCount = existingCount + 1
+    // Check 2: Has user seen this template for maxDayShowing days?
+    // Count distinct days user has received this template
+    const allNotifications = await this.notiRepo.find({
+      where: {
+        accountId,
+        templateId: selectedTemplate.id,
+      },
+      select: ['createdAt'],
+    })
+
+    // Get distinct days (YYYY-MM-DD format)
+    const distinctDays = new Set<string>()
+    allNotifications.forEach((notif) => {
+      const date = new Date(notif.createdAt)
+      const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      distinctDays.add(dayKey)
+    })
+
+    const daysCount = distinctDays.size
     console.log(
-      `✅ [handleFlashNotification] Proceeding to send template ${selectedTemplate.id} (will be send #${newSendCount} for this user)`,
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been shown to user ${accountId} for ${daysCount} distinct day(s) (limit: ${maxDayShowing} days)`,
+    )
+
+    // Check if user has already seen this template for maxDayShowing days
+    if (daysCount >= maxDayShowing) {
+      console.warn(
+        `⚠️ [handleFlashNotification] MAX DAYS LIMIT REACHED: User ${accountId} has already seen template ${selectedTemplate.id} for ${daysCount} days (limit: ${maxDayShowing} days)`,
+      )
+      return BaseResponseDto.error({
+        errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
+        message: ResponseMessage.FLASH_LIMIT_REACHED_IN_TODAY,
+        data: {
+          templateId: selectedTemplate.id,
+          templateTitle: selectedTranslation?.title || 'Unknown',
+          daysCount: daysCount,
+          limit: maxDayShowing,
+          message: `This notification has already been shown to you for ${daysCount} day(s). The maximum limit of ${maxDayShowing} day(s) has been reached.`,
+        },
+      })
+    }
+
+    const newSendCount = todayCount + 1
+    console.log(
+      `✅ [handleFlashNotification] Proceeding to send template ${selectedTemplate.id} (will be send #${newSendCount} for this user today, day ${daysCount + 1} of ${maxDayShowing})`,
     )
 
     // User already fetched above, reuse it
@@ -1203,6 +1274,18 @@ export class NotificationService {
       } = dto
       const { skip, take } = PaginationUtils.normalizePagination(page, size)
 
+      console.log('📥 [getNotificationCenter] /inbox API called with:', {
+        accountId,
+        fcmToken: fcmToken
+          ? `${fcmToken.substring(0, 30)}...`
+          : fcmToken === ''
+          ? 'EMPTY (explicitly cleared)'
+          : 'NOT PROVIDED',
+        platform: platform || 'N/A',
+        language: language || 'N/A',
+        bakongPlatform: bakongPlatform || 'N/A',
+      })
+
       // Handle typo: "bakongPlatfrom" -> "bakongPlatform"
       // Check raw request body if bakongPlatform is not set but typo field exists
       let finalBakongPlatform = bakongPlatform
@@ -1213,16 +1296,84 @@ export class NotificationService {
         finalBakongPlatform = req.body.bakongPlatfrom
       }
 
+      // Check existing user before sync
+      const existingUser = await this.baseFunctionHelper.findUserByAccountId(accountId)
+      if (existingUser) {
+        console.log(
+          `📋 [getNotificationCenter] Existing user found: ${accountId}, current fcmToken: ${existingUser.fcmToken ? `${existingUser.fcmToken.substring(0, 30)}...` : 'EMPTY'}`,
+        )
+      } else {
+        console.log(`📋 [getNotificationCenter] New user: ${accountId}`)
+      }
+
       // Store bakongPlatform when user calls API
+      // fcmToken is required in NotificationInboxDto, so it should always be provided
+      // If it's an empty string, that means app was deleted - we should clear old token
+      // Always pass fcmToken as-is (even if empty string) to ensure sync happens
+      console.log(
+        `🔄 [getNotificationCenter] Preparing to sync user data:`,
+        {
+          accountId,
+          fcmTokenProvided: fcmToken !== undefined,
+          fcmTokenValue: fcmToken
+            ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length})`
+            : fcmToken === ''
+            ? 'EMPTY STRING'
+            : 'UNDEFINED',
+          fcmTokenType: typeof fcmToken,
+        },
+      )
+      console.log(
+        `🔄 [getNotificationCenter] Calling updateUserData with:`,
+        {
+          accountId,
+          fcmToken: fcmToken
+            ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length}, type: ${typeof fcmToken})`
+            : fcmToken === ''
+            ? 'EMPTY STRING'
+            : 'UNDEFINED',
+          participantCode: participantCode || 'NOT PROVIDED',
+          platform: platform || 'NOT PROVIDED',
+          language: language || 'NOT PROVIDED',
+          bakongPlatform: finalBakongPlatform || 'NOT PROVIDED',
+        },
+      )
+
       const syncResult = await this.baseFunctionHelper.updateUserData({
         accountId,
-        fcmToken,
+        fcmToken: fcmToken, // Pass as-is (required field, should always be string)
         participantCode,
         platform,
         language,
         bakongPlatform: finalBakongPlatform,
       })
+
+      // Log sync result
+      if ('isNewUser' in syncResult) {
+        const result = syncResult as any
+        console.log(
+          `✅ [getNotificationCenter] User sync complete: ${accountId}, isNewUser: ${result.isNewUser}, savedUser fcmToken: ${result.savedUser?.fcmToken ? `${result.savedUser.fcmToken.substring(0, 30)}...` : 'EMPTY'}`,
+        )
+      } else {
+        console.log(
+          `✅ [getNotificationCenter] All users sync complete: ${(syncResult as any).updatedCount} users updated`,
+        )
+      }
+
+      // Re-fetch user to verify it was saved
       const user = await this.baseFunctionHelper.findUserByAccountId(accountId)
+      console.log(
+        `🔍 [getNotificationCenter] Re-fetched user after sync:`,
+        {
+          accountId,
+          found: !!user,
+          fcmToken: user?.fcmToken
+            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+            : 'EMPTY',
+          bakongPlatform: user?.bakongPlatform || 'NULL',
+          updatedAt: user?.updatedAt,
+        },
+      )
 
       if (!user) {
         return BaseResponseDto.error({

@@ -1,4 +1,4 @@
-﻿import { api, uploadApi } from './api'
+import { api, uploadApi } from './api'
 import { TimezoneUtils } from '@bakong/shared'
 
 export interface CreateTemplateRequest {
@@ -238,7 +238,15 @@ export const notificationApi = {
               image: translation.image ? `/api/v1/image/${translation.image.fileId}` : '',
               linkPreview: translation.linkPreview,
               date: template.date,
-              status: mapBackendStatusToFrontend(template.isSent ? 'SENT' : 'SCHEDULED'),
+              // Map status based on isSent and sendType
+              // If isSent is true, it's published (regardless of sendType)
+              // If isSent is false and has sendSchedule, it's scheduled
+              // Otherwise it's draft
+              status: template.isSent
+                ? 'published'
+                : template.sendSchedule || template.sendType === 'SEND_SCHEDULE'
+                  ? 'scheduled'
+                  : 'draft',
               type: template.notificationType,
               createdAt: template.createdAt,
               templateId: template.templateId || template.id,
@@ -434,7 +442,22 @@ export const notificationApi = {
 
   async updateTemplate(id: number, templateData: CreateTemplateRequest): Promise<any> {
     try {
-      const response = await api.post(`/api/v1/template/${id}/update`, templateData)
+      // Ensure no file buffers are included in the request - only fileIds (strings)
+      const sanitizedData = {
+        ...templateData,
+        translations: templateData.translations?.map((t) => ({
+          language: t.language,
+          title: t.title,
+          content: t.content,
+          image: typeof t.image === 'string' ? t.image : '', // Ensure image is only a string (fileId), not a File or Buffer
+          linkPreview: t.linkPreview,
+        })),
+      }
+      
+      // Use longer timeout for template updates (60 seconds)
+      const response = await api.post(`/api/v1/template/${id}/update`, sanitizedData, {
+        timeout: 60000,
+      })
       return response.data
     } catch (error: any) {
       console.error(`Error updating template ${id}:`, error)

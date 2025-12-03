@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="create-notification-container">
     <div class="main-content">
       <Tabs v-model="activeLanguage" :tabs="languageTabs" @tab-changed="handleLanguageChanged" />
@@ -8,9 +8,9 @@
             :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
             v-model="currentImageFile"
             accept-types="image/png,image/jpeg"
-            :max-size="10 * 1024 * 1024"
-            format-text="Supported format: PNG, JPG (2:1 W:H)"
-            size-text="Maximum size: 10MB"
+            :max-size="3 * 1024 * 1024"
+            format-text="Supported format: PNG, JPG (2:1 W:H or 880:440)"
+            size-text="Maximum size: 3MB"
             :existing-image-url="currentImageUrl || undefined"
             @file-selected="handleLanguageImageSelected"
             @file-removed="handleLanguageImageRemoved"
@@ -198,7 +198,7 @@
                     format="M/D/YYYY"
                     value-format="M/D/YYYY"
                     class="schedule-date-picker"
-                    style="width: 277.5px !important; height: 45px !important; border-radius: 16px"
+                    style="width: 277.5px !important; height: 56px !important; border-radius: 16px"
                     :prefix-icon="null"
                     :clear-icon="null"
                     :disabled-date="disabledDate"
@@ -212,7 +212,7 @@
                     format="HH:mm"
                     value-format="HH:mm"
                     class="schedule-time-picker"
-                    style="width: 277.5px !important; height: 45px !important; border-radius: 16px"
+                    style="width: 277.5px !important; height: 56px !important; border-radius: 16px"
                     :prefix-icon="null"
                     :clear-icon="null"
                     :disabled-hours="() => disabledHours(formData.scheduleDate)"
@@ -228,7 +228,14 @@
             <div class="splash-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
-                  <span class="option-title">Show as flash</span>
+                  <span class="option-title">Show flash on launch</span>
+                  <span class="option-description">
+                    <template v-if="formData.splashEnabled">
+                      Users will see the flash message on next launch.
+                    </template>
+                    <template v-else>
+                    </template>
+                  </span>
                 </div>
                 <div class="schedule-option-right">
                   <span class="option-label">Set number of showing</span>
@@ -712,6 +719,17 @@ const handlePublishNow = async () => {
     let isSent = true
     let redirectTab = 'published'
 
+    // When editing a published notification, always keep it published
+    // Don't allow changing to scheduled or draft - ignore schedule settings
+    if (isEditMode.value && isEditingPublished.value) {
+      sendType = SendType.SEND_NOW
+      isSent = true
+      redirectTab = 'published'
+      // Clear schedule fields to prevent any scheduling
+      formData.scheduleEnabled = false
+      formData.scheduleDate = ''
+      formData.scheduleTime = ''
+    } else {
     const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
     const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
 
@@ -731,6 +749,7 @@ const handlePublishNow = async () => {
       redirectTab = 'scheduled'
     } else {
       redirectTab = 'published'
+      }
     }
     const imagesToUpload: { file: File; language: string }[] = []
     const translations = []
@@ -888,12 +907,16 @@ const handlePublishNow = async () => {
       priority: 1,
     }
 
-    if (formData.scheduleEnabled) {
+    // Only set schedule if not editing a published notification
+    if (formData.scheduleEnabled && !(isEditMode.value && isEditingPublished.value)) {
       const scheduleDateTime = DateUtils.parseScheduleDateTime(
         String(formData.scheduleDate),
         String(formData.scheduleTime),
       )
       templateData.sendSchedule = scheduleDateTime.toISOString()
+    } else if (isEditMode.value && isEditingPublished.value) {
+      // Explicitly clear schedule when editing published notification
+      templateData.sendSchedule = undefined
     }
 
     let result
@@ -1365,6 +1388,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .el-date-editor .el-input__suffix-inner,
@@ -1374,6 +1398,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .el-date-editor .el-icon,
@@ -1385,6 +1410,7 @@ body::-webkit-scrollbar {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 </style>
 
@@ -1611,8 +1637,9 @@ body::-webkit-scrollbar {
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  align-items: center;
-  gap: 218px;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
 }
 
 .splash-options {
@@ -1632,24 +1659,39 @@ body::-webkit-scrollbar {
 
 .schedule-option-left {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .schedule-option-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .option-label {
   font-size: 14px;
   color: #001346;
+  white-space: nowrap;
 }
 
 .option-title {
   font-size: 16px;
   font-weight: 600;
   color: #001346;
+}
+
+.option-description {
+  font-size: 14px;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.4;
+  max-width: 100%;
 }
 
 .toggle-switch {
@@ -1891,7 +1933,16 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__suffix,
-.schedule-time-picker .el-input__suffix,
+.schedule-time-picker .el-input__suffix {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__prefix,
 .schedule-time-picker .el-input__prefix {
   display: none !important;
@@ -1902,7 +1953,16 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__suffix-inner,
-.schedule-time-picker .el-input__suffix-inner,
+.schedule-time-picker .el-input__suffix-inner {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__prefix-inner,
 .schedule-time-picker .el-input__prefix-inner {
   display: none !important;
@@ -1910,16 +1970,35 @@ input:checked + .toggle-slider:before {
   opacity: 0 !important;
 }
 
-.schedule-date-picker .el-icon,
-.schedule-time-picker .el-icon,
-.schedule-date-picker .el-input__icon,
-.schedule-time-picker .el-input__icon,
-.schedule-date-picker [class*='icon'],
-.schedule-time-picker [class*='icon'],
-.schedule-date-picker svg,
-.schedule-time-picker svg,
-.schedule-date-picker i,
-.schedule-time-picker i {
+.schedule-date-picker .el-input__suffix .el-icon,
+.schedule-time-picker .el-input__suffix .el-icon,
+.schedule-date-picker .el-input__suffix .el-input__icon,
+.schedule-time-picker .el-input__suffix .el-input__icon,
+.schedule-date-picker .el-input__suffix [class*='icon'],
+.schedule-time-picker .el-input__suffix [class*='icon'],
+.schedule-date-picker .el-input__suffix svg,
+.schedule-time-picker .el-input__suffix svg,
+.schedule-date-picker .el-input__suffix i,
+.schedule-time-picker .el-input__suffix i {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 16px !important;
+  color: #6b7280 !important;
+}
+
+.schedule-date-picker .el-icon:not(.el-input__suffix .el-icon),
+.schedule-time-picker .el-icon:not(.el-input__suffix .el-icon),
+.schedule-date-picker .el-input__icon:not(.el-input__suffix .el-input__icon),
+.schedule-time-picker .el-input__icon:not(.el-input__suffix .el-input__icon),
+.schedule-date-picker [class*='icon']:not(.el-input__suffix [class*='icon']),
+.schedule-time-picker [class*='icon']:not(.el-input__suffix [class*='icon']),
+.schedule-date-picker svg:not(.el-input__suffix svg),
+.schedule-time-picker svg:not(.el-input__suffix svg),
+.schedule-date-picker i:not(.el-input__suffix i),
+.schedule-time-picker i:not(.el-input__suffix i) {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1931,6 +2010,7 @@ input:checked + .toggle-slider:before {
 .schedule-date-picker .el-date-editor__trigger,
 .schedule-time-picker .el-time-picker__trigger {
   display: none !important;
+
 }
 
 .schedule-date-picker .el-date-editor__trigger-icon,
@@ -1939,32 +2019,42 @@ input:checked + .toggle-slider:before {
 }
 
 .schedule-date-picker .el-input__wrapper .el-input__suffix,
-.schedule-time-picker .el-input__wrapper .el-input__suffix,
+.schedule-time-picker .el-input__wrapper .el-input__suffix {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 40px !important;
+  height: 40px !important;
+}
+
 .schedule-date-picker .el-input__wrapper .el-input__prefix,
 .schedule-time-picker .el-input__wrapper .el-input__prefix {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+  height: 0 !important;
 }
 
 .schedule-date-picker.el-date-editor,
 .schedule-time-picker.el-time-picker {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 
 .schedule-date-picker.el-date-editor .el-input,
 .schedule-time-picker.el-time-picker .el-input {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 
 .schedule-date-picker.el-date-editor .el-input__wrapper,
 .schedule-time-picker.el-time-picker .el-input__wrapper {
   width: 277.5px !important;
-  height: 45px !important;
+  height: 56px !important;
   border-radius: 16px;
 }
 

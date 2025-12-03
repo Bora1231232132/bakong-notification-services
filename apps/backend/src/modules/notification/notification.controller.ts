@@ -27,11 +27,24 @@ export class NotificationController {
       language: dto.language,
       notificationType: dto.notificationType,
       bakongPlatform: dto.bakongPlatform,
+      accountId: dto.accountId || 'N/A',
+      fcmToken: dto.fcmToken
+        ? `${dto.fcmToken.substring(0, 30)}...`
+        : dto.fcmToken === ''
+        ? 'EMPTY (explicitly cleared)'
+        : 'NOT PROVIDED',
     })
 
     try {
       if (dto.accountId) {
-        dto.notificationType = NotificationType.FLASH_NOTIFICATION
+        // CRITICAL: Sync user data FIRST when FCM push is received (before any other operations)
+        // This ensures we have the latest user data (fcmToken, bakongPlatform, etc.) immediately
+        // Mobile app always provides all data when receiving FCM push (all notification types)
+        // IMPORTANT: Do NOT force notificationType - let it come from mobile's FCM payload
+        const notificationTypeLabel = dto.notificationType || 'UNKNOWN'
+        console.log(
+          `🔄 [sendNotification] FCM push received - Syncing user data FIRST for ${dto.accountId} before processing ${notificationTypeLabel} notification`,
+        )
 
         // Mobile app ALWAYS provides bakongPlatform in the request
         // Fallback: Only infer if mobile didn't provide it (shouldn't happen, but for backward compatibility)
@@ -47,17 +60,55 @@ export class NotificationController {
             dto.bakongPlatform = inferredBakongPlatform
           }
         }
+        
+        // If notificationType is not provided, default to FLASH_NOTIFICATION for backward compatibility
+        // But prefer to use the type from FCM payload if provided
+        if (!dto.notificationType) {
+          console.warn(
+            `⚠️ [sendNotification] notificationType not provided in request, defaulting to FLASH_NOTIFICATION for backward compatibility`,
+          )
+          dto.notificationType = NotificationType.FLASH_NOTIFICATION
+        }
 
-        // Auto-sync/register user with data from mobile app
-        // Mobile app always provides all data including bakongPlatform
+        // Check fcmToken status for logging
+        if (dto.fcmToken === undefined) {
+          const existingUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+          if (existingUser?.fcmToken) {
+            console.warn(
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} but fcmToken NOT PROVIDED. User has existing token: ${existingUser.fcmToken.substring(0, 30)}... (This might be an old/invalid token if app was reinstalled)`,
+            )
+          } else {
+            console.warn(
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} but fcmToken NOT PROVIDED. User has no existing token.`,
+            )
+          }
+        } else if (dto.fcmToken === '') {
+          console.log(
+            `ℹ️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} with EMPTY fcmToken (app deleted/reinstalled - will clear old token)`,
+          )
+        } else {
+          console.log(
+            `✅ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} with NEW fcmToken: ${dto.fcmToken.substring(0, 30)}...`,
+          )
+        }
+
+        // SYNC USER DATA FIRST - This happens when FCM push is received, before processing notification
+        // Mobile app always provides all data including bakongPlatform when receiving FCM push (all notification types)
+        // Preserve undefined vs empty string distinction for fcmToken:
+        // - undefined = not provided, don't update
+        // - empty string = explicitly cleared (app deleted), clear old token
         await this.baseFunctionHelper.updateUserData({
           accountId: dto.accountId,
           language: dto.language,
-          fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
+          fcmToken: dto.fcmToken !== undefined ? dto.fcmToken : undefined, // Preserve undefined if not provided
           platform: dto.platform,
           participantCode: dto.participantCode,
           bakongPlatform: dto.bakongPlatform, // Mobile always provides this
         })
+
+        console.log(
+          `✅ [sendNotification] User data synced successfully for ${dto.accountId}. Proceeding with ${dto.notificationType || 'notification'}...`,
+        )
       } else {
         if (!dto.notificationType) {
           dto.notificationType = NotificationType.ANNOUNCEMENT
