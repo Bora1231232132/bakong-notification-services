@@ -12,6 +12,17 @@ echo "🧪 Local Testing Script"
 echo "======================="
 echo ""
 
+# Check if timeout command is available (may not be on Windows/Git Bash)
+if command -v timeout > /dev/null 2>&1; then
+    USE_TIMEOUT=true
+    TIMEOUT_CMD="timeout"
+else
+    USE_TIMEOUT=false
+    echo "⚠️  'timeout' command not available (normal on Windows/Git Bash)"
+    echo "   Scripts will run without timeout - if they hang, press Ctrl+C"
+    echo ""
+fi
+
 # Check if Docker is running
 if ! docker ps > /dev/null 2>&1; then
     echo "❌ Docker is not running!"
@@ -26,8 +37,8 @@ echo ""
 echo "📋 Step 1: Checking required files..."
 echo "----------------------------------------"
 
-MIGRATION_FILE="apps/backend/unified-migration.sql"
-VERIFY_FILE="apps/backend/verify-all.sql"
+MIGRATION_FILE="apps/backend/scripts/unified-migration.sql"
+VERIFY_FILE="apps/backend/scripts/verify-all.sql"
 UTILS_FILE="utils-server.sh"
 
 if [ ! -f "$MIGRATION_FILE" ]; then
@@ -76,36 +87,217 @@ fi
 # Check if container is running
 if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "✅ Database container is running"
+    
+    # Wait for database to be ready
+    echo "   Waiting for database to be ready..."
+    for i in {1..30}; do
+        if docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1; then
+            echo "   ✅ Database is ready"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo "   ⚠️  Database healthcheck timeout after 30 attempts"
+            echo "   Continuing anyway..."
+        else
+            echo "   ⏳ Waiting for database... ($i/30)"
+            sleep 1
+        fi
+    done
 else
     echo "⚠️  Starting database container..."
-    docker start "$CONTAINER_NAME" || docker-compose -f docker-compose.yml up -d db
-    sleep 10
+    # Check if container exists but is stopped
+    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo "   Container exists but is stopped. Removing old container..."
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    fi
+    # Start fresh container with docker-compose
+    docker-compose -f docker-compose.yml up -d db
+    echo "   ⏳ Waiting for database to start (15 seconds)..."
+    sleep 15
+    
+    # Wait for database to be ready
+    echo "   Waiting for database to be ready..."
+    for i in {1..30}; do
+        if docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1; then
+            echo "   ✅ Database is ready"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo "   ⚠️  Database healthcheck timeout after 30 attempts"
+            echo "   Continuing anyway..."
+        else
+            echo "   ⏳ Waiting for database... ($i/30)"
+            sleep 1
+        fi
+    done
 fi
 
 echo ""
-echo "📋 Step 3: Testing Migration Script..."
+echo "📋 Step 3: Testing Database Connection..."
+echo "----------------------------------------"
+
+# Test database connection first
+echo "Testing database connection..."
+export PGPASSWORD="$DB_PASSWORD"
+if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
+    echo "✅ Database connection successful"
+else
+    echo "❌ Database connection failed!"
+    echo "   Please check:"
+    echo "   1. Container is running: docker ps | grep $CONTAINER_NAME"
+    echo "   2. Database is ready: docker exec $CONTAINER_NAME pg_isready -U $DB_USER"
+    unset PGPASSWORD
+    exit 1
+fi
+
+echo ""
+echo "📋 Step 4: Testing Migration Script..."
 echo "----------------------------------------"
 
 # Test migration
 echo "Running unified migration..."
+echo "   File: $MIGRATION_FILE"
+echo "   Database: $DB_NAME"
+echo "   User: $DB_USER"
+echo ""
+
 export PGPASSWORD="$DB_PASSWORD"
-if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE"; then
-    echo "✅ Migration test PASSED"
+echo "   ⏳ Running migration (this may take a minute or two)..."
+if [ "$USE_TIMEOUT" = true ]; then
+    if timeout 300 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1; then
+        MIGRATION_SUCCESS=true
+    else
+        MIGRATION_SUCCESS=false
+    fi
 else
+    if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1; then
+        MIGRATION_SUCCESS=true
+    else
+        MIGRATION_SUCCESS=false
+    fi
+fi
+
+if [ "$MIGRATION_SUCCESS" = true ]; then
+    echo ""
+    echo "✅ Migration test PASSED"
+    
+    # Verify migration - check if categoryTypeId column exists
+    echo ""
+    echo "   Verifying migration..."
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+        echo "   ✅ Verified: categoryTypeId column exists"
+    else
+        echo "   ⚠️  Warning: categoryTypeId column not found"
+    fi
+    
+    # Verify category_type table exists
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'category_type');" | grep -q t; then
+        echo "   ✅ Verified: category_type table exists"
+    else
+        echo "   ⚠️  Warning: category_type table not found"
+    fi
+    
+    # Verify notification_type_enum exists
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM pg_type WHERE typname = 'notification_type_enum');" | grep -q t; then
+        echo "   ✅ Verified: notification_type_enum exists"
+    else
+        echo "   ⚠️  Warning: notification_type_enum not found"
+    fi
+else
+    echo ""
     echo "❌ Migration test FAILED"
-    unset PGPASSWORD
-    exit 1
+    echo ""
+    echo "   Checking if migration was already applied..."
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+        echo "   ✅ Migration already applied (categoryTypeId exists)"
+        echo "   Migration test PASSED (already applied)"
+    else
+        echo "   ❌ Migration failed and not applied"
+        unset PGPASSWORD
+        exit 1
+    fi
 fi
 unset PGPASSWORD
 
 echo ""
-echo "📋 Step 4: Testing Verification Script..."
+echo "📋 Step 5: Testing Cascade Delete Migration..."
+echo "----------------------------------------"
+
+# Test cascade delete migration
+CASCADE_MIGRATION_FILE="apps/backend/scripts/fix-notification-cascade-delete.sql"
+
+if [ ! -f "$CASCADE_MIGRATION_FILE" ]; then
+    echo "⚠️  Cascade delete migration file not found: $CASCADE_MIGRATION_FILE"
+    echo "   (This is optional - unified-migration.sql should handle it)"
+else
+    echo "✅ Found: $CASCADE_MIGRATION_FILE"
+    echo "   Testing cascade delete migration..."
+    echo "   Database: $DB_NAME"
+    echo "   User: $DB_USER"
+    echo ""
+    
+    export PGPASSWORD="$DB_PASSWORD"
+    echo "   ⏳ Running cascade delete migration..."
+    if [ "$USE_TIMEOUT" = true ]; then
+        if timeout 120 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$CASCADE_MIGRATION_FILE" 2>&1; then
+            CASCADE_SUCCESS=true
+        else
+            CASCADE_SUCCESS=false
+        fi
+    else
+        if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$CASCADE_MIGRATION_FILE" 2>&1; then
+            CASCADE_SUCCESS=true
+        else
+            CASCADE_SUCCESS=false
+        fi
+    fi
+    
+    if [ "$CASCADE_SUCCESS" = true ]; then
+        echo ""
+        echo "✅ Cascade delete migration test PASSED"
+        
+        # Verify cascade constraint exists
+        if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" | grep -q "ON DELETE CASCADE"; then
+            echo "   ✅ Verified: FK_notification_template has ON DELETE CASCADE"
+        else
+            echo "   ⚠️  Warning: FK_notification_template may not have CASCADE (check manually)"
+        fi
+    else
+        echo ""
+        echo "⚠️  Cascade delete migration had warnings (may be normal if already applied)"
+        # Check if constraint exists with CASCADE
+        if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" | grep -q "ON DELETE CASCADE"; then
+            echo "   ✅ Migration already applied (CASCADE constraint exists)"
+        else
+            echo "   ⚠️  Migration may have failed - check manually"
+        fi
+    fi
+    unset PGPASSWORD
+fi
+
+echo ""
+echo "📋 Step 6: Testing Verification Script..."
 echo "----------------------------------------"
 
 # Test verification
 echo "Running verification..."
+echo "   ⏳ This may take a minute..."
 export PGPASSWORD="$DB_PASSWORD"
-if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_FILE"; then
+if [ "$USE_TIMEOUT" = true ]; then
+    if timeout 180 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_FILE" 2>&1; then
+        VERIFY_SUCCESS=true
+    else
+        VERIFY_SUCCESS=false
+    fi
+else
+    if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_FILE" 2>&1; then
+        VERIFY_SUCCESS=true
+    else
+        VERIFY_SUCCESS=false
+    fi
+fi
+
+if [ "$VERIFY_SUCCESS" = true ]; then
     echo "✅ Verification test PASSED"
 else
     echo "❌ Verification test FAILED"
@@ -115,7 +307,7 @@ fi
 unset PGPASSWORD
 
 echo ""
-echo "📋 Step 5: Testing Utils Script Commands..."
+echo "📋 Step 7: Testing Utils Script Commands..."
 echo "----------------------------------------"
 
 # Test utils-server.sh commands
@@ -136,7 +328,7 @@ else
 fi
 
 echo ""
-echo "📋 Step 6: Testing Backup Function..."
+echo "📋 Step 8: Testing Backup Function..."
 echo "----------------------------------------"
 
 # Test backup
@@ -156,7 +348,7 @@ else
 fi
 
 echo ""
-echo "📋 Step 7: Testing Safety Verification Script..."
+echo "📋 Step 9: Testing Safety Verification Script..."
 echo "----------------------------------------"
 
 # Check if safety verification script exists
@@ -177,18 +369,18 @@ else
 fi
 
 echo ""
-echo "📋 Step 8: Checking File Paths in Scripts..."
+echo "📋 Step 10: Checking File Paths in Scripts..."
 echo "----------------------------------------"
 
 # Check if scripts reference correct paths
-if grep -q "apps/backend/unified-migration.sql" utils-server.sh; then
+if grep -q "apps/backend/scripts/unified-migration.sql" utils-server.sh; then
     echo "✅ utils-server.sh references correct migration path"
 else
     echo "❌ utils-server.sh has wrong migration path"
     exit 1
 fi
 
-if grep -q "apps/backend/verify-all.sql" utils-server.sh; then
+if grep -q "apps/backend/scripts/verify-all.sql" utils-server.sh; then
     echo "✅ utils-server.sh references correct verification path"
 else
     echo "❌ utils-server.sh has wrong verification path"

@@ -1,6 +1,6 @@
 ﻿<template>
   <Teleport to="body">
-    <div v-if="visible" class="dialog-overlay" @click="handleCancel">
+    <div v-if="visible" class="dialog-overlay">
       <div class="dialog-container" @click.stop>
         <div class="dialog-content">
           <div class="dialog-text-container">
@@ -170,12 +170,12 @@ const handleCancel = () => {
   align-items: flex-start;
   padding: 0px;
   gap: 16px;
-  width: 182px;
+  width: 100%;
   height: 56px;
   flex: none;
   order: 1;
   flex-grow: 0;
-  margin-right: 30px;
+  justify-content: flex-end;
 }
 
 .cancel-btn {
@@ -185,7 +185,7 @@ const handleCancel = () => {
   align-items: center;
   padding: 8px 16px;
   gap: 8px;
-  width: 99px;
+  min-width: 99px;
   height: 56px;
   background: rgba(0, 19, 70, 0.05);
   backdrop-filter: blur(64px);
@@ -202,6 +202,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #001346;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .cancel-btn:hover {
@@ -215,7 +216,7 @@ const handleCancel = () => {
   align-items: center;
   padding: 8px 16px;
   gap: 8px;
-  width: 99px;
+  min-width: 99px;
   height: 56px;
   background: #f24444;
   border-radius: 32px;
@@ -231,6 +232,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #ffffff;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .confirm-btn-danger:hover {
@@ -244,7 +246,7 @@ const handleCancel = () => {
   align-items: center;
   padding: 8px 16px;
   gap: 8px;
-  width: 99px;
+  min-width: 99px;
   height: 56px;
   background: #ff9800;
   border-radius: 32px;
@@ -260,6 +262,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #ffffff;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .confirm-btn-warning:hover {
@@ -273,7 +276,7 @@ const handleCancel = () => {
   align-items: center;
   padding: 8px 16px;
   gap: 8px;
-  width: 99px;
+  min-width: 99px;
   height: 56px;
   background: #4caf50;
   border-radius: 32px;
@@ -289,6 +292,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #ffffff;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .confirm-btn-success:hover {
@@ -302,7 +306,7 @@ const handleCancel = () => {
   align-items: center;
   padding: 8px 16px;
   gap: 8px;
-  width: 99px;
+  min-width: 99px;
   height: 56px;
   background: #2196f3;
   border-radius: 32px;
@@ -318,6 +322,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #ffffff;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .confirm-btn-info:hover {
@@ -329,9 +334,9 @@ const handleCancel = () => {
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: 2px 7px;
+  padding: 8px 16px;
   gap: 8px;
-  width: 109px;
+  min-width: 109px;
   height: 56px;
   background: #001346;
   border-radius: 32px;
@@ -347,6 +352,7 @@ const handleCancel = () => {
   line-height: 150%;
   color: #ffffff;
   transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
 .confirm-btn-primary:hover {

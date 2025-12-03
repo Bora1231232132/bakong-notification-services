@@ -64,13 +64,12 @@
                 />
                 <div class="w-8 h-8 flex items-center justify-center">
                   <img
-                    v-if="item.icon && item.icon.startsWith('blob:')"
+                    v-if="item.icon && item.icon.startsWith('data:')"
                     :src="item.icon"
                     :alt="item.name"
                     class="w-8 h-8 object-contain"
                     @error="handleIconError($event, item)"
                   />
-                  <span v-else-if="item.icon" class="text-xl">{{ item.icon }}</span>
                 </div>
               </div>
             </td>
@@ -168,11 +167,17 @@ import { ref, computed } from 'vue'
 const props = defineProps<{
   notifications: Array<{
     id?: number
-    icon: string
     name: string
+    icon?: string
     categoryType?: any
   }>
 }>()
+
+const handleIconError = (event: Event, item: any) => {
+  const img = event.target as HTMLImageElement
+  // Hide image if it fails to load (no fallback)
+  img.style.display = 'none'
+}
 
 const selectedItems = ref<Set<number>>(new Set())
 
@@ -201,11 +206,5 @@ const handleSelectItem = (index: number) => {
   } else {
     selectedItems.value.add(index)
   }
-}
-
-const handleIconError = (event: Event, item: any) => {
-  const img = event.target as HTMLImageElement
-  // Hide image if it fails to load (no fallback)
-  img.style.display = 'none'
 }
 </script>

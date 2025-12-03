@@ -19,35 +19,8 @@
         </div>
         <div class="form-fields">
           <div class="form-row">
-            <!-- Commented out: Type field - no longer used -->
-            <!-- <div class="form-group">
-              <label class="form-label">Type <span class="required">*</span></label>
-              <el-dropdown
-                @command="(command: NotificationType) => (formData.notificationType = command)"
-                trigger="click"
-                class="custom-dropdown"
-              >
-                <span class="dropdown-trigger">
-                  {{ formatNotificationType(formData.notificationType) }}
-                  <el-icon class="dropdown-icon">
-                    <ArrowDown />
-                  </el-icon>
-                </span>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="type in Object.values(NotificationType)"
-                      :key="type"
-                      :command="type"
-                    >
-                      {{ formatNotificationType(type) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div> -->
             <div class="form-group">
-              <label class="form-label">Category <span class="required">*</span></label>
+              <label class="form-label">Type <span class="required">*</span></label>
               <el-dropdown
                 @command="(command: number) => (formData.categoryTypeId = command)"
                 trigger="click"
@@ -185,6 +158,12 @@
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
                   <span class="option-title">Posting Schedule</span>
+                  <span class="option-description">
+                    <template v-if="formData.scheduleEnabled">
+                      Notifications will be sent according to schedule.
+                    </template>
+                    <template v-else> </template>
+                  </span>
                 </div>
                 <div class="schedule-option-right">
                   <span class="option-label">Set time and date</span>
@@ -332,11 +311,22 @@
     @confirm="handleConfirmationDialogConfirm"
     @cancel="handleConfirmationDialogCancel"
   />
+  <ConfirmationDialog
+    v-model="showLeaveDialog"
+    title="Are you sure you want to leave?"
+    message="If you leave now, your progress will be saved as a draft. You can resume and complete it anytime."
+    confirm-text="Save as draft & leave"
+    cancel-text="Stay on page"
+    type="warning"
+    confirm-button-type="primary"
+    @confirm="handleLeaveDialogConfirm"
+    @cancel="handleLeaveDialogCancel"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElNotification, ElInputNumber } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { MobilePreview, ImageUpload, Tabs, Button } from '@/components/common'
@@ -354,7 +344,8 @@ import {
   formatCategoryType,
   getNoUsersAvailableMessage,
 } from '@/utils/helpers'
-import { categoryTypeApi, type CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
+import { useCategoryTypesStore } from '@/stores/categoryTypes'
+import type { CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
 import { DateUtils } from '@bakong/shared'
 import {
   getCurrentDateTimeInCambodia,
@@ -459,11 +450,13 @@ const getTodayDateString = (): string => {
   return `${month}/${day}/${year}`
 }
 
-const categoryTypes = ref<CategoryTypeData[]>([])
-const loadingCategoryTypes = ref(false)
+// Use category types store
+const categoryTypesStore = useCategoryTypesStore()
+const categoryTypes = computed(() => categoryTypesStore.categoryTypes)
+const loadingCategoryTypes = computed(() => categoryTypesStore.loading)
 
 const formData = reactive({
-  notificationType: NotificationType.NOTIFICATION,
+  notificationType: NotificationType.ANNOUNCEMENT, // Default to ANNOUNCEMENT when flash is off
   categoryTypeId: null as number | null,
   pushToPlatforms: Platform.ALL,
   showPerDay: 1, // Default: 1 time per day (disabled for first version)
@@ -475,26 +468,24 @@ const formData = reactive({
   splashEnabled: false,
 })
 
-// Fetch category types on mount
-const fetchCategoryTypes = async () => {
-  loadingCategoryTypes.value = true
+// Initialize category types from store
+const initializeCategoryTypes = async () => {
   try {
-    const types = await categoryTypeApi.getAll()
-    categoryTypes.value = types
+    await categoryTypesStore.initialize()
     // Set default to first category or NEWS if available
-    if (types.length > 0) {
-      const newsCategory = types.find((ct) => ct.name === 'NEWS')
-      formData.categoryTypeId = newsCategory?.id || types[0].id
+    if (categoryTypes.value.length > 0) {
+      const newsCategory = categoryTypes.value.find(
+        (ct) => ct.name === 'News' || ct.name === 'NEWS',
+      )
+      formData.categoryTypeId = newsCategory?.id || categoryTypes.value[0].id
     }
   } catch (error) {
-    console.error('Failed to fetch category types:', error)
-  } finally {
-    loadingCategoryTypes.value = false
+    console.error('Failed to initialize category types:', error)
   }
 }
 
 onMounted(() => {
-  fetchCategoryTypes()
+  initializeCategoryTypes()
   // ... existing onMounted code
 })
 
@@ -627,6 +618,9 @@ onMounted(async () => {
 })
 
 const showConfirmationDialog = ref(false)
+const showLeaveDialog = ref(false)
+let pendingNavigation: (() => void) | null = null
+let isSavingOrPublishing = ref(false) // Flag to prevent blocking during save/publish
 
 // Watch splashEnabled toggle to update notificationType
 watch(
@@ -709,6 +703,8 @@ const handleLanguageImageRemoved = () => {
 }
 
 const handlePublishNow = async () => {
+  isSavingOrPublishing.value = true
+
   validateTitle()
   validateDescription()
 
@@ -720,6 +716,7 @@ const handlePublishNow = async () => {
   ) {
     if (!titleError.value) validateTitle()
     if (!descriptionError.value) validateDescription()
+    isSavingOrPublishing.value = false
     return
   }
 
@@ -731,6 +728,7 @@ const handlePublishNow = async () => {
       type: 'error',
       duration: 2000,
     })
+    isSavingOrPublishing.value = false
     router.push('/login')
     return
   }
@@ -772,6 +770,7 @@ const handlePublishNow = async () => {
             duration: 2000,
           })
           loadingNotification.close()
+          isSavingOrPublishing.value = false
           return
         }
         sendType = SendType.SEND_SCHEDULE
@@ -794,6 +793,7 @@ const handlePublishNow = async () => {
             duration: 2000,
           })
           loadingNotification.close()
+          isSavingOrPublishing.value = false
           return
         }
         let imageId: string | undefined = undefined
@@ -818,6 +818,7 @@ const handlePublishNow = async () => {
               duration: 2000,
             })
             loadingNotification.close()
+            isSavingOrPublishing.value = false
             return
           }
         } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
@@ -903,6 +904,7 @@ const handlePublishNow = async () => {
             duration: 2000,
           })
           loadingNotification.close()
+          isSavingOrPublishing.value = false
           return
         }
       }
@@ -915,6 +917,7 @@ const handlePublishNow = async () => {
           duration: 2000,
         })
         loadingNotification.close()
+        isSavingOrPublishing.value = false
         return
       }
       translations.push({
@@ -1048,12 +1051,15 @@ const handlePublishNow = async () => {
 
     if (isEditMode.value) {
       setTimeout(() => {
+        isSavingOrPublishing.value = false
         window.location.href = `/?tab=${redirectTab}`
       }, 500)
     } else {
+      isSavingOrPublishing.value = false
       router.push(`/?tab=${redirectTab}`)
     }
   } catch (error: any) {
+    isSavingOrPublishing.value = false
     console.error('Error creating notification:', error)
     console.error('Error details:', {
       message: error.message,
@@ -1105,6 +1111,8 @@ const handleFinishLater = () => {
 }
 
 const handleSaveDraft = async () => {
+  isSavingOrPublishing.value = true
+
   titleError.value = ''
   descriptionError.value = ''
 
@@ -1116,6 +1124,7 @@ const handleSaveDraft = async () => {
       type: 'error',
       duration: 2000,
     })
+    isSavingOrPublishing.value = false
     router.push('/login')
     return
   }
@@ -1165,6 +1174,7 @@ const handleSaveDraft = async () => {
             duration: 2000,
           })
           loadingNotification.close()
+          isSavingOrPublishing.value = false
           return
         }
       } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
@@ -1223,6 +1233,7 @@ const handleSaveDraft = async () => {
           duration: 2000,
         })
         loadingNotification.close()
+        isSavingOrPublishing.value = false
         return
       }
     }
@@ -1317,14 +1328,27 @@ const handleSaveDraft = async () => {
       console.warn('Failed to clear cache:', error)
     }
 
+    // Keep isSavingOrPublishing true until navigation completes
+    // This prevents the navigation guard from blocking the navigation
     if (isEditMode.value) {
       setTimeout(() => {
         window.location.href = `/?tab=${draftRedirectTab}`
+        // Reset flag after navigation starts (full page reload)
+        isSavingOrPublishing.value = false
       }, 500)
     } else {
-      router.push(`/?tab=${draftRedirectTab}`)
+      // For router.push, reset flag after navigation
+      router
+        .push(`/?tab=${draftRedirectTab}`)
+        .then(() => {
+          isSavingOrPublishing.value = false
+        })
+        .catch(() => {
+          isSavingOrPublishing.value = false
+        })
     }
   } catch (error: any) {
+    isSavingOrPublishing.value = false
     console.error('Error saving draft:', error)
     console.error('Error details:', {
       message: error.message,
@@ -1383,6 +1407,72 @@ const handleConfirmationDialogConfirm = () => {
 const handleConfirmationDialogCancel = () => {
   showConfirmationDialog.value = false
   handleDiscard()
+}
+
+// Check if form has unsaved changes
+const hasUnsavedChanges = computed(() => {
+  // Check if any language has title or description filled
+  const hasContent = Object.values(languageFormData).some(
+    (langData) => langData.title?.trim() || langData.description?.trim(),
+  )
+
+  // Check if any image has been uploaded
+  const hasImage = Object.values(languageFormData).some(
+    (langData) => langData.imageFile || langData.imageUrl,
+  )
+
+  // Check if any existing image IDs are set (for edit mode)
+  const hasExistingImage = Object.values(existingImageIds).some((id) => id !== null)
+
+  return hasContent || hasImage || hasExistingImage
+})
+
+// Navigation guard - intercept navigation attempts
+onBeforeRouteLeave((to, from, next) => {
+  // Don't block navigation if currently saving/publishing
+  if (isSavingOrPublishing.value) {
+    next()
+    return
+  }
+
+  // Don't block navigation if no unsaved changes
+  if (!hasUnsavedChanges.value) {
+    next()
+    return
+  }
+
+  // Show leave dialog and block navigation
+  showLeaveDialog.value = true
+  pendingNavigation = () => next()
+
+  // Prevent navigation for now
+  next(false)
+})
+
+const handleLeaveDialogConfirm = async () => {
+  // Don't close dialog yet - wait until save completes and navigation starts
+  // Save as draft and then navigate
+  try {
+    await handleSaveDraft()
+    // Close dialog after successful save (navigation will happen in handleSaveDraft)
+    showLeaveDialog.value = false
+    // Clear pending navigation since handleSaveDraft already navigates
+    pendingNavigation = null
+    // Reset flag will happen in handleSaveDraft after navigation
+  } catch (error) {
+    // If save fails, keep dialog open and show error
+    console.error('Failed to save draft:', error)
+    // Reset flag on error
+    isSavingOrPublishing.value = false
+    // Don't close dialog on error - let user try again or cancel
+    pendingNavigation = null
+  }
+}
+
+const handleLeaveDialogCancel = () => {
+  showLeaveDialog.value = false
+  pendingNavigation = null
+  // Stay on page - navigation was already blocked by next(false)
 }
 
 const formatBakongApp = (app: BakongApp | undefined): string => {
@@ -2094,6 +2184,10 @@ input:checked + .toggle-slider:before {
   flex-direction: row;
   gap: 16px;
   order: 4;
+}
+
+.dialog-content {
+  gap: 5px !important;
 }
 
 @media (max-width: 1024px) {

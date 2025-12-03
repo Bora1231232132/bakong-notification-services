@@ -126,11 +126,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { LoadingSpinner, ImageUpload } from '@/components/common'
 import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
+import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
+const categoryTypesStore = useCategoryTypesStore()
 
 // Check if in view or edit mode
 const isViewMode = computed(() => route.name === 'view-template')
@@ -215,7 +217,12 @@ const handleCreate = async () => {
   isLoading.value = true
 
   try {
-    await categoryTypeApi.create(typeName.value.trim(), selectedFile.value)
+    const created = await categoryTypeApi.create(typeName.value.trim(), selectedFile.value)
+
+    // Add to store and clear cache
+    categoryTypesStore.addCategoryType(created)
+    categoryTypesStore.clearCache()
+
     showSuccess(`Category type "${typeName.value}" created successfully`)
 
     // Navigate back to templates list with refresh trigger
@@ -254,11 +261,16 @@ const handleUpdate = async () => {
 
   try {
     // Only send name if it changed, only send icon if a new file was selected
-    await categoryTypeApi.update(
+    const updated = await categoryTypeApi.update(
       categoryTypeId.value,
       nameChanged ? typeName.value.trim() : undefined,
       iconChanged && selectedFile.value ? selectedFile.value : undefined,
     )
+
+    // Update store and clear cache
+    categoryTypesStore.updateCategoryType(updated)
+    categoryTypesStore.clearCache()
+
     showSuccess(`Category type "${typeName.value}" updated successfully`)
 
     // Navigate back to templates list with refresh trigger

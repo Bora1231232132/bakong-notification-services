@@ -87,7 +87,7 @@ _run_migration_internal() {
     echo ""
     
     # Check if migration file exists
-    MIGRATION_FILE="apps/backend/unified-migration.sql"
+    MIGRATION_FILE="apps/backend/scripts/unified-migration.sql"
     if [ ! -f "$MIGRATION_FILE" ]; then
         echo "❌ Migration file not found: $MIGRATION_FILE"
         return 1
@@ -784,7 +784,7 @@ verify_all() {
     
     _get_db_config "$ENV" || exit 1
     
-    SQL_FILE="apps/backend/verify-all.sql"
+    SQL_FILE="apps/backend/scripts/verify-all.sql"
     if [ ! -f "$SQL_FILE" ]; then
         echo "❌ Verification script not found!"
         exit 1

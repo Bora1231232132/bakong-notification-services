@@ -3,6 +3,7 @@ import { api, uploadApi } from './api'
 export interface CategoryType {
   id: number
   name: string
+  icon?: string // Base64 data URL (data:image/png;base64,...)
   mimeType?: string
   originalFileName?: string
   createdAt: string

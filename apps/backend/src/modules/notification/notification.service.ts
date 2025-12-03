@@ -1298,14 +1298,12 @@ export class NotificationService {
         bakongPlatform: bakongPlatform || 'N/A',
       })
 
-      // Handle typo: "bakongPlatfrom" -> "bakongPlatform"
-      // Check raw request body if bakongPlatform is not set but typo field exists
-      let finalBakongPlatform = bakongPlatform
-      if (!finalBakongPlatform && req?.body && req.body.bakongPlatfrom) {
-        console.warn(
-          `⚠️  Typo detected for user ${accountId}: "bakongPlatfrom" should be "bakongPlatform". Using value from typo field.`,
-        )
-        finalBakongPlatform = req.body.bakongPlatfrom
+      // bakongPlatform is required - validation will reject if missing
+      if (!bakongPlatform) {
+        return BaseResponseDto.error({
+          errorCode: ErrorCode.FLASH_NOTIFICATION_POPUP_FAILED,
+          message: 'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+        })
       }
 
       // Check existing user before sync
@@ -1344,7 +1342,7 @@ export class NotificationService {
         participantCode: participantCode || 'NOT PROVIDED',
         platform: platform || 'NOT PROVIDED',
         language: language || 'NOT PROVIDED',
-        bakongPlatform: finalBakongPlatform || 'NOT PROVIDED',
+        bakongPlatform: bakongPlatform || 'NOT PROVIDED',
       })
 
       const syncResult = await this.baseFunctionHelper.updateUserData({
@@ -1353,7 +1351,7 @@ export class NotificationService {
         participantCode,
         platform,
         language,
-        bakongPlatform: finalBakongPlatform,
+        bakongPlatform: bakongPlatform, // Required field - always provided
       })
 
       // Log sync result

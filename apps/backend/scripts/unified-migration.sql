@@ -66,6 +66,13 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  bakong_platform_enum already exists';
     END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type_enum') THEN
+        CREATE TYPE notification_type_enum AS ENUM ('FLASH_NOTIFICATION', 'ANNOUNCEMENT', 'NOTIFICATION');
+        RAISE NOTICE '✅ Created notification_type_enum';
+    ELSE
+        RAISE NOTICE 'ℹ️  notification_type_enum already exists';
+    END IF;
 END$$;
 
 \echo '   ✅ Enum types ready'
@@ -132,12 +139,22 @@ CREATE TABLE IF NOT EXISTS image (
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS "category_type" (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    icon BYTEA NOT NULL,
+    "mimeType" VARCHAR(255),
+    "originalFileName" VARCHAR(255),
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updatedAt" TIMESTAMPTZ,
+    "deletedAt" TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS template (
     id SERIAL PRIMARY KEY,
-    platforms VARCHAR(255),
+    platforms TEXT[],
     "sendType" send_type_enum DEFAULT 'SEND_NOW',
-    "notificationType" VARCHAR(50),
-    "categoryType" VARCHAR(50),
+    "notificationType" notification_type_enum DEFAULT 'FLASH_NOTIFICATION',
     priority INTEGER DEFAULT 1,
     "sendInterval" JSON,
     "isSent" BOOLEAN DEFAULT FALSE,
@@ -299,6 +316,96 @@ BEGIN
     END IF;
 END$$;
 
+-- Fix platforms column type from VARCHAR to TEXT[] array
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'platforms'
+        AND data_type = 'character varying'
+    ) THEN
+        -- Convert VARCHAR to TEXT[] array
+        -- Handle existing data: convert comma-separated string to array or empty array
+        ALTER TABLE template 
+        ALTER COLUMN platforms TYPE TEXT[] 
+        USING CASE 
+            WHEN platforms IS NULL OR platforms = '' THEN ARRAY[]::TEXT[]
+            ELSE string_to_array(platforms, ',')
+        END;
+        RAISE NOTICE '✅ Changed platforms from VARCHAR to TEXT[] array';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'platforms'
+        AND udt_name = '_text'
+    ) THEN
+        RAISE NOTICE 'ℹ️  template.platforms is already TEXT[] array';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.platforms column does not exist';
+    END IF;
+END$$;
+
+-- Fix notificationType column type from VARCHAR to enum
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'notificationType'
+        AND data_type = 'character varying'
+    ) THEN
+        -- Convert VARCHAR to notification_type_enum
+        ALTER TABLE template 
+        ALTER COLUMN "notificationType" TYPE notification_type_enum 
+        USING CASE 
+            WHEN "notificationType" IN ('FLASH_NOTIFICATION', 'ANNOUNCEMENT', 'NOTIFICATION') 
+            THEN "notificationType"::notification_type_enum
+            ELSE 'FLASH_NOTIFICATION'::notification_type_enum
+        END;
+        RAISE NOTICE '✅ Changed notificationType from VARCHAR to notification_type_enum';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'notificationType'
+        AND udt_name = 'notification_type_enum'
+    ) THEN
+        RAISE NOTICE 'ℹ️  template.notificationType is already notification_type_enum';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.notificationType column does not exist';
+    END IF;
+END$$;
+
+-- Add categoryTypeId column to template table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'categoryTypeId'
+    ) THEN
+        ALTER TABLE template ADD COLUMN "categoryTypeId" INTEGER NULL;
+        RAISE NOTICE '✅ Added categoryTypeId column to template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.categoryTypeId already exists';
+    END IF;
+END$$;
+
+-- Remove old categoryType VARCHAR column (if exists)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'categoryType'
+    ) THEN
+        ALTER TABLE template DROP COLUMN "categoryType";
+        RAISE NOTICE '✅ Removed old categoryType column from template table';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.categoryType column does not exist (already removed)';
+    END IF;
+END$$;
+
 -- ============================================================================
 -- Add fileHash column to image table for fast duplicate detection
 -- ============================================================================
@@ -364,20 +471,60 @@ BEGIN
     END IF;
 END$$;
 
--- Add FK: notification -> template
+-- Add FK: notification -> template (with CASCADE delete)
+-- First, drop existing constraint if it exists and recreate with CASCADE
+DO $$
+DECLARE
+    constraint_name TEXT;
+BEGIN
+    -- Find the existing foreign key constraint name
+    SELECT conname INTO constraint_name
+    FROM pg_constraint
+    WHERE conrelid = 'notification'::regclass
+      AND contype = 'f'
+      AND confrelid = 'template'::regclass;
+    
+    -- Drop the constraint if it exists (to update it to CASCADE)
+    IF constraint_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE notification DROP CONSTRAINT %I', constraint_name);
+        RAISE NOTICE '✅ Dropped existing FK_notification_template to update to CASCADE';
+    END IF;
+    
+    -- Clean up orphaned notification records (those with NULL templateId or invalid templateId)
+    DELETE FROM notification
+    WHERE "templateId" IS NULL 
+       OR "templateId" NOT IN (SELECT id FROM template);
+    
+    IF (SELECT COUNT(*) FROM notification WHERE "templateId" IS NULL OR "templateId" NOT IN (SELECT id FROM template)) > 0 THEN
+        RAISE NOTICE '✅ Cleaned up orphaned notification records';
+    ELSE
+        RAISE NOTICE 'ℹ️  No orphaned notification records found';
+    END IF;
+    
+    -- Recreate the constraint with CASCADE delete
+    ALTER TABLE notification 
+    ADD CONSTRAINT "FK_notification_template" 
+    FOREIGN KEY ("templateId") REFERENCES template(id) ON DELETE CASCADE;
+    RAISE NOTICE '✅ Added FK_notification_template with CASCADE delete';
+END$$;
+
+-- Add FK: template -> category_type
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'FK_notification_template'
-        AND table_name = 'notification'
+        WHERE constraint_name = 'fk_template_category_type'
+        AND table_name = 'template'
+        AND constraint_type = 'FOREIGN KEY'
     ) THEN
-        ALTER TABLE notification 
-        ADD CONSTRAINT "FK_notification_template" 
-        FOREIGN KEY ("templateId") REFERENCES template(id) ON DELETE SET NULL;
-        RAISE NOTICE '✅ Added FK_notification_template';
+        ALTER TABLE template
+        ADD CONSTRAINT fk_template_category_type
+        FOREIGN KEY ("categoryTypeId")
+        REFERENCES category_type(id)
+        ON DELETE SET NULL;
+        RAISE NOTICE '✅ Added fk_template_category_type';
     ELSE
-        RAISE NOTICE 'ℹ️  FK_notification_template already exists';
+        RAISE NOTICE 'ℹ️  fk_template_category_type already exists';
     END IF;
 END$$;
 
@@ -398,12 +545,15 @@ CREATE INDEX IF NOT EXISTS "IDX_bakong_user_bakongPlatform" ON bakong_user("bako
 CREATE INDEX IF NOT EXISTS "IDX_template_sendType" ON template("sendType");
 CREATE INDEX IF NOT EXISTS "IDX_template_isSent" ON template("isSent");
 CREATE INDEX IF NOT EXISTS "IDX_template_bakongPlatform" ON template("bakongPlatform");
+CREATE INDEX IF NOT EXISTS "IDX_template_categoryTypeId" ON template("categoryTypeId");
 CREATE INDEX IF NOT EXISTS "IDX_template_translation_templateId" ON template_translation("templateId");
 CREATE INDEX IF NOT EXISTS "IDX_template_translation_language" ON template_translation(language);
 CREATE INDEX IF NOT EXISTS "IDX_user_username" ON "user"(username);
 CREATE INDEX IF NOT EXISTS "IDX_user_role" ON "user"(role);
 CREATE INDEX IF NOT EXISTS "IDX_image_fileId" ON image("fileId");
 CREATE INDEX IF NOT EXISTS "IDX_image_fileHash" ON image("fileHash");
+CREATE INDEX IF NOT EXISTS "IDX_category_type_name" ON "category_type"(name);
+CREATE INDEX IF NOT EXISTS "IDX_category_type_deletedAt" ON "category_type"("deletedAt") WHERE "deletedAt" IS NULL;
 
 \echo '   ✅ Indexes created'
 \echo ''
@@ -514,6 +664,12 @@ END$$;
 -- ============================================================================
 \echo '📝 Step 8: Adding column comments...'
 
+COMMENT ON TABLE "category_type" IS 'Stores category types for notification templates';
+COMMENT ON COLUMN "category_type".name IS 'Unique name of the category type';
+COMMENT ON COLUMN "category_type".icon IS 'Binary icon data for the category type';
+COMMENT ON COLUMN "category_type"."mimeType" IS 'MIME type of the icon (e.g., image/png, image/svg+xml)';
+COMMENT ON COLUMN "category_type"."originalFileName" IS 'Original filename of the uploaded icon';
+COMMENT ON COLUMN "template"."categoryTypeId" IS 'Foreign key reference to category_type table';
 COMMENT ON COLUMN notification."sendCount" IS 'Number of times notification has been sent';
 
 \echo '   ✅ Comments added'

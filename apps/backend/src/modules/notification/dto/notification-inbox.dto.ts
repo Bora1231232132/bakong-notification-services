@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer'
-import { IsString, IsOptional, IsNumber, Min, Max, IsEnum, ValidateIf } from 'class-validator'
+import { IsString, IsOptional, IsNumber, Min, Max, IsEnum, IsNotEmpty } from 'class-validator'
 import { Language, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 
@@ -49,25 +49,17 @@ export class NotificationInboxDto {
   @Transform(({ value }) => parseInt(value) || 10)
   size?: number = 10
 
-  @ValidateIf((o) => !!o.accountId)
-  @IsEnum(BakongApp, {
-    message:
-      'bakongPlatform is required when accountId is provided. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+  @IsNotEmpty({
+    message: 'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
   })
-  @Transform(({ value, obj }) => {
-    // Handle typo: "bakongPlatfrom" -> "bakongPlatform"
-    // If the typo field exists but bakongPlatform doesn't, use the typo value
-    if (!value && obj && obj.bakongPlatfrom) {
-      console.warn(
-        '⚠️  Typo detected: "bakongPlatfrom" should be "bakongPlatform". Using value from typo field.',
-      )
-      value = obj.bakongPlatfrom
-    }
-
+  @IsEnum(BakongApp, {
+    message: 'bakongPlatform must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+  })
+  @Transform(({ value }) => {
     if (typeof value === 'string') {
       return ValidationHelper.normalizeEnum(value)
     }
     return value
   })
-  bakongPlatform?: BakongApp
+  bakongPlatform: BakongApp
 }

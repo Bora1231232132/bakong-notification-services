@@ -64,6 +64,12 @@ COPY apps/packages/shared/package*.json ./apps/packages/shared/
 COPY --from=builder /opt/bk_notification_service/apps/backend/dist ./dist
 COPY --from=builder /opt/bk_notification_service/apps/packages/shared/dist ./apps/packages/shared/dist
 
+# Copy category type images (needed for seeding default category types)
+# These images are used by CategoryTypeService to seed default category types on startup
+# Copy to both root assets and apps/backend/assets for path compatibility
+COPY --from=builder /opt/bk_notification_service/apps/backend/assets ./assets
+COPY --from=builder /opt/bk_notification_service/apps/backend/assets ./apps/backend/assets
+
 # Install production dependencies (rebuilds native modules like bcrypt for correct architecture)
 # Try workspace install first, fallback to installing all deps if needed (ensures @nestjs/core is available)
 WORKDIR /opt/bk_notification_service

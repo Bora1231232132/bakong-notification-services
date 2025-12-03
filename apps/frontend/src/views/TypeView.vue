@@ -32,6 +32,17 @@
       </div>
     </div>
   </div>
+  <ConfirmationDialog
+    v-model="showDeleteDialog"
+    title="You want to delete?"
+    message="This action cannot be undone. This will permanently delete category and remove data from our servers."
+    confirm-text="Continue"
+    cancel-text="Cancel"
+    type="warning"
+    confirm-button-type="primary"
+    @confirm="handleDeleteConfirm"
+    @cancel="handleDeleteCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -40,19 +51,25 @@ import { useRouter, useRoute } from 'vue-router'
 import NotificationTableHeader from '@/components/common/Type-Feature/NotificationTableHeader.vue'
 import NotificationTableBody from '@/components/common/Type-Feature/NotificationTableBody.vue'
 import NotificationPagination from '@/components/common/Type-Feature/NotificationPagination.vue'
+import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
 import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
+import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import { useErrorHandler } from '@/composables/useErrorHandler'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
 
+// Use category types store
+const categoryTypesStore = useCategoryTypesStore()
+const categoryTypes = computed(() => categoryTypesStore.categoryTypes)
+const loading = computed(() => categoryTypesStore.loading)
+
 const page = ref(1)
 const perPage = ref(10)
-const categoryTypes = ref<CategoryType[]>([])
-const iconUrls = ref<Map<number, string>>(new Map())
-const loading = ref(false)
 const searchQuery = ref('')
+const showDeleteDialog = ref(false)
+const categoryToDelete = ref<CategoryType | null>(null)
 
 const { handleApiError, showSuccess, showInfo } = useErrorHandler({
   operation: 'categoryType',
@@ -62,7 +79,7 @@ const filteredItems = computed(() => {
   let items = categoryTypes.value.map((ct) => ({
     id: ct.id,
     name: ct.name,
-    icon: iconUrls.value.get(ct.id) || '',
+    icon: ct.icon || '', // Icon is now included in the main response as base64
     categoryType: ct,
   }))
 
@@ -123,27 +140,11 @@ const handleSearch = (value: string) => {
 }
 
 const fetchCategoryTypes = async () => {
-  loading.value = true
   try {
-    const types = await categoryTypeApi.getAll()
-    categoryTypes.value = types
-
-    // Load icons for all category types
-    await Promise.all(
-      types.map(async (ct) => {
-        try {
-          const iconUrl = await categoryTypeApi.getIcon(ct.id)
-          iconUrls.value.set(ct.id, iconUrl)
-        } catch (error) {
-          console.warn(`Failed to load icon for category type ${ct.id}:`, error)
-          // Keep default icon
-        }
-      }),
-    )
+    // Fetch from store (uses cache if valid)
+    await categoryTypesStore.fetchCategoryTypes()
   } catch (error) {
     handleApiError(error, { operation: 'fetchCategoryTypes' })
-  } finally {
-    loading.value = false
   }
 }
 
@@ -161,40 +162,39 @@ const editItem = (item: any) => {
   }
 }
 
-const deleteItem = async (item: any) => {
+const deleteItem = (item: any) => {
   const categoryType = item.categoryType as CategoryType
   if (!categoryType) return
 
+  categoryToDelete.value = categoryType
+  showDeleteDialog.value = true
+}
+
+const handleDeleteConfirm = async () => {
+  if (!categoryToDelete.value) return
+
   try {
-    await ElMessageBox.confirm(
-      `This action cannot be undone. This will permanently delete "${categoryType.name}" and remove data from our servers.`,
-      'You want to delete?',
-      {
-        confirmButtonText: 'Continue',
-        cancelButtonText: 'Cancel',
-        type: 'warning',
-      },
-    )
+    await categoryTypeApi.delete(categoryToDelete.value.id)
 
-    // User confirmed deletion
-    await categoryTypeApi.delete(categoryType.id)
-    showSuccess(`Category type "${categoryType.name}" deleted successfully`)
+    // Remove from store and clear cache
+    categoryTypesStore.removeCategoryType(categoryToDelete.value.id)
+    categoryTypesStore.clearCache()
 
-    // Clean up icon URL
-    const iconUrl = iconUrls.value.get(categoryType.id)
-    if (iconUrl) {
-      URL.revokeObjectURL(iconUrl)
-      iconUrls.value.delete(categoryType.id)
-    }
+    showSuccess(`Category type "${categoryToDelete.value.name}" deleted successfully`)
 
-    // Refresh the list
+    // Refresh the list (will use cache if available, or fetch fresh)
     await fetchCategoryTypes()
   } catch (error) {
-    // User cancelled or error occurred
-    if (error !== 'cancel') {
-      handleApiError(error, { operation: 'deleteCategoryType' })
-    }
+    handleApiError(error, { operation: 'deleteCategoryType' })
+  } finally {
+    categoryToDelete.value = null
+    showDeleteDialog.value = false
   }
+}
+
+const handleDeleteCancel = () => {
+  categoryToDelete.value = null
+  showDeleteDialog.value = false
 }
 
 onMounted(async () => {
@@ -217,6 +217,8 @@ watch(
   () => route.query.refresh,
   async (refreshParam) => {
     if (refreshParam) {
+      // Force refresh to get latest data
+      await categoryTypesStore.fetchCategoryTypes(true)
       await fetchCategoryTypes()
       // Remove the refresh param from URL without triggering another refresh
       router.replace({ path: '/templates', query: {} })
@@ -224,14 +226,4 @@ watch(
   },
   { immediate: false },
 )
-
-onUnmounted(() => {
-  // Clean up all icon URLs to prevent memory leaks
-  iconUrls.value.forEach((url) => {
-    if (url.startsWith('blob:')) {
-      URL.revokeObjectURL(url)
-    }
-  })
-  iconUrls.value.clear()
-})
 </script>

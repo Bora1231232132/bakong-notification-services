@@ -67,7 +67,7 @@ describe('TemplateService', () => {
     bakongPlatform: BakongApp.BAKONG_JUNIOR,
     sendType: SendType.SEND_NOW,
     notificationType: NotificationType.ANNOUNCEMENT,
-    categoryType: CategoryType.NEWS,
+    categoryTypeId: 1, // Mock categoryTypeId (NEWS category)
     priority: 1,
     isSent: false,
     sendSchedule: null,
@@ -226,7 +226,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_NOW,
         isSent: true,
         notificationType: NotificationType.ANNOUNCEMENT,
-        categoryType: CategoryType.NEWS,
+        categoryTypeId: 1, // Mock categoryTypeId (NEWS category)
         priority: 1,
         translations: [
           {
@@ -271,7 +271,7 @@ describe('TemplateService', () => {
         isSent: false,
         sendSchedule: futureDate.toISOString(),
         notificationType: NotificationType.ANNOUNCEMENT,
-        categoryType: CategoryType.NEWS,
+        categoryTypeId: 1, // Mock categoryTypeId (NEWS category)
         translations: [
           {
             language: Language.EN,
@@ -314,7 +314,7 @@ describe('TemplateService', () => {
         sendType: SendType.SEND_NOW,
         isSent: false, // Draft
         notificationType: NotificationType.ANNOUNCEMENT,
-        categoryType: CategoryType.NEWS,
+        categoryTypeId: 1, // Mock categoryTypeId (NEWS category)
         translations: [
           {
             language: Language.KM,

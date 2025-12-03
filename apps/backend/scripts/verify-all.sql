@@ -193,9 +193,152 @@ WHERE table_schema = 'public'
   AND table_name = 'template'
 ORDER BY ordinal_position;
 
+-- Verify template table schema matches new migration
+DO $$
+DECLARE
+    has_categoryTypeId BOOLEAN;
+    has_old_categoryType BOOLEAN;
+    platforms_type TEXT;
+    notification_type TEXT;
+    category_type_table_exists BOOLEAN;
+    notification_enum_exists BOOLEAN;
+    fk_exists BOOLEAN;
+BEGIN
+    -- Check categoryTypeId column
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'categoryTypeId'
+    ) INTO has_categoryTypeId;
+    
+    -- Check old categoryType column
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'categoryType'
+    ) INTO has_old_categoryType;
+    
+    -- Check platforms type
+    SELECT udt_name INTO platforms_type
+    FROM information_schema.columns
+    WHERE table_name = 'template' AND column_name = 'platforms';
+    
+    -- Check notificationType type
+    SELECT udt_name INTO notification_type
+    FROM information_schema.columns
+    WHERE table_name = 'template' AND column_name = 'notificationType';
+    
+    -- Check category_type table
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'category_type'
+    ) INTO category_type_table_exists;
+    
+    -- Check notification_type_enum
+    SELECT EXISTS (
+        SELECT FROM pg_type 
+        WHERE typname = 'notification_type_enum'
+    ) INTO notification_enum_exists;
+    
+    -- Check foreign key
+    SELECT EXISTS (
+        SELECT FROM information_schema.table_constraints 
+        WHERE constraint_name = 'fk_template_category_type'
+        AND table_name = 'template'
+        AND constraint_type = 'FOREIGN KEY'
+    ) INTO fk_exists;
+    
+    RAISE NOTICE '';
+    RAISE NOTICE 'Template Schema Verification (New Migration):';
+    
+    IF has_categoryTypeId THEN
+        RAISE NOTICE '  ✅ categoryTypeId column exists';
+    ELSE
+        RAISE WARNING '  ❌ categoryTypeId column missing!';
+    END IF;
+    
+    IF has_old_categoryType THEN
+        RAISE WARNING '  ⚠️  Old categoryType column still exists (should be removed)';
+    ELSE
+        RAISE NOTICE '  ✅ Old categoryType column removed';
+    END IF;
+    
+    IF platforms_type = '_text' THEN
+        RAISE NOTICE '  ✅ platforms is TEXT[] array';
+    ELSIF platforms_type IS NULL THEN
+        RAISE WARNING '  ❌ platforms column not found';
+    ELSE
+        RAISE WARNING '  ⚠️  platforms type is % (expected TEXT[] array)', platforms_type;
+    END IF;
+    
+    IF notification_type = 'notification_type_enum' THEN
+        RAISE NOTICE '  ✅ notificationType is notification_type_enum';
+    ELSIF notification_type IS NULL THEN
+        RAISE WARNING '  ❌ notificationType column not found';
+    ELSE
+        RAISE WARNING '  ⚠️  notificationType type is % (expected notification_type_enum)', notification_type;
+    END IF;
+    
+    IF category_type_table_exists THEN
+        RAISE NOTICE '  ✅ category_type table exists';
+    ELSE
+        RAISE WARNING '  ❌ category_type table missing!';
+    END IF;
+    
+    IF notification_enum_exists THEN
+        RAISE NOTICE '  ✅ notification_type_enum exists';
+    ELSE
+        RAISE WARNING '  ❌ notification_type_enum missing!';
+    END IF;
+    
+    IF fk_exists THEN
+        RAISE NOTICE '  ✅ Foreign key fk_template_category_type exists';
+    ELSE
+        RAISE WARNING '  ❌ Foreign key fk_template_category_type missing!';
+    END IF;
+END$$;
+
 \echo ''
 
--- 5. TEMPLATE_TRANSLATION TABLE
+-- 5. CATEGORY_TYPE TABLE
+\echo '📋 Checking: category_type table'
+\echo '----------------------------------------'
+
+DO $$
+DECLARE
+    table_exists BOOLEAN;
+    row_count INTEGER;
+BEGIN
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'category_type'
+    ) INTO table_exists;
+    
+    IF table_exists THEN
+        SELECT COUNT(*) INTO row_count FROM category_type;
+        RAISE NOTICE '✅ Table exists';
+        RAISE NOTICE '   Row count: %', row_count;
+    ELSE
+        RAISE WARNING '❌ Table does not exist!';
+    END IF;
+END $$;
+
+SELECT 
+    column_name,
+    data_type,
+    character_maximum_length,
+    is_nullable,
+    column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' 
+  AND table_name = 'category_type'
+ORDER BY ordinal_position;
+
+\echo ''
+
+-- 6. TEMPLATE_TRANSLATION TABLE
 \echo '📋 Checking: template_translation table'
 \echo '----------------------------------------'
 
@@ -270,7 +413,7 @@ ORDER BY ordinal_position;
 
 \echo ''
 
--- 6. NOTIFICATION TABLE
+-- 7. NOTIFICATION TABLE
 \echo '📋 Checking: notification table'
 \echo '----------------------------------------'
 
@@ -304,6 +447,48 @@ FROM information_schema.columns
 WHERE table_schema = 'public' 
   AND table_name = 'notification'
 ORDER BY ordinal_position;
+
+\echo ''
+\echo '🔗 Checking notification foreign key constraint (CASCADE delete)...'
+DO $$
+DECLARE
+    fk_exists BOOLEAN;
+    fk_cascade BOOLEAN;
+    constraint_def TEXT;
+BEGIN
+    -- Check if FK constraint exists
+    SELECT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'notification'::regclass
+          AND conname = 'FK_notification_template'
+          AND contype = 'f'
+    ) INTO fk_exists;
+    
+    IF fk_exists THEN
+        -- Get constraint definition
+        SELECT pg_get_constraintdef(oid) INTO constraint_def
+        FROM pg_constraint
+        WHERE conrelid = 'notification'::regclass
+          AND conname = 'FK_notification_template';
+        
+        -- Check if it has CASCADE
+        fk_cascade := constraint_def LIKE '%ON DELETE CASCADE%';
+        
+        RAISE NOTICE 'Foreign Key Constraint Check:';
+        RAISE NOTICE '  Constraint: FK_notification_template';
+        RAISE NOTICE '  Definition: %', constraint_def;
+        
+        IF fk_cascade THEN
+            RAISE NOTICE '  ✅ Foreign key has ON DELETE CASCADE (correct!)';
+        ELSE
+            RAISE WARNING '  ❌ Foreign key does NOT have ON DELETE CASCADE!';
+            RAISE WARNING '     Expected: ON DELETE CASCADE';
+            RAISE WARNING '     Current: %', constraint_def;
+        END IF;
+    ELSE
+        RAISE WARNING '❌ Foreign key FK_notification_template does not exist!';
+    END IF;
+END $$;
 
 \echo ''
 
@@ -537,6 +722,13 @@ SELECT
     (SELECT COUNT(*) FROM information_schema.columns 
      WHERE table_schema = 'public' AND table_name = 'notification')
 FROM notification
+UNION ALL
+SELECT 
+    'category_type',
+    COUNT(*),
+    (SELECT COUNT(*) FROM information_schema.columns 
+     WHERE table_schema = 'public' AND table_name = 'category_type')
+FROM category_type
 ORDER BY table_name;
 
 -- Final data integrity check
