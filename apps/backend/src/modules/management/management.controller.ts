@@ -3,7 +3,10 @@ import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs
 
 @Controller('/management')
 export class ManagementController {
-  constructor(private health: HealthCheckService, private db: TypeOrmHealthIndicator) {}
+  constructor(
+    private health: HealthCheckService,
+    private db: TypeOrmHealthIndicator,
+  ) {}
   @Get('/healthcheck')
   @HealthCheck()
   check() {

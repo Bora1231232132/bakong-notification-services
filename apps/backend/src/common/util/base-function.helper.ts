@@ -38,8 +38,8 @@ export class BaseFunctionHelper {
       nodeEnv === 'development'
         ? 'http://localhost:4005'
         : nodeEnv === 'staging'
-        ? 'http://10.20.6.57:4002'
-        : 'https://10.20.6.58:8080'
+          ? 'http://10.20.6.57:4002'
+          : 'https://10.20.6.58:8080'
 
     let baseUrl = defaultBaseUrl
 
@@ -111,25 +111,24 @@ export class BaseFunctionHelper {
       if (updateData.fcmToken !== undefined) {
         const currentToken = user.fcmToken || ''
         const newToken = updateData.fcmToken || ''
-        
+
         // Check if token format is valid (if not empty)
         if (newToken && newToken.length < 50) {
           console.warn(
             `⚠️ [syncUser] User ${accountId} provided suspiciously short fcmToken: "${newToken}" (length: ${newToken.length}). This might be invalid!`,
           )
         }
-        
+
         // ALWAYS add to updatesToApply - we will update even if same value
         updatesToApply.fcmToken = updateData.fcmToken
-        console.log(
-          `📝 [syncUser] fcmToken WILL BE UPDATED for user ${accountId}:`,
-          {
-            current: currentToken ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})` : 'EMPTY',
-            new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
-            tokensMatch: currentToken.trim() === newToken.trim(),
-            willUpdate: true, // Always update when provided
-          },
-        )
+        console.log(`📝 [syncUser] fcmToken WILL BE UPDATED for user ${accountId}:`, {
+          current: currentToken
+            ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
+            : 'EMPTY',
+          new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+          tokensMatch: currentToken.trim() === newToken.trim(),
+          willUpdate: true, // Always update when provided
+        })
       } else {
         console.log(
           `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (not provided in sync data - undefined)`,
@@ -157,47 +156,47 @@ export class BaseFunctionHelper {
         )
       }
 
-      console.log(
-        `🔍 [syncUser] About to call updateUserFields with updatesToApply:`,
-        {
-          accountId,
-          updatesToApply: {
-            fcmToken: updatesToApply.fcmToken
-              ? `${updatesToApply.fcmToken.substring(0, 30)}... (length: ${updatesToApply.fcmToken.length})`
-              : updatesToApply.fcmToken === ''
+      console.log(`🔍 [syncUser] About to call updateUserFields with updatesToApply:`, {
+        accountId,
+        updatesToApply: {
+          fcmToken: updatesToApply.fcmToken
+            ? `${updatesToApply.fcmToken.substring(0, 30)}... (length: ${
+                updatesToApply.fcmToken.length
+              })`
+            : updatesToApply.fcmToken === ''
               ? 'EMPTY STRING'
               : 'NOT IN updatesToApply',
-            participantCode: updatesToApply.participantCode || 'NOT IN updatesToApply',
-            platform: updatesToApply.platform || 'NOT IN updatesToApply',
-            language: updatesToApply.language || 'NOT IN updatesToApply',
-            bakongPlatform: updatesToApply.bakongPlatform || 'NOT IN updatesToApply',
-          },
-          currentUserState: {
-            fcmToken: user.fcmToken ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})` : 'EMPTY',
-            participantCode: user.participantCode || 'NULL',
-            platform: user.platform || 'NULL',
-            language: user.language || 'NULL',
-            bakongPlatform: user.bakongPlatform || 'NULL',
-          },
+          participantCode: updatesToApply.participantCode || 'NOT IN updatesToApply',
+          platform: updatesToApply.platform || 'NOT IN updatesToApply',
+          language: updatesToApply.language || 'NOT IN updatesToApply',
+          bakongPlatform: updatesToApply.bakongPlatform || 'NOT IN updatesToApply',
         },
-      )
+        currentUserState: {
+          fcmToken: user.fcmToken
+            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+            : 'EMPTY',
+          participantCode: user.participantCode || 'NULL',
+          platform: user.platform || 'NULL',
+          language: user.language || 'NULL',
+          bakongPlatform: user.bakongPlatform || 'NULL',
+        },
+      })
 
       // Update the user object in memory (for logging)
       ValidationHelper.updateUserFields(user, updatesToApply)
-      
-      console.log(
-        `🔍 [syncUser] After updateUserFields (in-memory):`,
-        {
-          accountId,
-          userStateAfterUpdate: {
-            fcmToken: user.fcmToken ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})` : 'EMPTY',
-            participantCode: user.participantCode || 'NULL',
-            platform: user.platform || 'NULL',
-            language: user.language || 'NULL',
-            bakongPlatform: user.bakongPlatform || 'NULL',
-          },
+
+      console.log(`🔍 [syncUser] After updateUserFields (in-memory):`, {
+        accountId,
+        userStateAfterUpdate: {
+          fcmToken: user.fcmToken
+            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+            : 'EMPTY',
+          participantCode: user.participantCode || 'NULL',
+          platform: user.platform || 'NULL',
+          language: user.language || 'NULL',
+          bakongPlatform: user.bakongPlatform || 'NULL',
         },
-      )
+      })
 
       // ALWAYS update database when we have updates to apply
       // This ensures we sync all data from mobile app, even if values appear the same
@@ -208,12 +207,11 @@ export class BaseFunctionHelper {
         )
         try {
           // Use direct update() for existing users - more reliable than save()
-          const updateResult = await this.bkUserRepo.update(
-            { accountId },
-            updatesToApply,
-          )
+          const updateResult = await this.bkUserRepo.update({ accountId }, updatesToApply)
           console.log(
-            `✅ [syncUser] Direct update() executed for ${accountId}. Rows affected: ${updateResult.affected || 0}`,
+            `✅ [syncUser] Direct update() executed for ${accountId}. Rows affected: ${
+              updateResult.affected || 0
+            }`,
           )
 
           // Force reload from database to get updated values
@@ -228,9 +226,11 @@ export class BaseFunctionHelper {
           }
 
           console.log(
-            `✅ [syncUser] Successfully updated and reloaded user ${accountId}. Current fcmToken: ${user.fcmToken ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})` : 'EMPTY'}, bakongPlatform: ${
-              user.bakongPlatform || 'NULL'
-            }`,
+            `✅ [syncUser] Successfully updated and reloaded user ${accountId}. Current fcmToken: ${
+              user.fcmToken
+                ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+                : 'EMPTY'
+            }, bakongPlatform: ${user.bakongPlatform || 'NULL'}`,
           )
 
           // Verify the update matches what we tried to save
@@ -239,27 +239,32 @@ export class BaseFunctionHelper {
             const actualToken = user.fcmToken
             if (actualToken !== expectedToken) {
               console.error(
-                `❌ [syncUser] CRITICAL: Token mismatch after update! Expected: ${expectedToken ? `${expectedToken.substring(0, 30)}...` : 'EMPTY'}, Got: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'}`,
+                `❌ [syncUser] CRITICAL: Token mismatch after update! Expected: ${
+                  expectedToken ? `${expectedToken.substring(0, 30)}...` : 'EMPTY'
+                }, Got: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'}`,
               )
               // Try one more time with explicit update
               console.log(
                 `🔄 [syncUser] Retrying update with explicit fcmToken for ${accountId}...`,
               )
-              await this.bkUserRepo.update(
-                { accountId },
-                { fcmToken: expectedToken },
-              )
+              await this.bkUserRepo.update({ accountId }, { fcmToken: expectedToken })
               await new Promise((resolve) => setTimeout(resolve, 50)) // Small delay
               user = await this.bkUserRepo
                 .createQueryBuilder('user')
                 .where('user.accountId = :accountId', { accountId })
                 .getOne()
               console.log(
-                `🔄 [syncUser] Retry update completed. Final fcmToken: ${user?.fcmToken ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})` : 'EMPTY'}`,
+                `🔄 [syncUser] Retry update completed. Final fcmToken: ${
+                  user?.fcmToken
+                    ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+                    : 'EMPTY'
+                }`,
               )
             } else {
               console.log(
-                `✅ [syncUser] Token verification passed: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'}`,
+                `✅ [syncUser] Token verification passed: ${
+                  actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'
+                }`,
               )
             }
           }
@@ -442,14 +447,18 @@ export class BaseFunctionHelper {
     // Handle Buffer objects
     if (Buffer.isBuffer(obj)) {
       const preview = obj.slice(0, maxBufferPreview)
-      return `<Buffer[${obj.length} bytes]: ${Array.from(preview).join(',')}${obj.length > maxBufferPreview ? '...' : ''}>`
+      return `<Buffer[${obj.length} bytes]: ${Array.from(preview).join(',')}${
+        obj.length > maxBufferPreview ? '...' : ''
+      }>`
     }
 
     // Handle arrays
     if (Array.isArray(obj)) {
       if (obj.length > maxArrayLength) {
         return [
-          ...obj.slice(0, maxArrayLength).map((item) => this.safeLogObject(item, maxArrayLength, maxBufferPreview)),
+          ...obj
+            .slice(0, maxArrayLength)
+            .map((item) => this.safeLogObject(item, maxArrayLength, maxBufferPreview)),
           `... (${obj.length - maxArrayLength} more items)`,
         ]
       }

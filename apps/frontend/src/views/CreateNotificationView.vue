@@ -239,8 +239,7 @@
                     <template v-if="formData.splashEnabled">
                       Users will see the flash message on next launch.
                     </template>
-                    <template v-else>
-                    </template>
+                    <template v-else> </template>
                   </span>
                 </div>
                 <div class="schedule-option-right">
@@ -761,25 +760,25 @@ const handlePublishNow = async () => {
       formData.scheduleDate = ''
       formData.scheduleTime = ''
     } else {
-    const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
-    const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
+      const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
+      const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
 
-    if (formData.scheduleEnabled) {
-      if (!hasValidDate || !hasValidTime) {
-        ElNotification({
-          title: 'Error',
-          message: 'Please select both Date and Time for scheduling',
-          type: 'error',
-          duration: 2000,
-        })
-        loadingNotification.close()
-        return
-      }
-      sendType = SendType.SEND_SCHEDULE
-      isSent = false
-      redirectTab = 'scheduled'
-    } else {
-      redirectTab = 'published'
+      if (formData.scheduleEnabled) {
+        if (!hasValidDate || !hasValidTime) {
+          ElNotification({
+            title: 'Error',
+            message: 'Please select both Date and Time for scheduling',
+            type: 'error',
+            duration: 2000,
+          })
+          loadingNotification.close()
+          return
+        }
+        sendType = SendType.SEND_SCHEDULE
+        isSent = false
+        redirectTab = 'scheduled'
+      } else {
+        redirectTab = 'published'
       }
     }
     const imagesToUpload: { file: File; language: string }[] = []
@@ -1064,19 +1063,20 @@ const handlePublishNow = async () => {
     })
 
     loadingNotification.close()
-    
+
     // Extract error message with better fallbacks
-    let errorMessage = 
-      error.response?.data?.responseMessage || 
-      error.response?.data?.message || 
+    let errorMessage =
+      error.response?.data?.responseMessage ||
+      error.response?.data?.message ||
       error.message ||
       'An unexpected error occurred while creating the notification'
-    
+
     // If we still don't have a message, provide a status-based message
     if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
       const status = error.response?.status
       if (status === 500) {
-        errorMessage = 'Internal server error. Please try again or contact support if the problem persists.'
+        errorMessage =
+          'Internal server error. Please try again or contact support if the problem persists.'
       } else if (status === 400) {
         errorMessage = 'Invalid request. Please check your input and try again.'
       } else if (status === 401) {
@@ -1089,7 +1089,7 @@ const handlePublishNow = async () => {
         errorMessage = `Request failed with status ${status || 'unknown'}. Please try again.`
       }
     }
-    
+
     ElNotification({
       title: 'Error',
       message: errorMessage,
@@ -1334,19 +1334,20 @@ const handleSaveDraft = async () => {
     })
 
     loadingNotification.close()
-    
+
     // Extract error message with better fallbacks
-    let errorMessage = 
-      error.response?.data?.responseMessage || 
-      error.response?.data?.message || 
+    let errorMessage =
+      error.response?.data?.responseMessage ||
+      error.response?.data?.message ||
       error.message ||
       'An unexpected error occurred while saving the draft'
-    
+
     // If we still don't have a message, provide a status-based message
     if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
       const status = error.response?.status
       if (status === 500) {
-        errorMessage = 'Internal server error. Please try again or contact support if the problem persists.'
+        errorMessage =
+          'Internal server error. Please try again or contact support if the problem persists.'
       } else if (status === 400) {
         errorMessage = 'Invalid request. Please check your input and try again.'
       } else if (status === 401) {
@@ -1359,7 +1360,7 @@ const handleSaveDraft = async () => {
         errorMessage = `Request failed with status ${status || 'unknown'}. Please try again.`
       }
     }
-    
+
     ElNotification({
       title: 'Error',
       message: errorMessage,
@@ -2041,7 +2042,6 @@ input:checked + .toggle-slider:before {
 .schedule-date-picker .el-date-editor__trigger,
 .schedule-time-picker .el-time-picker__trigger {
   display: none !important;
-
 }
 
 .schedule-date-picker .el-date-editor__trigger-icon,

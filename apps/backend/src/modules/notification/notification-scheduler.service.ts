@@ -235,7 +235,7 @@ export class NotificationSchedulerService {
       const updateResult = await this.templateRepo
         .createQueryBuilder()
         .update(Template)
-        .set({ 
+        .set({
           isSent: true,
           sendType: SendType.SEND_NOW, // Change to SEND_NOW so it appears in Published tab
           sendSchedule: null, // Clear schedule since it's been sent

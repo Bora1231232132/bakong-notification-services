@@ -11,4 +11,3 @@ import { CategoryTypeController } from './category-type.controller'
   exports: [CategoryTypeService],
 })
 export class CategoryTypeModule {}
-

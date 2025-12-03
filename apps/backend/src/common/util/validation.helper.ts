@@ -73,7 +73,12 @@ export class ValidationHelper {
             parsedArray = ['ALL']
           }
         } catch (e) {
-          console.error('❌ [parsePlatforms] Failed to parse platforms JSON:', platformsStr, 'Error:', e)
+          console.error(
+            '❌ [parsePlatforms] Failed to parse platforms JSON:',
+            platformsStr,
+            'Error:',
+            e,
+          )
           parsedArray = ['ALL']
         }
       }
@@ -496,26 +501,27 @@ export class ValidationHelper {
       const currentToken = user.fcmToken || ''
       const newToken = updates.fcmToken || ''
       const tokensAreDifferent = currentToken.trim() !== newToken.trim()
-      
+
       // Always update fcmToken when provided, even if it's the same
       // This ensures database stays in sync with mobile app and updates the timestamp
       user.fcmToken = updates.fcmToken
-      
+
       if (tokensAreDifferent) {
-        console.log(
-          `🔄 [updateUserFields] fcmToken CHANGED for user ${user.accountId}:`,
-          {
-            current: currentToken ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})` : 'EMPTY',
-            new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
-            willUpdate: true,
-          },
-        )
+        console.log(`🔄 [updateUserFields] fcmToken CHANGED for user ${user.accountId}:`, {
+          current: currentToken
+            ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
+            : 'EMPTY',
+          new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+          willUpdate: true,
+        })
         hasChanges = true
       } else {
         console.log(
           `🔄 [updateUserFields] fcmToken SAME for user ${user.accountId}, but updating anyway to sync timestamp:`,
           {
-            token: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+            token: newToken
+              ? `${newToken.substring(0, 30)}... (length: ${newToken.length})`
+              : 'EMPTY',
             reason: 'Ensuring database stays in sync with mobile app',
           },
         )
@@ -530,7 +536,9 @@ export class ValidationHelper {
         const normalizedPlatform = platformValidation.normalizedValue
         if (user.platform !== normalizedPlatform) {
           console.log(
-            `🔄 [updateUserFields] platform changed for user ${user.accountId}: ${user.platform || 'NULL'} -> ${normalizedPlatform}`,
+            `🔄 [updateUserFields] platform changed for user ${user.accountId}: ${
+              user.platform || 'NULL'
+            } -> ${normalizedPlatform}`,
           )
         }
         // Always update to ensure sync, even if same value
@@ -545,7 +553,9 @@ export class ValidationHelper {
         const normalizedLanguage = languageValidation.normalizedValue
         if (user.language !== normalizedLanguage) {
           console.log(
-            `🔄 [updateUserFields] language changed for user ${user.accountId}: ${user.language || 'NULL'} -> ${normalizedLanguage}`,
+            `🔄 [updateUserFields] language changed for user ${user.accountId}: ${
+              user.language || 'NULL'
+            } -> ${normalizedLanguage}`,
           )
         }
         // Always update to ensure sync, even if same value
@@ -557,7 +567,9 @@ export class ValidationHelper {
     if (updates.participantCode !== undefined) {
       if (user.participantCode !== updates.participantCode) {
         console.log(
-          `🔄 [updateUserFields] participantCode changed for user ${user.accountId}: ${user.participantCode || 'NULL'} -> ${updates.participantCode}`,
+          `🔄 [updateUserFields] participantCode changed for user ${user.accountId}: ${
+            user.participantCode || 'NULL'
+          } -> ${updates.participantCode}`,
         )
       }
       // Always update to ensure sync, even if same value
@@ -568,7 +580,9 @@ export class ValidationHelper {
     if (updates.bakongPlatform !== undefined) {
       if (user.bakongPlatform !== updates.bakongPlatform) {
         console.log(
-          `🔄 [updateUserFields] bakongPlatform changed for user ${user.accountId}: ${user.bakongPlatform || 'NULL'} -> ${updates.bakongPlatform}`,
+          `🔄 [updateUserFields] bakongPlatform changed for user ${user.accountId}: ${
+            user.bakongPlatform || 'NULL'
+          } -> ${updates.bakongPlatform}`,
         )
       }
       // Always update to ensure sync, even if same value

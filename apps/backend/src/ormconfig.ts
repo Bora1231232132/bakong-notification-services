@@ -10,9 +10,12 @@ class TruncatedLogger implements Logger {
     }
     if (Array.isArray(value)) {
       if (value.length > 10) {
-        return `[${value.slice(0, 10).map(v => this.truncateValue(v)).join(',')}... (${value.length} items)]`
+        return `[${value
+          .slice(0, 10)
+          .map((v) => this.truncateValue(v))
+          .join(',')}... (${value.length} items)]`
       }
-      return value.map(v => this.truncateValue(v))
+      return value.map((v) => this.truncateValue(v))
     }
     if (typeof value === 'string' && value.length > 200) {
       return `${value.substring(0, 200)}... (${value.length} chars)`
@@ -29,14 +32,17 @@ class TruncatedLogger implements Logger {
   logQuery(query: string, parameters?: any[]) {
     // Truncate binary data and long strings in parameters
     const safeParameters = parameters?.map((param) => this.truncateValue(param))
-    
+
     // Also truncate binary data in query string if present (for INSERT/UPDATE with bytea)
     let safeQuery = query
     if (query.length > 1000) {
       safeQuery = query.substring(0, 1000) + '... (query truncated)'
     }
-    
-    console.log(`[QUERY] ${safeQuery}`, safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '')
+
+    console.log(
+      `[QUERY] ${safeQuery}`,
+      safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '',
+    )
   }
 
   logQueryError(error: string, query: string, parameters?: any[]) {
@@ -45,7 +51,11 @@ class TruncatedLogger implements Logger {
     if (query.length > 1000) {
       safeQuery = query.substring(0, 1000) + '... (query truncated)'
     }
-    console.error(`[QUERY ERROR] ${error}`, `[QUERY] ${safeQuery}`, safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '')
+    console.error(
+      `[QUERY ERROR] ${error}`,
+      `[QUERY] ${safeQuery}`,
+      safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '',
+    )
   }
 
   logQuerySlow(time: number, query: string, parameters?: any[]) {
@@ -54,7 +64,11 @@ class TruncatedLogger implements Logger {
     if (query.length > 1000) {
       safeQuery = query.substring(0, 1000) + '... (query truncated)'
     }
-    console.warn(`[SLOW QUERY] ${time}ms`, `[QUERY] ${safeQuery}`, safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '')
+    console.warn(
+      `[SLOW QUERY] ${time}ms`,
+      `[QUERY] ${safeQuery}`,
+      safeParameters?.length ? `[PARAMETERS] ${JSON.stringify(safeParameters)}` : '',
+    )
   }
 
   logSchemaBuild(message: string) {

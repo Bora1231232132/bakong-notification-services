@@ -33,7 +33,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bodyParser: false, // Disable default body parser to configure custom limits
   })
-  
+
   // Increase JSON body size limit to 50MB for large template updates
   const expressApp = app.getHttpAdapter().getInstance()
   expressApp.use(express.json({ limit: '50mb' }))

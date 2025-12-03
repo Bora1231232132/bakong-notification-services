@@ -16,18 +16,14 @@
           <div
             class="absolute left-1/2 -translate-x-1/2 top-[5px] w-[46px] h-[6px] rounded-full bg-gray-400 z-10"
           ></div>
-          <img 
+          <img
             v-if="props.image"
-            :src="displayImage" 
-            alt="" 
+            :src="displayImage"
+            alt=""
             class="absolute inset-0 w-full h-full object-cover rounded-t-[18.1129px]"
           />
           <div v-else class="grid place-items-center h-full w-full">
-            <img 
-              :src="displayImage" 
-              alt="" 
-              class="w-full h-full object-contain"
-            />
+            <img :src="displayImage" alt="" class="w-full h-full object-contain" />
           </div>
           <div class="absolute bottom-0 inset-x-0 h-[1px] bg-black/10 z-10"></div>
         </div>

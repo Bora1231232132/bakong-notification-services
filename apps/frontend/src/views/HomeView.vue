@@ -555,7 +555,9 @@ const fetchNotifications = async (forceRefresh = false) => {
     isFetching = true
     lastFetchTime = Date.now()
     loading.value = true
-    console.log(`📡 [API] Fetching notifications (forceRefresh: ${forceRefresh}, tab: ${activeTab.value})`)
+    console.log(
+      `📡 [API] Fetching notifications (forceRefresh: ${forceRefresh}, tab: ${activeTab.value})`,
+    )
     if (USE_MOCK_DATA) {
       dateRange.value = mockDateRange.value
       selectedLabel.value = 'All Time (Mock Data)'
@@ -774,16 +776,17 @@ const handlePublishNotification = async (notification: Notification) => {
 
         // Check if notification is already sent
         const isAlreadySent = template?.isSent === true || notification.isSent === true
-        
+
         if (isAlreadySent) {
           // Notification is already sent - just move it to published tab and show info message
           ElNotification({
             title: 'Info',
-            message: 'This notification has already been sent to users. It has been moved to the Published tab.',
+            message:
+              'This notification has already been sent to users. It has been moved to the Published tab.',
             type: 'info',
             duration: 3000,
           })
-          
+
           // Update local state and move to published tab
           const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
           if (notificationIndex !== -1) {
@@ -883,7 +886,10 @@ const handlePublishNotification = async (notification: Notification) => {
             dangerouslyUseHTMLString: true,
           })
           activeTab.value = 'draft'
-        } else if (result?.data?.successfulCount !== undefined && result?.data?.successfulCount > 0) {
+        } else if (
+          result?.data?.successfulCount !== undefined &&
+          result?.data?.successfulCount > 0
+        ) {
           // Successfully published and sent to users
           const successfulCount = result?.data?.successfulCount ?? 0
           const userText = successfulCount === 1 ? 'user' : 'users'
@@ -955,32 +961,35 @@ const handlePublishNotification = async (notification: Notification) => {
             // Check if notification was already sent (successfulCount might be 0 but isSent is true)
             // This can happen for flash notifications or if it was already sent via scheduler
             const isAlreadySent = result?.data?.isSent === true || template?.isSent === true
-            
+
             if (isAlreadySent) {
               // Notification was already sent - move to published tab
               ElNotification({
                 title: 'Info',
-                message: 'This notification has already been sent. It has been moved to the Published tab.',
+                message:
+                  'This notification has already been sent. It has been moved to the Published tab.',
                 type: 'info',
                 duration: 3000,
-            })
+              })
 
-            const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
-            if (notificationIndex !== -1) {
-              notifications.value[notificationIndex].status = 'published'
-              notifications.value[notificationIndex].isSent = true
-            }
-            activeTab.value = 'published'
-          } else {
-            // No users received the notification - show warning and keep in draft
-            ElNotification({
-              title: 'Info',
-              message:
-                'Notification could not be sent. No users received the notification. It has been kept as a draft.',
-              type: 'info',
-              duration: 3000,
-            })
-            activeTab.value = 'draft'
+              const notificationIndex = notifications.value.findIndex(
+                (n) => n.id === notification.id,
+              )
+              if (notificationIndex !== -1) {
+                notifications.value[notificationIndex].status = 'published'
+                notifications.value[notificationIndex].isSent = true
+              }
+              activeTab.value = 'published'
+            } else {
+              // No users received the notification - show warning and keep in draft
+              ElNotification({
+                title: 'Info',
+                message:
+                  'Notification could not be sent. No users received the notification. It has been kept as a draft.',
+                type: 'info',
+                duration: 3000,
+              })
+              activeTab.value = 'draft'
             }
           }
         }
@@ -1085,9 +1094,11 @@ onMounted(async () => {
       const cacheAge = now - cacheTimestamp
       const cacheDuration =
         activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
-      
-      console.log(`🔄 [Polling Check] Active tab: ${activeTab.value}, Cache age: ${Math.round(cacheAge / 1000)}s, Cache duration: ${Math.round(cacheDuration / 1000)}s`)
-      
+
+      console.log(
+        `🔄 [Polling Check] Active tab: ${activeTab.value}, Cache age: ${Math.round(cacheAge / 1000)}s, Cache duration: ${Math.round(cacheDuration / 1000)}s`,
+      )
+
       if (activeTab.value === 'scheduled' && checkForDueScheduledNotifications()) {
         console.log('✅ [Polling] Triggering refresh - scheduled notification due')
         fetchNotifications(true)
@@ -1097,14 +1108,18 @@ onMounted(async () => {
         (activeTab.value === 'scheduled' || activeTab.value === 'published') &&
         cacheAge >= cacheDuration
       ) {
-        console.log(`✅ [Polling] Triggering refresh - cache expired (${Math.round(cacheAge / 1000)}s >= ${Math.round(cacheDuration / 1000)}s)`)
+        console.log(
+          `✅ [Polling] Triggering refresh - cache expired (${Math.round(cacheAge / 1000)}s >= ${Math.round(cacheDuration / 1000)}s)`,
+        )
         fetchNotifications(true)
       } else {
         console.log('⏭️ [Polling] Skipping refresh - cache still valid')
       }
     }, pollingIntervalDuration)
-    
-    console.log(`🔄 [Polling] Started with interval: ${pollingIntervalDuration / 1000}s (${pollingIntervalDuration / 60000} minutes)`)
+
+    console.log(
+      `🔄 [Polling] Started with interval: ${pollingIntervalDuration / 1000}s (${pollingIntervalDuration / 60000} minutes)`,
+    )
   }
   setupPolling()
   watch(activeTab, () => {

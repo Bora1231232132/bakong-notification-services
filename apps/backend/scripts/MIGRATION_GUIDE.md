@@ -31,11 +31,13 @@ psql -U <username> -d <database_name> -f apps/backend/scripts/migrate-category-t
 ```
 
 **Example for Development:**
+
 ```bash
 psql -U bkns_dev -d bakong_notification_services_dev -f apps/backend/scripts/migrate-category-type-complete.sql
 ```
 
 **Example for SIT/Staging:**
+
 ```bash
 psql -U bkns_sit -d bakong_notification_services_sit -f apps/backend/scripts/migrate-category-type-complete.sql
 ```
@@ -134,8 +136,10 @@ The migration script is **idempotent** - this means:
 
 **Cause:** You have templates with `categoryTypeId` values that don't exist in the `category_type` table (orphaned data).
 
-**Solution:** 
+**Solution:**
+
 1. Check for orphaned data:
+
    ```sql
    SELECT t.id, t."categoryTypeId"
    FROM template t
@@ -146,9 +150,10 @@ The migration script is **idempotent** - this means:
    ```
 
 2. Fix orphaned data by setting to NULL:
+
    ```sql
-   UPDATE template 
-   SET "categoryTypeId" = NULL 
+   UPDATE template
+   SET "categoryTypeId" = NULL
    WHERE "categoryTypeId" IS NOT NULL
      AND NOT EXISTS (
        SELECT 1 FROM category_type ct WHERE ct.id = template."categoryTypeId"
@@ -168,11 +173,13 @@ The migration script is **idempotent** - this means:
 After running the migration, verify everything worked:
 
 ### Check if table exists:
+
 ```sql
 SELECT * FROM information_schema.tables WHERE table_name = 'category_type';
 ```
 
 ### Check if column exists:
+
 ```sql
 SELECT column_name, data_type, is_nullable
 FROM information_schema.columns
@@ -180,6 +187,7 @@ WHERE table_name = 'template' AND column_name = 'categoryTypeId';
 ```
 
 ### Check if foreign key exists:
+
 ```sql
 SELECT constraint_name, table_name
 FROM information_schema.table_constraints
@@ -189,11 +197,13 @@ WHERE constraint_name = 'fk_template_category_type';
 ## 🎯 Next Steps After Migration
 
 1. **Pull the latest code** from the `feature/setting` branch:
+
    ```bash
    git pull origin feature/setting
    ```
 
 2. **Install dependencies** (if needed):
+
    ```bash
    npm install
    ```
@@ -235,4 +245,3 @@ If you encounter any issues:
 **Last Updated:** 2025-01-XX  
 **Migration Script:** `migrate-category-type-complete.sql`  
 **Author:** Your Team
-

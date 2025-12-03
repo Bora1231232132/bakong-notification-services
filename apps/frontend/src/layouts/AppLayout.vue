@@ -238,7 +238,9 @@ const confirmLogout = () => {
   border-bottom: 1px solid rgba(0, 19, 70, 0.05);
   background: #fff;
   z-index: 1000;
-  transition: left 0.3s ease, width 0.3s ease;
+  transition:
+    left 0.3s ease,
+    width 0.3s ease;
 }
 
 .header.expanded {
@@ -362,7 +364,9 @@ const confirmLogout = () => {
   flex: 1;
   width: 100%;
   overflow: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s ease;
 }
 
 .sidebar-content.collapsed {
@@ -505,7 +509,6 @@ const confirmLogout = () => {
   color: #001346;
 }
 
-
 .main-content {
   position: fixed;
   left: 200px;
@@ -515,7 +518,9 @@ const confirmLogout = () => {
   padding: 25px 25px 0px 32px;
   overflow: hidden;
   background: #fff;
-  transition: left 0.3s ease, width 0.3s ease;
+  transition:
+    left 0.3s ease,
+    width 0.3s ease;
 }
 
 .main-content.expanded {

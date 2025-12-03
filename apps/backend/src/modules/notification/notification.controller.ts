@@ -31,8 +31,8 @@ export class NotificationController {
       fcmToken: dto.fcmToken
         ? `${dto.fcmToken.substring(0, 30)}...`
         : dto.fcmToken === ''
-        ? 'EMPTY (explicitly cleared)'
-        : 'NOT PROVIDED',
+          ? 'EMPTY (explicitly cleared)'
+          : 'NOT PROVIDED',
     })
 
     try {
@@ -60,7 +60,7 @@ export class NotificationController {
             dto.bakongPlatform = inferredBakongPlatform
           }
         }
-        
+
         // If notificationType is not provided, default to FLASH_NOTIFICATION for backward compatibility
         // But prefer to use the type from FCM payload if provided
         if (!dto.notificationType) {
@@ -75,20 +75,31 @@ export class NotificationController {
           const existingUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
           if (existingUser?.fcmToken) {
             console.warn(
-              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} but fcmToken NOT PROVIDED. User has existing token: ${existingUser.fcmToken.substring(0, 30)}... (This might be an old/invalid token if app was reinstalled)`,
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
+                dto.accountId
+              } but fcmToken NOT PROVIDED. User has existing token: ${existingUser.fcmToken.substring(
+                0,
+                30,
+              )}... (This might be an old/invalid token if app was reinstalled)`,
             )
           } else {
             console.warn(
-              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} but fcmToken NOT PROVIDED. User has no existing token.`,
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
+                dto.accountId
+              } but fcmToken NOT PROVIDED. User has no existing token.`,
             )
           }
         } else if (dto.fcmToken === '') {
           console.log(
-            `ℹ️ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} with EMPTY fcmToken (app deleted/reinstalled - will clear old token)`,
+            `ℹ️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
+              dto.accountId
+            } with EMPTY fcmToken (app deleted/reinstalled - will clear old token)`,
           )
         } else {
           console.log(
-            `✅ [sendNotification] ${dto.notificationType || 'Notification'} for ${dto.accountId} with NEW fcmToken: ${dto.fcmToken.substring(0, 30)}...`,
+            `✅ [sendNotification] ${dto.notificationType || 'Notification'} for ${
+              dto.accountId
+            } with NEW fcmToken: ${dto.fcmToken.substring(0, 30)}...`,
           )
         }
 
@@ -107,7 +118,9 @@ export class NotificationController {
         })
 
         console.log(
-          `✅ [sendNotification] User data synced successfully for ${dto.accountId}. Proceeding with ${dto.notificationType || 'notification'}...`,
+          `✅ [sendNotification] User data synced successfully for ${
+            dto.accountId
+          }. Proceeding with ${dto.notificationType || 'notification'}...`,
         )
       } else {
         if (!dto.notificationType) {

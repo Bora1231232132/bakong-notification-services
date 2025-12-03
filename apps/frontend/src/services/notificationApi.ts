@@ -453,7 +453,7 @@ export const notificationApi = {
           linkPreview: t.linkPreview,
         })),
       }
-      
+
       // Use longer timeout for template updates (60 seconds)
       const response = await api.post(`/api/v1/template/${id}/update`, sanitizedData, {
         timeout: 60000,

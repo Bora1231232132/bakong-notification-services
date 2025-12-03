@@ -16,4 +16,3 @@ export class UpdateCategoryTypeDto {
   @IsString()
   originalFileName?: string
 }
-

@@ -300,7 +300,7 @@ export class InboxResponseDto implements NotificationData {
     const dataPayload: Record<string, string> = {
       notificationId: String(notificationId),
     }
-    
+
     // Add other notification data fields if present
     if (notification) {
       Object.entries(notification).forEach(([key, value]) => {

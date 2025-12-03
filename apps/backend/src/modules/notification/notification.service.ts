@@ -53,7 +53,7 @@ export class NotificationService {
 
     // Parse platforms using shared helper function
     const platformsArray = ValidationHelper.parsePlatforms(template.platforms)
-    
+
     console.log('📤 [sendWithTemplate] Parsed platforms:', {
       raw: template.platforms,
       parsed: platformsArray,
@@ -65,12 +65,12 @@ export class NotificationService {
     const normalizedPlatforms = platformsArray
       .map((p) => ValidationHelper.normalizeEnum(p))
       .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID') // Only allow valid platform values
-    
+
     if (normalizedPlatforms.length === 0) {
       console.warn('⚠️ [sendWithTemplate] No valid platforms found, defaulting to ALL')
       normalizedPlatforms.push('ALL')
     }
-    
+
     console.log('📤 [sendWithTemplate] Target platforms:', {
       raw: template.platforms,
       parsed: platformsArray,
@@ -94,8 +94,8 @@ export class NotificationService {
           template.bakongPlatform === 'BAKONG_TOURIST'
             ? 'Bakong Tourist'
             : template.bakongPlatform === 'BAKONG_JUNIOR'
-            ? 'Bakong Junior'
-            : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
         throw new Error(
           `No users found for ${platformName} app. Please ensure there are registered users for this platform before sending notifications.`,
         )
@@ -127,9 +127,7 @@ export class NotificationService {
 
     const matchingUsers = users.filter((user) => {
       if (!user.platform) {
-        console.log(
-          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: no platform set`,
-        )
+        console.log(`📤 [sendWithTemplate] Filtering out user ${user.accountId}: no platform set`)
         return false
       }
       if (targetsAllPlatforms) {
@@ -139,7 +137,11 @@ export class NotificationService {
       const matches = normalizedPlatforms.some((p) => normalizedUserPlatform === p)
       if (!matches) {
         console.log(
-          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: platform "${user.platform}" (normalized: "${normalizedUserPlatform}") not in target platforms [${normalizedPlatforms.join(', ')}]`,
+          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: platform "${
+            user.platform
+          }" (normalized: "${normalizedUserPlatform}") not in target platforms [${normalizedPlatforms.join(
+            ', ',
+          )}]`,
         )
       }
       return matches
@@ -169,11 +171,11 @@ export class NotificationService {
         `⚠️ [sendWithTemplate] Template platform requirement: ${normalizedPlatforms.join(', ')}`,
       )
       console.warn(
-        `⚠️ [sendWithTemplate] Total users checked: ${users.length}, Users filtered out: ${users.length - matchingUsers.length}`,
+        `⚠️ [sendWithTemplate] Total users checked: ${users.length}, Users filtered out: ${
+          users.length - matchingUsers.length
+        }`,
       )
-      console.warn(
-        '⚠️ [sendWithTemplate] Template will be kept as draft - no matching users found',
-      )
+      console.warn('⚠️ [sendWithTemplate] Template will be kept as draft - no matching users found')
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
@@ -311,9 +313,7 @@ export class NotificationService {
           const inferred = this.inferBakongPlatform(dto.participantCode, dto.accountId)
           if (inferred) {
             userBakongPlatform = inferred
-            console.warn(
-              `⚠️ [sendNow] Inferring bakongPlatform for ${dto.accountId}: ${inferred}`,
-            )
+            console.warn(`⚠️ [sendNow] Inferring bakongPlatform for ${dto.accountId}: ${inferred}`)
           }
         }
       }
@@ -413,8 +413,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
+                ? 'Bakong Junior'
+                : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -465,8 +465,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
+                ? 'Bakong Junior'
+                : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -807,7 +807,7 @@ export class NotificationService {
     const normalizedTemplatePlatforms = templatePlatformsArray
       .map((p) => ValidationHelper.normalizeEnum(p))
       .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID')
-    
+
     const targetsAllPlatforms = normalizedTemplatePlatforms.includes('ALL')
     const normalizedUserPlatform = user.platform
       ? ValidationHelper.normalizeEnum(user.platform)
@@ -815,12 +815,14 @@ export class NotificationService {
 
     // CRITICAL: Double-check platform match before sending
     if (!targetsAllPlatforms && normalizedUserPlatform) {
-      const platformMatches = normalizedTemplatePlatforms.some(
-        (p) => normalizedUserPlatform === p,
-      )
+      const platformMatches = normalizedTemplatePlatforms.some((p) => normalizedUserPlatform === p)
       if (!platformMatches) {
         console.warn(
-          `⚠️ [sendFCMPayloadToPlatform] SKIPPING user ${user.accountId}: platform "${user.platform}" (normalized: "${normalizedUserPlatform}") does NOT match template platforms [${normalizedTemplatePlatforms.join(', ')}]`,
+          `⚠️ [sendFCMPayloadToPlatform] SKIPPING user ${user.accountId}: platform "${
+            user.platform
+          }" (normalized: "${normalizedUserPlatform}") does NOT match template platforms [${normalizedTemplatePlatforms.join(
+            ', ',
+          )}]`,
         )
         return null
       }
@@ -841,7 +843,7 @@ export class NotificationService {
 
     if (platform.ios) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing iOS notification...')
-      
+
       const whatNews = InboxResponseDto.buildBaseNotificationData(
         template,
         translation,
@@ -849,7 +851,7 @@ export class NotificationService {
         imageUrlString,
         parseInt(notificationIdStr),
       )
-      
+
       // Note: Mobile app will determine redirect screen based on notificationType:
       // - FLASH_NOTIFICATION → Home screen
       // - ANNOUNCEMENT → Notification Center screen
@@ -907,7 +909,7 @@ export class NotificationService {
     }
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
-      
+
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
@@ -924,7 +926,7 @@ export class NotificationService {
         notification_title: title,
         notification_body: body,
       }
-      
+
       // Note: Mobile app will determine redirect screen based on notificationType:
       // - FLASH_NOTIFICATION → Home screen
       // - ANNOUNCEMENT → Notification Center screen
@@ -1086,12 +1088,15 @@ export class NotificationService {
           return createdAt >= last24Hours && createdAt <= now
         })
 
-        const templateCounts = todayNotifications.reduce((acc, notif) => {
-          if (notif.templateId) {
-            acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
-          }
-          return acc
-        }, {} as Record<number, number>)
+        const templateCounts = todayNotifications.reduce(
+          (acc, notif) => {
+            if (notif.templateId) {
+              acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
+            }
+            return acc
+          },
+          {} as Record<number, number>,
+        )
 
         const templatesAtLimit = Object.entries(templateCounts)
           .filter(([_, count]) => count >= 2)
@@ -1200,7 +1205,10 @@ export class NotificationService {
     const distinctDays = new Set<string>()
     allNotifications.forEach((notif) => {
       const date = new Date(notif.createdAt)
-      const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+        2,
+        '0',
+      )}-${String(date.getDate()).padStart(2, '0')}`
       distinctDays.add(dayKey)
     })
 
@@ -1229,7 +1237,11 @@ export class NotificationService {
 
     const newSendCount = todayCount + 1
     console.log(
-      `✅ [handleFlashNotification] Proceeding to send template ${selectedTemplate.id} (will be send #${newSendCount} for this user today, day ${daysCount + 1} of ${maxDayShowing})`,
+      `✅ [handleFlashNotification] Proceeding to send template ${
+        selectedTemplate.id
+      } (will be send #${newSendCount} for this user today, day ${
+        daysCount + 1
+      } of ${maxDayShowing})`,
     )
 
     // User already fetched above, reuse it
@@ -1279,8 +1291,8 @@ export class NotificationService {
         fcmToken: fcmToken
           ? `${fcmToken.substring(0, 30)}...`
           : fcmToken === ''
-          ? 'EMPTY (explicitly cleared)'
-          : 'NOT PROVIDED',
+            ? 'EMPTY (explicitly cleared)'
+            : 'NOT PROVIDED',
         platform: platform || 'N/A',
         language: language || 'N/A',
         bakongPlatform: bakongPlatform || 'N/A',
@@ -1300,7 +1312,9 @@ export class NotificationService {
       const existingUser = await this.baseFunctionHelper.findUserByAccountId(accountId)
       if (existingUser) {
         console.log(
-          `📋 [getNotificationCenter] Existing user found: ${accountId}, current fcmToken: ${existingUser.fcmToken ? `${existingUser.fcmToken.substring(0, 30)}...` : 'EMPTY'}`,
+          `📋 [getNotificationCenter] Existing user found: ${accountId}, current fcmToken: ${
+            existingUser.fcmToken ? `${existingUser.fcmToken.substring(0, 30)}...` : 'EMPTY'
+          }`,
         )
       } else {
         console.log(`📋 [getNotificationCenter] New user: ${accountId}`)
@@ -1310,34 +1324,28 @@ export class NotificationService {
       // fcmToken is required in NotificationInboxDto, so it should always be provided
       // If it's an empty string, that means app was deleted - we should clear old token
       // Always pass fcmToken as-is (even if empty string) to ensure sync happens
-      console.log(
-        `🔄 [getNotificationCenter] Preparing to sync user data:`,
-        {
-          accountId,
-          fcmTokenProvided: fcmToken !== undefined,
-          fcmTokenValue: fcmToken
-            ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length})`
-            : fcmToken === ''
+      console.log(`🔄 [getNotificationCenter] Preparing to sync user data:`, {
+        accountId,
+        fcmTokenProvided: fcmToken !== undefined,
+        fcmTokenValue: fcmToken
+          ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length})`
+          : fcmToken === ''
             ? 'EMPTY STRING'
             : 'UNDEFINED',
-          fcmTokenType: typeof fcmToken,
-        },
-      )
-      console.log(
-        `🔄 [getNotificationCenter] Calling updateUserData with:`,
-        {
-          accountId,
-          fcmToken: fcmToken
-            ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length}, type: ${typeof fcmToken})`
-            : fcmToken === ''
+        fcmTokenType: typeof fcmToken,
+      })
+      console.log(`🔄 [getNotificationCenter] Calling updateUserData with:`, {
+        accountId,
+        fcmToken: fcmToken
+          ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length}, type: ${typeof fcmToken})`
+          : fcmToken === ''
             ? 'EMPTY STRING'
             : 'UNDEFINED',
-          participantCode: participantCode || 'NOT PROVIDED',
-          platform: platform || 'NOT PROVIDED',
-          language: language || 'NOT PROVIDED',
-          bakongPlatform: finalBakongPlatform || 'NOT PROVIDED',
-        },
-      )
+        participantCode: participantCode || 'NOT PROVIDED',
+        platform: platform || 'NOT PROVIDED',
+        language: language || 'NOT PROVIDED',
+        bakongPlatform: finalBakongPlatform || 'NOT PROVIDED',
+      })
 
       const syncResult = await this.baseFunctionHelper.updateUserData({
         accountId,
@@ -1352,28 +1360,33 @@ export class NotificationService {
       if ('isNewUser' in syncResult) {
         const result = syncResult as any
         console.log(
-          `✅ [getNotificationCenter] User sync complete: ${accountId}, isNewUser: ${result.isNewUser}, savedUser fcmToken: ${result.savedUser?.fcmToken ? `${result.savedUser.fcmToken.substring(0, 30)}...` : 'EMPTY'}`,
+          `✅ [getNotificationCenter] User sync complete: ${accountId}, isNewUser: ${
+            result.isNewUser
+          }, savedUser fcmToken: ${
+            result.savedUser?.fcmToken
+              ? `${result.savedUser.fcmToken.substring(0, 30)}...`
+              : 'EMPTY'
+          }`,
         )
       } else {
         console.log(
-          `✅ [getNotificationCenter] All users sync complete: ${(syncResult as any).updatedCount} users updated`,
+          `✅ [getNotificationCenter] All users sync complete: ${
+            (syncResult as any).updatedCount
+          } users updated`,
         )
       }
 
       // Re-fetch user to verify it was saved
       const user = await this.baseFunctionHelper.findUserByAccountId(accountId)
-      console.log(
-        `🔍 [getNotificationCenter] Re-fetched user after sync:`,
-        {
-          accountId,
-          found: !!user,
-          fcmToken: user?.fcmToken
-            ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
-            : 'EMPTY',
-          bakongPlatform: user?.bakongPlatform || 'NULL',
-          updatedAt: user?.updatedAt,
-        },
-      )
+      console.log(`🔍 [getNotificationCenter] Re-fetched user after sync:`, {
+        accountId,
+        found: !!user,
+        fcmToken: user?.fcmToken
+          ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+          : 'EMPTY',
+        bakongPlatform: user?.bakongPlatform || 'NULL',
+        updatedAt: user?.updatedAt,
+      })
 
       if (!user) {
         return BaseResponseDto.error({

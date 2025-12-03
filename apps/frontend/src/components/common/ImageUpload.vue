@@ -17,7 +17,7 @@
           />
         </div>
         <p
-          class="text-[#011246] font-normal text-base leading-[150%] tracking-[0%] font-['IBM_Plex_Sans']     "
+          class="text-[#011246] font-normal text-base leading-[150%] tracking-[0%] font-['IBM_Plex_Sans']"
         >
           Drag & drop here or choose files
         </p>
@@ -138,7 +138,7 @@ watch(
   (newValue) => {
     const previousFile = selectedFile.value
     selectedFile.value = newValue as File | null
-    
+
     if (newValue) {
       // Only read file if it's a different file or we don't have a preview yet
       if (!filePreview.value || previousFile !== newValue) {
@@ -217,7 +217,8 @@ const processFileSuccess = (file: File, previewUrl: string, wasConverted?: boole
   if (wasConverted) {
     ElNotification({
       title: 'Image Converted',
-      message: 'Image has been automatically adjusted to correct size (max 3MB) and aspect ratio (2:1 W:H or 880:440).',
+      message:
+        'Image has been automatically adjusted to correct size (max 3MB) and aspect ratio (2:1 W:H or 880:440).',
       type: 'success',
       duration: 3000,
     })

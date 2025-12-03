@@ -50,7 +50,7 @@ export class CategoryTypeService {
   async remove(id: number): Promise<void> {
     // Verify record exists (will throw NotFoundException if not found)
     await this.findOne(id)
-    
+
     try {
       // Hard delete - permanently removes the record from database
       // If foreign key constraint has ON DELETE SET NULL, templates.categoryTypeId will be set to NULL automatically
@@ -65,13 +65,18 @@ export class CategoryTypeService {
           }),
         )
       }
-      this.logger.log(`Category type ${id} deleted successfully. Related templates' categoryTypeId set to NULL.`)
+      this.logger.log(
+        `Category type ${id} deleted successfully. Related templates' categoryTypeId set to NULL.`,
+      )
     } catch (error) {
       // Handle foreign key constraint violations
       if (error instanceof QueryFailedError) {
         const errorMessage = error.message || String(error)
         // Check if it's a foreign key constraint violation
-        if (errorMessage.includes('foreign key') || errorMessage.includes('violates foreign key constraint')) {
+        if (
+          errorMessage.includes('foreign key') ||
+          errorMessage.includes('violates foreign key constraint')
+        ) {
           this.logger.error(`Cannot delete category type ${id}: ${errorMessage}`)
           throw new BadRequestException(
             new BaseResponseDto({
@@ -87,4 +92,3 @@ export class CategoryTypeService {
     }
   }
 }
-

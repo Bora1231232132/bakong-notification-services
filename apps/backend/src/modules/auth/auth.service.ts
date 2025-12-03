@@ -12,7 +12,10 @@ import { BaseResponseDto } from 'src/common/base-response.dto'
 
 @Injectable()
 export class AuthService implements OnModuleInit {
-  constructor(private readonly userService: UserService, private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async onModuleInit() {
     const admin = await this.userService.findByUsername(k.API_ADMIN_USERNAME)

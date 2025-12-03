@@ -987,11 +987,11 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       // No notifications sent today (within limit)
       mockNotificationRepo.count.mockResolvedValue(0)
       mockNotificationRepo.find.mockResolvedValue([]) // No previous notifications
-      
+
       mockNotificationRepo.create.mockReturnValue(sampleNotification)
       mockNotificationRepo.save.mockResolvedValue(sampleNotification)
       mockTemplateService.markAsPublished.mockResolvedValue(undefined)
@@ -1028,7 +1028,7 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       // User has already received 2 notifications today (limit is 2)
       mockNotificationRepo.count.mockResolvedValue(2) // showPerDay limit reached
       mockNotificationRepo.find.mockResolvedValue([])
@@ -1067,7 +1067,7 @@ describe('NotificationService', () => {
       ]
 
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       // No notifications today, but has been shown for 3 days (limit is 3)
       mockNotificationRepo.count.mockResolvedValue(0) // Not reached daily limit
       mockNotificationRepo.find.mockResolvedValue(notificationsFromDifferentDays) // 3 distinct days
@@ -1092,7 +1092,7 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(flashTemplateDefaultLimits)
-      
+
       // User has already received 1 notification today (default limit is 1)
       mockNotificationRepo.count.mockResolvedValue(1) // Default showPerDay limit reached
       mockNotificationRepo.find.mockResolvedValue([])
@@ -1118,12 +1118,12 @@ describe('NotificationService', () => {
       yesterday.setDate(yesterday.getDate() - 1)
 
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       // 1 notification today (limit is 2, so OK)
       mockNotificationRepo.count.mockResolvedValue(1)
       // 1 notification from yesterday (2 days total, limit is 3, so OK)
       mockNotificationRepo.find.mockResolvedValue([{ createdAt: yesterday }])
-      
+
       mockNotificationRepo.create.mockReturnValue(sampleNotification)
       mockNotificationRepo.save.mockResolvedValue(sampleNotification)
       mockTemplateService.markAsPublished.mockResolvedValue(undefined)
@@ -1169,11 +1169,11 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(customTemplate)
-      
+
       // 2 notifications today (limit is 3, so OK)
       mockNotificationRepo.count.mockResolvedValue(2)
       mockNotificationRepo.find.mockResolvedValue([])
-      
+
       mockNotificationRepo.create.mockReturnValue(sampleNotification)
       mockNotificationRepo.save.mockResolvedValue(sampleNotification)
       mockTemplateService.markAsPublished.mockResolvedValue(undefined)
@@ -1398,7 +1398,7 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(templateWithNullLimits)
-      
+
       mockNotificationRepo.count.mockResolvedValue(1)
       mockNotificationRepo.find.mockResolvedValue([])
 
@@ -1450,11 +1450,11 @@ describe('NotificationService', () => {
         translation: sampleTranslation,
       })
       mockTemplateService.findBestTranslation.mockReturnValue(sampleTranslation)
-      
+
       // handleFlashNotification still checks limits even with templateId
       mockNotificationRepo.count.mockResolvedValue(0)
       mockNotificationRepo.find.mockResolvedValue([])
-      
+
       mockNotificationRepo.create.mockReturnValue(sampleNotification)
       mockNotificationRepo.save.mockResolvedValue(sampleNotification)
       mockTemplateService.markAsPublished.mockResolvedValue(undefined)
@@ -1504,10 +1504,10 @@ describe('NotificationService', () => {
 
       // First send
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       mockNotificationRepo.count.mockResolvedValue(0)
       mockNotificationRepo.find.mockResolvedValue([])
-      
+
       const firstNotification = { ...sampleNotification, id: 1, sendCount: 1 }
       mockNotificationRepo.create.mockReturnValue(firstNotification)
       mockNotificationRepo.save.mockResolvedValue(firstNotification)
@@ -1561,7 +1561,7 @@ describe('NotificationService', () => {
       } as SentNotificationDto
 
       setupFlashNotificationMocks(flashTemplateWithLimits)
-      
+
       mockNotificationRepo.count.mockResolvedValue(2)
       mockNotificationRepo.find.mockResolvedValue([])
 

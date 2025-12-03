@@ -64,16 +64,16 @@ export class TemplateController {
       translationCount: updateUserDto.translations?.length || 0,
     })
     console.log('🎯 [CONTROLLER] Update request data:', safeDto)
-    
+
     const currentUser = req.user
     const template = await this.templateService.update(+id, updateUserDto, currentUser)
-    
+
     console.log('🎯 [CONTROLLER] Update result:', {
       templateId: template.templateId,
       platforms: template.platforms,
       isSent: template.isSent,
     })
-    
+
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: `Update ${template.notificationType} successfully`,

@@ -19,7 +19,14 @@ import { Logger } from '@nestjs/common'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Template, TemplateTranslation, Image, BakongUser, CategoryType , User]),
+    TypeOrmModule.forFeature([
+      Template,
+      TemplateTranslation,
+      Image,
+      BakongUser,
+      CategoryType,
+      User,
+    ]),
     forwardRef(() => NotificationModule),
     forwardRef(() => ImageModule),
     ScheduleModule,
