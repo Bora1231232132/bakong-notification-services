@@ -87,6 +87,64 @@ const formatNotificationDate = (date: Date | string): string => {
   })
 }
 
+export interface TestTokenRequest {
+  token: string
+  bakongPlatform?: string
+}
+
+export interface TestTokenResponse {
+  isValid: boolean
+  formatValid: boolean
+  firebaseValid: boolean
+  error?: string
+  errorCode?: string
+  messageId?: string
+}
+
+export const testFCMToken = async (data: TestTokenRequest): Promise<TestTokenResponse> => {
+  const response = await api.post('/api/v1/notification/test-token', data)
+  console.log('🔍 [testFCMToken] Full API response:', response.data)
+  
+  // Handle response structure: response.data.data contains the TestTokenResponse
+  const result = response.data?.data || response.data
+  
+  console.log('🔍 [testFCMToken] Parsed result:', result)
+  
+  // Ensure we have the expected structure
+  if (!result || typeof result !== 'object') {
+    throw new Error('Invalid response structure from token test endpoint')
+  }
+  
+  return result as TestTokenResponse
+}
+
+export interface SyncUsersResponse {
+  totalCount: number
+  updatedCount: number
+  platformUpdates: number
+  languageUpdates: number
+  invalidTokens: number
+  updatedIds: string[]
+  updatedIdsCount: number
+}
+
+export const syncUsers = async (): Promise<SyncUsersResponse> => {
+  const response = await api.post('/api/v1/notification/sync-users')
+  console.log('🔍 [syncUsers] Full API response:', response.data)
+  
+  // Handle response structure: response.data.data contains the SyncUsersResponse
+  const result = response.data?.data || response.data
+  
+  console.log('🔍 [syncUsers] Parsed result:', result)
+  
+  // Ensure we have the expected structure
+  if (!result || typeof result !== 'object') {
+    throw new Error('Invalid response structure from sync users endpoint')
+  }
+  
+  return result as SyncUsersResponse
+}
+
 const mapBackendStatusToFrontend = (backendStatus: string): string => {
   switch (backendStatus) {
     case 'SENT':

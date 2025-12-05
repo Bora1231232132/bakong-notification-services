@@ -214,4 +214,81 @@ export class NotificationController {
 
     return undefined
   }
+
+  @Post('test-token')
+  @ApiKeyRequired()
+  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER)
+  async testToken(
+    @Body() dto: { token: string; bakongPlatform?: BakongApp },
+    @Req() req: any,
+  ) {
+    console.log('🧪 [testToken] Testing token validation:', {
+      tokenPrefix: dto.token ? `${dto.token.substring(0, 30)}...` : 'NO TOKEN',
+      tokenLength: dto.token?.length || 0,
+      bakongPlatform: dto.bakongPlatform || 'DEFAULT',
+    })
+
+    try {
+      const result = await this.service.testFCMToken(dto.token, dto.bakongPlatform)
+      // Return result directly in data field (not spread at top level)
+      return BaseResponseDto.success({
+        data: result,
+        message: result.isValid
+          ? 'Token is valid! A test notification has been sent.'
+          : 'Token validation failed. Check the details below.',
+      })
+    } catch (error: any) {
+      console.error('❌ [testToken] Token test failed:', error.message)
+      return BaseResponseDto.error({
+        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+        message: `Token test failed: ${error.message}`,
+        data: {
+          tokenPrefix: dto.token ? `${dto.token.substring(0, 30)}...` : 'NO TOKEN',
+          error: error.message,
+        },
+      })
+    }
+  }
+
+  @Post('sync-users')
+  @ApiKeyRequired()
+  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER)
+  async syncUsers(@Req() req: any) {
+    console.log('🔄 [syncUsers] Manual user sync requested')
+
+    try {
+      const result = await this.baseFunctionHelper.syncAllUsers()
+      
+      console.log('✅ [syncUsers] User sync completed:', {
+        totalCount: result.totalCount,
+        updatedCount: result.updatedCount,
+        platformUpdates: result.platformUpdates,
+        languageUpdates: result.languageUpdates,
+        invalidTokens: result.invalidTokens,
+        updatedIdsCount: result.updatedIds.length,
+      })
+
+      return BaseResponseDto.success({
+        data: {
+          totalCount: result.totalCount,
+          updatedCount: result.updatedCount,
+          platformUpdates: result.platformUpdates,
+          languageUpdates: result.languageUpdates,
+          invalidTokens: result.invalidTokens,
+          updatedIds: result.updatedIds,
+          updatedIdsCount: result.updatedIds.length,
+        },
+        message: `User sync completed: ${result.updatedCount} of ${result.totalCount} users updated`,
+      })
+    } catch (error: any) {
+      console.error('❌ [syncUsers] User sync failed:', error.message)
+      return BaseResponseDto.error({
+        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+        message: `User sync failed: ${error.message}`,
+        data: {
+          error: error.message,
+        },
+      })
+    }
+  }
 }

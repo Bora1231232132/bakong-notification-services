@@ -888,6 +888,20 @@ const handlePublishNotification = async (notification: Notification) => {
           activeTab.value = 'draft'
         } else if (
           result?.data?.successfulCount !== undefined &&
+          result?.data?.successfulCount === 0 &&
+          result?.data?.failedCount !== undefined &&
+          result?.data?.failedCount > 0
+        ) {
+          // All sends failed - show error message
+          ElNotification({
+            title: 'Warning',
+            message: `Failed to send notification to ${result.data.failedCount} user(s). The notification has been saved as a draft.`,
+            type: 'warning',
+            duration: 5000,
+          })
+          activeTab.value = 'draft'
+        } else if (
+          result?.data?.successfulCount !== undefined &&
           result?.data?.successfulCount > 0
         ) {
           // Successfully published and sent to users

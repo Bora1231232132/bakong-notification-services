@@ -286,12 +286,16 @@ export class InboxResponseDto implements NotificationData {
     notificationId: string,
     notification?: Record<string, string | number>,
   ): Message {
+    // APS (Apple Push Notification service) payload - only valid APNs fields allowed
+    // Valid fields: alert, badge, sound, content-available, category, thread-id, mutable-content
+    // Note: Do NOT include content-available when you have alert - it's for silent notifications only
+    // When both are present, iOS may not display the notification properly
     const aps: Record<string, any> = {
       alert: { title, body },
       sound: 'default',
       badge: 1,
-      type: 'NOTIFICATION',
-      notification: notification || {},
+      // Removed content-available - it's only for silent background notifications
+      // When combined with alert, it can prevent notification from displaying
     }
 
     // Build data payload for iOS (accessible when app is opened from notification)
@@ -299,9 +303,10 @@ export class InboxResponseDto implements NotificationData {
     // Note: Mobile app will determine redirect screen based on notificationType field
     const dataPayload: Record<string, string> = {
       notificationId: String(notificationId),
+      type: 'NOTIFICATION', // Move 'type' to data payload (not APS)
     }
 
-    // Add other notification data fields if present
+    // Add other notification data fields if present (in data, not APS)
     if (notification) {
       Object.entries(notification).forEach(([key, value]) => {
         dataPayload[key] = String(value)
@@ -316,8 +321,18 @@ export class InboxResponseDto implements NotificationData {
       payload: { aps },
     }
 
-    // Return Message with data at root level (not inside apns.payload)
-    return { token, apns, data: dataPayload }
+    // IMPORTANT: Add 'notification' field at root level (like Firebase Console does)
+    // This ensures iOS displays the notification even when app is in background/terminated
+    // Firebase Console uses this structure, so we match it for consistency
+    return {
+      token,
+      notification: {
+        title,
+        body,
+      },
+      apns,
+      data: dataPayload,
+    }
   }
 
   static buildIOSPayload(

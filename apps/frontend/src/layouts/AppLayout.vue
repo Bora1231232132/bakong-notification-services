@@ -83,6 +83,16 @@
               <img :src="chartIcon" alt="Insight" class="nav-icon" />
               <span>Insight</span>
             </div>
+            <!-- Test page - only visible in development environment -->
+            <div
+              v-if="isDevelopment"
+              class="nav-item"
+              :class="{ active: $route.name === 'test' }"
+              @click="$router.push('/test')"
+            >
+              <el-icon class="nav-icon"><Tools /></el-icon>
+              <span>Test</span>
+            </div>
             <div
               class="nav-item"
               :class="{ active: $route.name === 'settings' }"
@@ -138,7 +148,7 @@ import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
-import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus } from '@element-plus/icons-vue'
+import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus, Tools } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
@@ -182,6 +192,13 @@ const pageTitle = computed(() => {
     default:
       return 'Home'
   }
+})
+
+// Check if we're in development environment (not production/SIT)
+const isDevelopment = computed(() => {
+  // In Vite, import.meta.env.DEV is true in development mode
+  // import.meta.env.PROD is true in production/SIT builds
+  return import.meta.env.DEV || import.meta.env.MODE === 'development'
 })
 
 const handleCreateNotification = () => {

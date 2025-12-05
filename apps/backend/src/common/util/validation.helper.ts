@@ -384,53 +384,37 @@ export class ValidationHelper {
     return token.length >= 100 && /^[A-Za-z0-9:_-]+$/.test(token)
   }
 
+  /**
+   * Validate FCM token WITHOUT sending test notifications
+   * 
+   * IMPORTANT: This function only validates token format, NOT Firebase validity.
+   * Invalid tokens will be caught when actually sending notifications.
+   * 
+   * Why this approach?
+   * 1. Firebase Admin SDK doesn't have a dry-run API that doesn't send notifications
+   * 2. Sending test notifications bothers users with "Test message" notifications
+   * 3. Format validation + error handling on real sends is sufficient
+   * 4. Tokens are synced from mobile app, so they should be current
+   * 
+   * @param token - FCM token to validate
+   * @param fcm - Firebase Messaging instance (not used, kept for API compatibility)
+   * @returns true if token format is valid (actual validity checked on send)
+   */
   static async validateFCMTokenWithFirebase(token: string, fcm: any): Promise<boolean> {
-    try {
-      try {
-        const auth = getAuth()
-        await auth.verifyIdToken(token)
-        return true
-      } catch (idTokenError) {
-        const testMessage = {
-          token: token,
-          notification: {
-            title: 'Test',
-            body: 'Test message for token validation',
-          },
-          data: {
-            test: 'true',
-          },
-        }
-
-        try {
-          await fcm.send(testMessage, true)
-          return true
-        } catch (fcmError) {
-          if (
-            fcmError.code === 'messaging/registration-token-not-registered' ||
-            fcmError.code === 'messaging/invalid-registration-token' ||
-            fcmError.code === 'messaging/invalid-argument'
-          ) {
-            return false
-          } else {
-            return true
-          }
-        }
-      }
-    } catch (error) {
-      if (
-        error.code === 'auth/invalid-id-token' ||
-        error.code === 'auth/id-token-expired' ||
-        error.code === 'auth/id-token-revoked' ||
-        error.code === 'messaging/invalid-argument' ||
-        error.code === 'messaging/registration-token-not-registered' ||
-        error.code === 'messaging/invalid-registration-token'
-      ) {
-        return false
-      }
-
-      return true
+    // Only validate format - don't send test notifications!
+    // Real validation happens when we try to send actual notifications
+    // Invalid tokens will fail with specific error codes that we handle
+    
+    if (!this.isValidFCMTokenFormat(token)) {
+      console.warn(`❌ [validateFCMTokenWithFirebase] Invalid token format: ${token.substring(0, 30)}...`)
+      return false
     }
+
+    // Token format is valid - assume it's valid
+    // If it's actually invalid, Firebase will return an error when we try to send
+    // This prevents users from receiving annoying "Test message" notifications
+    console.log(`✅ [validateFCMTokenWithFirebase] Token format valid: ${token.substring(0, 30)}...`)
+    return true
   }
 
   static validateFirebaseMessageId(response: string): number {

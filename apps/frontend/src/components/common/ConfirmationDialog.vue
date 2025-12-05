@@ -100,18 +100,19 @@ const handleCancel = () => {
 .dialog-container {
   position: relative;
   width: 386px;
-  height: 217px;
+  height: 198px;
+  /* height: 217px; */
 }
 
 .dialog-content {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-end;
   padding: 24px;
   gap: 24px;
   width: 386px;
-  height: 217px;
+  /* min-height: 217px; */
   background: #ffffff;
   border-radius: 16px;
   box-sizing: border-box;
@@ -124,7 +125,6 @@ const handleCancel = () => {
   padding: 0px;
   gap: 5px;
   width: 338px;
-  height: 89px;
   flex: none;
   order: 0;
   align-self: stretch;
@@ -149,7 +149,7 @@ const handleCancel = () => {
 
 .dialog-message {
   width: 338px;
-  height: 57px;
+  /* height: 57px; */
   font-family: 'IBM Plex Sans', sans-serif;
   font-style: normal;
   font-weight: 400;

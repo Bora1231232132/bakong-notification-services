@@ -520,14 +520,29 @@ export class TemplateService implements OnModuleInit {
         } else {
           // No users received the notification - keep as draft
           console.warn('⚠️ No notifications were sent (successfulCount = 0) - keeping as draft')
-          console.warn('⚠️ This might indicate:')
-          console.warn('   1. No users have FCM tokens')
-          console.warn('   2. No users match the platform filter')
-          console.warn('   3. FCM token validation failed')
-          console.warn('   4. Firebase FCM not initialized')
-          console.warn('   5. No users in database')
+          
+          // Only set savedAsDraftNoUsers if there were NO users attempted (failedCount === 0)
+          // If failedCount > 0, it means users existed but all sends failed (not "no users available")
+          const hasNoUsers = sendResult.failedCount === 0 && sendResult.successfulCount === 0
+          
+          if (hasNoUsers) {
+            console.warn('⚠️ This might indicate:')
+            console.warn('   1. No users have FCM tokens')
+            console.warn('   2. No users match the platform filter')
+            console.warn('   3. FCM token validation failed')
+            console.warn('   4. Firebase FCM not initialized')
+            console.warn('   5. No users in database')
+            ;(template as any).savedAsDraftNoUsers = true
+          } else {
+            // Users existed but all sends failed
+            console.warn(`⚠️ All ${sendResult.failedCount} send attempts failed - keeping as draft`)
+            if (sendResult.failedUsers && sendResult.failedUsers.length > 0) {
+              console.warn('❌ Failed users:', sendResult.failedUsers)
+            }
+            // Don't set savedAsDraftNoUsers - this is a send failure, not "no users available"
+          }
+          
           await this.repo.update(template.id, { isSent: false })
-          ;(template as any).savedAsDraftNoUsers = true
         }
 
         // Include send result in template response

@@ -160,6 +160,15 @@ const router = createRouter({
             },
           },
         },
+        {
+          path: 'test',
+          name: 'test',
+          component: () => import('../views/TestView.vue'),
+          meta: { 
+            breadcrumb: { label: 'Testing Tools' },
+            devOnly: true, // Only available in development environment
+          },
+        },
       ],
     },
   ],
@@ -191,6 +200,15 @@ router.beforeEach(async (to, from, next) => {
       authStore.logout()
     }
     next('/login')
+    return
+  }
+
+  // Check if route is dev-only and redirect if not in development
+  const isDevOnly = to.meta.devOnly || to.matched.find((route) => route.meta.devOnly)?.meta.devOnly
+  if (isDevOnly && import.meta.env.PROD) {
+    // In production/SIT, redirect dev-only routes to home
+    console.log('Router guard - dev-only route accessed in production, redirecting to home')
+    next('/')
     return
   }
 

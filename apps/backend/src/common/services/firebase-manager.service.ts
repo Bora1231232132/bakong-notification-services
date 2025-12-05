@@ -103,6 +103,12 @@ export class FirebaseManager implements OnModuleInit {
         console.log(
           `[FirebaseManager] ✅ Initialized Firebase app: ${appName} (project: ${serviceAccount.project_id})`,
         )
+        console.log(
+          `[FirebaseManager] 📄 Service account file: ${serviceAccountPath}`,
+        )
+        console.log(
+          `[FirebaseManager] 📧 Service account email: ${serviceAccount.client_email}`,
+        )
         successCount++
       } catch (error: any) {
         console.error(`[FirebaseManager] ❌ Failed to initialize Firebase app for ${platform}:`, {

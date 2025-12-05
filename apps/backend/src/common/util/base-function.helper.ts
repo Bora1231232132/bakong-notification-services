@@ -318,15 +318,45 @@ export class BaseFunctionHelper {
       invalidTokens: 0,
     }
     const updatedIds: string[] = []
+    const cleanedTokens: string[] = []
 
     for (const user of users) {
+      let userChanged = false
+      
+      // Normalize user fields (platform, language, etc.)
       const changed = ValidationHelper.normalizeUserFields(user, stats)
-
-      if (user.fcmToken?.trim() && user.fcmToken.length < 50) {
-        stats.invalidTokens++
+      if (changed) {
+        userChanged = true
       }
 
-      if (changed) {
+      // Handle invalid tokens intelligently:
+      // - Keep tokens that fail FCM sends (for tracking, mobile app can update)
+      // - Only clear obviously invalid ones (too short, wrong format) - these are definitely wrong
+      // - Users with empty/invalid tokens are already filtered out before sending
+      if (user.fcmToken?.trim()) {
+        const isTooShort = user.fcmToken.length < 50
+        const hasInvalidFormat = !ValidationHelper.isValidFCMTokenFormat(user.fcmToken)
+        
+        if (isTooShort || hasInvalidFormat) {
+          stats.invalidTokens++
+          const reason = isTooShort 
+            ? `too short (${user.fcmToken.length} chars)` 
+            : 'invalid format'
+          console.log(
+            `🧹 [syncAllUsers] Clearing obviously invalid token for user ${user.accountId} (${reason})`,
+          )
+          // Clear obviously invalid tokens - these are definitely wrong and waste resources
+          user.fcmToken = ''
+          userChanged = true
+          cleanedTokens.push(user.accountId)
+        } else {
+          // Token format is valid - keep it even if it fails FCM sends
+          // Mobile app can update it when they call API
+          // This preserves historical data and allows tracking
+        }
+      }
+
+      if (userChanged) {
         try {
           await this.bkUserRepo.save(user)
           stats.updatedCount++
@@ -335,6 +365,13 @@ export class BaseFunctionHelper {
           this.logger.error(`Failed to save user ${user.accountId}`, e as any)
         }
       }
+    }
+
+    if (cleanedTokens.length > 0) {
+      console.log(
+        `✅ [syncAllUsers] Cleaned up ${cleanedTokens.length} invalid token(s):`,
+        cleanedTokens,
+      )
     }
 
     return { ...stats, updatedIds }

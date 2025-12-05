@@ -315,12 +315,23 @@
     v-model="showLeaveDialog"
     title="Are you sure you want to leave?"
     message="If you leave now, your progress will be saved as a draft. You can resume and complete it anytime."
-    confirm-text="Save as draft & leave"
+    :confirm-text="isEditMode ? 'Update and leave' : 'Save as draft & leave'"
     cancel-text="Stay on page"
     type="warning"
     confirm-button-type="primary"
     @confirm="handleLeaveDialogConfirm"
     @cancel="handleLeaveDialogCancel"
+  />
+  <ConfirmationDialog
+    v-model="showUpdateConfirmationDialog"
+    title="You want to update?"
+    message="Updating will immediately change the announcement for all users."
+    confirm-text="Continue"
+    cancel-text="Cancel"
+    type="warning"
+    confirm-button-type="primary"
+    @confirm="handleUpdateConfirmationConfirm"
+    @cancel="handleUpdateConfirmationCancel"
   />
 </template>
 
@@ -619,6 +630,7 @@ onMounted(async () => {
 
 const showConfirmationDialog = ref(false)
 const showLeaveDialog = ref(false)
+const showUpdateConfirmationDialog = ref(false)
 let pendingNavigation: (() => void) | null = null
 let isSavingOrPublishing = ref(false) // Flag to prevent blocking during save/publish
 
@@ -703,8 +715,6 @@ const handleLanguageImageRemoved = () => {
 }
 
 const handlePublishNow = async () => {
-  isSavingOrPublishing.value = true
-
   validateTitle()
   validateDescription()
 
@@ -716,7 +726,6 @@ const handlePublishNow = async () => {
   ) {
     if (!titleError.value) validateTitle()
     if (!descriptionError.value) validateDescription()
-    isSavingOrPublishing.value = false
     return
   }
 
@@ -728,10 +737,22 @@ const handlePublishNow = async () => {
       type: 'error',
       duration: 2000,
     })
-    isSavingOrPublishing.value = false
     router.push('/login')
     return
   }
+
+  // If editing a published notification, show confirmation dialog first
+  if (isEditMode.value && isEditingPublished.value) {
+    showUpdateConfirmationDialog.value = true
+    return
+  }
+
+  // Otherwise, proceed with publish/update
+  await handlePublishNowInternal()
+}
+
+const handlePublishNowInternal = async () => {
+  isSavingOrPublishing.value = true
 
   const loadingNotification = ElNotification({
     title: isEditMode.value ? 'Updating notification...' : 'Creating notification...',
@@ -974,6 +995,20 @@ const handlePublishNow = async () => {
         dangerouslyUseHTMLString: true,
       })
       redirectTab = 'draft'
+    } else if (
+      result?.data?.successfulCount !== undefined &&
+      result?.data?.successfulCount === 0 &&
+      result?.data?.failedCount !== undefined &&
+      result?.data?.failedCount > 0
+    ) {
+      // All sends failed - show warning message
+      ElNotification({
+        title: 'Warning',
+        message: `Failed to send notification to ${result.data.failedCount} user(s). The notification has been saved as a draft.`,
+        type: 'warning',
+        duration: 5000,
+      })
+      redirectTab = 'draft'
     } else if (redirectTab === 'scheduled') {
       ElNotification({
         title: 'Success',
@@ -1049,14 +1084,27 @@ const handlePublishNow = async () => {
       console.warn('Failed to clear cache:', error)
     }
 
+    // Close any open dialogs before navigation
+    showLeaveDialog.value = false
+    showConfirmationDialog.value = false
+    pendingNavigation = null
+
     if (isEditMode.value) {
       setTimeout(() => {
-        isSavingOrPublishing.value = false
         window.location.href = `/?tab=${redirectTab}`
+        // Reset flag after navigation starts (full page reload)
+        isSavingOrPublishing.value = false
       }, 500)
     } else {
-      isSavingOrPublishing.value = false
-      router.push(`/?tab=${redirectTab}`)
+      // Keep flag true until navigation completes
+      router
+        .push(`/?tab=${redirectTab}`)
+        .then(() => {
+          isSavingOrPublishing.value = false
+        })
+        .catch(() => {
+          isSavingOrPublishing.value = false
+        })
     }
   } catch (error: any) {
     isSavingOrPublishing.value = false
@@ -1328,6 +1376,11 @@ const handleSaveDraft = async () => {
       console.warn('Failed to clear cache:', error)
     }
 
+    // Close any open dialogs before navigation
+    showLeaveDialog.value = false
+    showConfirmationDialog.value = false
+    pendingNavigation = null
+
     // Keep isSavingOrPublishing true until navigation completes
     // This prevents the navigation guard from blocking the navigation
     if (isEditMode.value) {
@@ -1450,22 +1503,20 @@ onBeforeRouteLeave((to, from, next) => {
 })
 
 const handleLeaveDialogConfirm = async () => {
-  // Don't close dialog yet - wait until save completes and navigation starts
+  // Close dialog immediately to prevent it from showing again
+  showLeaveDialog.value = false
+  pendingNavigation = null
+  
   // Save as draft and then navigate
   try {
     await handleSaveDraft()
-    // Close dialog after successful save (navigation will happen in handleSaveDraft)
-    showLeaveDialog.value = false
-    // Clear pending navigation since handleSaveDraft already navigates
-    pendingNavigation = null
+    // Navigation will happen in handleSaveDraft
     // Reset flag will happen in handleSaveDraft after navigation
   } catch (error) {
-    // If save fails, keep dialog open and show error
+    // If save fails, show error but don't reopen dialog
     console.error('Failed to save draft:', error)
     // Reset flag on error
     isSavingOrPublishing.value = false
-    // Don't close dialog on error - let user try again or cancel
-    pendingNavigation = null
   }
 }
 
@@ -1473,6 +1524,28 @@ const handleLeaveDialogCancel = () => {
   showLeaveDialog.value = false
   pendingNavigation = null
   // Stay on page - navigation was already blocked by next(false)
+}
+
+const handleUpdateConfirmationConfirm = async () => {
+  // Close dialog and proceed with update
+  showUpdateConfirmationDialog.value = false
+  await handlePublishNowInternal()
+}
+
+const handleUpdateConfirmationCancel = () => {
+  // Close dialog and navigate to home without updating
+  showUpdateConfirmationDialog.value = false
+  isSavingOrPublishing.value = false
+  
+  // Navigate to home screen based on tab
+  const redirectTab = fromTab.value || 'published'
+  if (isEditMode.value) {
+    setTimeout(() => {
+      window.location.href = `/?tab=${redirectTab}`
+    }, 100)
+  } else {
+    router.push(`/?tab=${redirectTab}`)
+  }
 }
 
 const formatBakongApp = (app: BakongApp | undefined): string => {
