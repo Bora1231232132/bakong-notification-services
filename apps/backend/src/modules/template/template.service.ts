@@ -457,7 +457,7 @@ export class TemplateService implements OnModuleInit {
 
         console.log('🔵 [TEMPLATE CREATE] ✅ Translations found, calling sendWithTemplate...')
 
-        let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } = {
+        let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean } = {
           successfulCount: 0,
           failedCount: 0,
           failedUsers: [],
@@ -898,7 +898,7 @@ export class TemplateService implements OnModuleInit {
         })
 
         if (templateWithTranslations && templateWithTranslations.translations) {
-          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } =
+          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean } =
             { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let noUsersForPlatform = false
           try {
