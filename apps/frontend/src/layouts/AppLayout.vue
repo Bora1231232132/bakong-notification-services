@@ -21,8 +21,8 @@
           </el-button>
           <div class="user-avatar">
             <img
-              :src="avatarImage"
-              alt="User Avatar"
+            :src="avatarUrl"
+            alt="User Avatar"
               class="user-image"
               @click="handleGoToSettings"
             />
@@ -182,9 +182,9 @@ const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
-const userAvatar = ref(
-  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face',
-)
+const avatarUrl = computed(() => {
+  return authStore.userAvatar || avatarImage
+})
 
 const pageTitle = computed(() => {
   switch (route.name) {

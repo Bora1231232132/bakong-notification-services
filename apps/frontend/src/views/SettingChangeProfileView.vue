@@ -1,19 +1,18 @@
 <template>
   <div class="w-full min-h-screen font-['IBM_Plex_Sans'] relative">
-    <div class="px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-7xl mx-auto relative">
+    <div class="px-4 sm:px-6 lg:px-8 py-6 sm:py-8 w-full relative">
       <div
-        class="change-profile-container grid grid-cols-1 lg:grid-cols-3 grid-rows-1 lg:grid-rows-4 gap-4 lg:gap-[550px] w-full h-full max-w-7xl mx-auto"
+        class="change-profile-container grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 w-full h-full"
       >
-        <div
-          class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-[345px] mx-auto lg:mx-0 lg:w-[345px] h-auto lg:h-[232px] opacity-100 lg:row-span-2 sm:max-w-[400px] md:max-w-[345px]"
-        >
+        <div class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full h-auto opacity-100">
           <div class="flex flex-col gap-3">
             <ImageUpload
               v-model="selectedFile"
               accept-types="image/*"
-              :max-size="5 * 1024 * 1024"
-              format-text="Supported format: PNG, JPG"
-              size-text="Maximum size: 5MB"
+              :max-size="2 * 1024 * 1024"
+              format-text="Supported format: PNG, JPG (500x500px)"
+              size-text="Maximum size: 2MB"
+              :validate-aspect-ratio="false"
               @file-selected="handleFileSelected"
               @file-removed="handleFileRemoved"
               @error="handleUploadError"
@@ -23,8 +22,7 @@
             </div>
           </div>
           <div
-            class="w-full max-w-[259px] h-[56px] lg:absolute lg:w-[259px] lg:top-[355px] lg:left-0 opacity-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-[12px]"
-            style="margin-top: -86px !important"
+            class="w-full h-[56px] opacity-100 flex flex-col sm:flex-row justify-start items-center gap-3 sm:gap-[12px] !mt-4"
           >
             <button
               type="button"
@@ -48,12 +46,10 @@
             </button>
           </div>
         </div>
-        <div
-          class="lg:block lg:col-span-2 lg:row-span-3 lg:col-start-2 lg:row-start-1 flex items-center justify-center px-4 sm:px-6"
-        >
+        <div class="lg:block flex items-center justify-center px-4 sm:px-6">
           <div class="flex flex-col items-center justify-center w-full">
             <div
-              class="w-full max-w-[609.47px] h-[344.13px] rounded-[25px] bg-[#00134608] opacity-100 relative flex items-center justify-center sm:h-auto sm:min-h-[200px] md:h-[300px] lg:h-[344.13px]"
+              class="w-full h-[344.13px] rounded-[25px] bg-[#00134608] opacity-100 relative flex items-center justify-center sm:h-auto sm:min-h-[200px] md:h-[300px] lg:h-[344.13px]"
             >
               <div
                 class="flex items-center gap-3 sm:gap-4 md:gap-5 p-3 sm:p-4 md:p-5 flex-col sm:flex-row relative w-full justify-center"
@@ -106,8 +102,11 @@ import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { ArrowRight, User } from '@element-plus/icons-vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
+import { useAuthStore } from '@/stores/auth'
+import { notificationApi } from '@/services/notificationApi'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const selectedFile = ref<File | null>(null)
 const previewUrl = ref<string | null>(null)
@@ -118,7 +117,7 @@ const errors = ref({
 })
 
 const getPreviewUrl = () => {
-  return previewUrl.value || ''
+  return previewUrl.value || authStore.userAvatar || ''
 }
 
 const handleFileSelected = (file: File) => {
@@ -155,39 +154,52 @@ const handleChangeProfile = async () => {
 
   try {
     isLoading.value = true
-    console.log('Calling settings change profile API...')
+    console.log('Uploading profile picture...')
 
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // Upload the image file
+    const fileId = await notificationApi.uploadImage(selectedFile.value)
+    console.log('Image uploaded, fileId:', fileId)
 
-    const mockResponse = {
-      success: true,
-      message: 'Profile picture updated successfully',
-    }
+    // Build the image URL (use relative URL in dev, absolute in production)
+    const API_BASE_URL = import.meta.env.DEV
+      ? ''
+      : import.meta.env.VITE_API_BASE_URL !== undefined &&
+          import.meta.env.VITE_API_BASE_URL !== null
+        ? import.meta.env.VITE_API_BASE_URL
+        : 'http://localhost:4004'
+    const imageUrl = API_BASE_URL
+      ? `${API_BASE_URL}/api/v1/image/${fileId}`
+      : `/api/v1/image/${fileId}`
 
-    console.log('Mock API response:', mockResponse)
+    // Update the user avatar in the store
+    authStore.updateUserAvatar(imageUrl)
+    console.log('User avatar updated in store:', imageUrl)
 
-    if (mockResponse.success) {
-      console.log('Settings profile change successful')
-      ElNotification({
-        title: 'Success',
-        message: 'Profile picture updated successfully!',
-        type: 'success',
-        duration: 2000,
-      })
+    ElNotification({
+      title: 'Success',
+      message: 'Profile picture updated successfully!',
+      type: 'success',
+      duration: 2000,
+    })
 
-      selectedFile.value = null
+    selectedFile.value = null
+    previewUrl.value = null
 
-      setTimeout(() => {
-        router.push('/settings')
-      }, 1500)
-    }
-  } catch (error) {
+    setTimeout(() => {
+      router.push('/settings')
+    }, 1500)
+  } catch (error: any) {
     console.error('Settings change profile error:', error)
+    const errorMessage =
+      error.response?.data?.responseMessage ||
+      error.message ||
+      'Failed to update profile picture. Please try again.'
+    errors.value.profilePicture = errorMessage
     ElNotification({
       title: 'Error',
-      message: 'Failed to update profile picture. Please try again.',
+      message: errorMessage,
       type: 'error',
-      duration: 2000,
+      duration: 3000,
     })
   } finally {
     isLoading.value = false

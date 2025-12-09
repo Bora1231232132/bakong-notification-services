@@ -215,10 +215,22 @@ const processFileSuccess = (file: File, previewUrl: string, wasConverted?: boole
 
   // Show success message if image was converted
   if (wasConverted) {
+    // Determine aspect ratio message based on formatText prop and validateAspectRatio
+    let message = `Image has been automatically adjusted to correct size (max ${maxSizeText.value})`
+    
+    if (props.validateAspectRatio) {
+      const isProfilePicture = props.formatText?.includes('500x500px') || false
+      const aspectRatioMessage = isProfilePicture
+        ? 'aspect ratio (500x500px)'
+        : 'aspect ratio (2:1 W:H or 880:440)'
+      message += ` and ${aspectRatioMessage}`
+    }
+    
+    message += '.'
+    
     ElNotification({
       title: 'Image Converted',
-      message:
-        'Image has been automatically adjusted to correct size (max 3MB) and aspect ratio (2:1 W:H or 880:440).',
+      message,
       type: 'success',
       duration: 3000,
     })
