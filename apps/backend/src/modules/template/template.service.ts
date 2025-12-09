@@ -521,9 +521,14 @@ export class TemplateService implements OnModuleInit {
           // No users received the notification - keep as draft
           console.warn('⚠️ No notifications were sent (successfulCount = 0) - keeping as draft')
           
+          // Check if failures are due to invalid tokens FIRST
+          const failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens === true
+          const failedCount = sendResult.failedCount || 0
+          
           // Only set savedAsDraftNoUsers if there were NO users attempted (failedCount === 0)
+          // AND it's NOT due to invalid tokens
           // If failedCount > 0, it means users existed but all sends failed (not "no users available")
-          const hasNoUsers = sendResult.failedCount === 0 && sendResult.successfulCount === 0
+          const hasNoUsers = failedCount === 0 && sendResult.successfulCount === 0 && !failedDueToInvalidTokens
           
           if (hasNoUsers) {
             console.warn('⚠️ This might indicate:')
@@ -533,9 +538,16 @@ export class TemplateService implements OnModuleInit {
             console.warn('   4. Firebase FCM not initialized')
             console.warn('   5. No users in database')
             ;(template as any).savedAsDraftNoUsers = true
+          } else if (failedDueToInvalidTokens && failedCount > 0) {
+            // Users existed but all had invalid tokens - don't set savedAsDraftNoUsers
+            console.warn(`⚠️ All ${failedCount} send attempts failed due to invalid tokens - keeping as draft`)
+            if (sendResult.failedUsers && sendResult.failedUsers.length > 0) {
+              console.warn('❌ Failed users (invalid tokens):', sendResult.failedUsers)
+            }
+            // Don't set savedAsDraftNoUsers - this is invalid tokens, not "no users available"
           } else {
-            // Users existed but all sends failed
-            console.warn(`⚠️ All ${sendResult.failedCount} send attempts failed - keeping as draft`)
+            // Users existed but all sends failed for other reasons
+            console.warn(`⚠️ All ${failedCount} send attempts failed - keeping as draft`)
             if (sendResult.failedUsers && sendResult.failedUsers.length > 0) {
               console.warn('❌ Failed users:', sendResult.failedUsers)
             }
@@ -549,6 +561,7 @@ export class TemplateService implements OnModuleInit {
         ;(template as any).successfulCount = sendResult.successfulCount
         ;(template as any).failedCount = sendResult.failedCount
         ;(template as any).failedUsers = sendResult.failedUsers || []
+        ;(template as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
         break
       case SendType.SEND_SCHEDULE:
         console.log('Executing SEND_SCHEDULE for template:', template.id)
@@ -763,12 +776,27 @@ export class TemplateService implements OnModuleInit {
         })
 
         for (const translation of translations) {
-          const { language, title, content, image, linkPreview } = translation
+          const { language, title, content, image, linkPreview, id: translationId } = translation
 
           const titleValue = title !== undefined && title !== null ? String(title) : ''
           const contentValue = content !== undefined && content !== null ? String(content) : ''
 
-          const item = await this.translationRepo.findOneBy({ templateId: id, language: language })
+          // If translation ID is provided, use it directly; otherwise find by templateId + language
+          let item = null
+          if (translationId) {
+            item = await this.translationRepo.findOne({
+              where: { id: translationId, templateId: id },
+            })
+            if (!item) {
+              this.logger.warn(
+                `⚠️ [Template Update] Translation ID ${translationId} not found for template ${id}, falling back to language matching`,
+              )
+            }
+          }
+          // Fallback to language matching if ID not provided or not found
+          if (!item) {
+            item = await this.translationRepo.findOneBy({ templateId: id, language: language })
+          }
 
           if (item) {
             let imageId = item.imageId
@@ -956,65 +984,102 @@ export class TemplateService implements OnModuleInit {
       // Force sendType to SEND_NOW and isSent to true to keep it in published tab
       const isEditingPublished = oldTemplate.isSent === true
 
-      const newTemplateData = {
-        platforms: dto.platforms || oldTemplate.platforms,
-        bakongPlatform:
-          dto.bakongPlatform !== undefined ? dto.bakongPlatform : oldTemplate.bakongPlatform,
-        // Always keep as SEND_NOW when editing published notification, ignore DTO
-        sendType: isEditingPublished ? SendType.SEND_NOW : dto.sendType || oldTemplate.sendType,
-        // Always keep as published when editing published notification
-        isSent: isEditingPublished ? true : dto.isSent !== undefined ? dto.isSent : false,
-        // Clear schedule when editing published notification
-        sendSchedule: isEditingPublished
-          ? null
-          : dto.sendSchedule !== undefined
-            ? dto.sendSchedule
-            : oldTemplate.sendSchedule,
-        sendInterval: isEditingPublished ? null : oldTemplate.sendInterval,
-        notificationType: dto.notificationType || oldTemplate.notificationType,
-        categoryTypeId: dto.categoryTypeId ?? oldTemplate.categoryTypeId,
-        priority: oldTemplate.priority,
-        createdBy: currentUser?.username || oldTemplate.createdBy,
-        updatedBy: currentUser?.username || oldTemplate.updatedBy,
-        publishedBy: currentUser?.username || oldTemplate.publishedBy,
+      // UPDATE the existing template instead of creating a new one to preserve the ID
+      const updateFields: any = {}
+      if (dto.platforms !== undefined) {
+        updateFields.platforms = ValidationHelper.parsePlatforms(dto.platforms)
+      }
+      if (dto.bakongPlatform !== undefined) {
+        updateFields.bakongPlatform = dto.bakongPlatform
+      }
+      // Always keep as SEND_NOW when editing published notification
+      if (isEditingPublished) {
+        updateFields.sendType = SendType.SEND_NOW
+        updateFields.isSent = true
+        updateFields.sendSchedule = null // Clear any schedule to keep in published tab
+        updateFields.sendInterval = null // Clear any interval to keep in published tab
+      } else {
+        if (dto.sendType !== undefined) updateFields.sendType = dto.sendType
+        if (dto.isSent !== undefined) updateFields.isSent = dto.isSent
+        if (dto.sendSchedule !== undefined) updateFields.sendSchedule = dto.sendSchedule
+      }
+      if (dto.notificationType !== undefined) {
+        updateFields.notificationType = dto.notificationType
+      }
+      if (dto.categoryTypeId !== undefined) {
+        updateFields.categoryTypeId = dto.categoryTypeId
+      }
+      if (currentUser?.username) {
+        updateFields.updatedBy = currentUser.username
+      }
+      updateFields.updatedAt = new Date()
+
+      // Update the existing template
+      if (Object.keys(updateFields).length > 0) {
+        await this.repo.update(id, updateFields)
       }
 
-      const newTemplate = await this.repo.save(newTemplateData)
-
+      // Update translations - preserve existing IDs
       if (dto.translations && dto.translations.length > 0) {
         for (const translation of dto.translations) {
-          let imageId = null
-          if (translation.image) {
-            const imageExists = await this.imageService.validateImageExists(translation.image)
-            if (imageExists) {
-              imageId = translation.image
+          const { language, title, content, image, linkPreview, id: translationId } = translation
+
+          const titleValue = title !== undefined && title !== null ? String(title) : ''
+          const contentValue = content !== undefined && content !== null ? String(content) : ''
+
+          // If translation ID is provided, use it directly; otherwise find by templateId + language
+          let existingTranslation = null
+          if (translationId) {
+            existingTranslation = await this.translationRepo.findOne({
+              where: { id: translationId, templateId: id },
+            })
+            if (!existingTranslation) {
+              this.logger.warn(
+                `⚠️ [editPublishedNotification] Translation ID ${translationId} not found for template ${id}, falling back to language matching`,
+              )
             }
           }
+          // Fallback to language matching if ID not provided or not found
+          if (!existingTranslation) {
+            existingTranslation = await this.translationRepo.findOneBy({ templateId: id, language: language })
+          }
 
-          await this.translationRepo.save({
-            templateId: newTemplate.id,
-            language: translation.language,
-            title: translation.title,
-            content: translation.content,
-            imageId: imageId,
-            linkPreview: translation.linkPreview,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
-        }
-      } else {
-        const existingTranslations = await this.translationRepo.find({ where: { templateId: id } })
-        for (const translation of existingTranslations) {
-          await this.translationRepo.save({
-            templateId: newTemplate.id,
-            language: translation.language,
-            title: translation.title,
-            content: translation.content,
-            imageId: translation.imageId,
-            linkPreview: translation.linkPreview,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
+          let imageId = null
+          if (translation.image !== undefined) {
+            if (image && String(image).trim() !== '') {
+              const imageExists = await this.imageService.validateImageExists(image)
+              if (imageExists) {
+                imageId = image
+              }
+            } else {
+              imageId = null
+            }
+          } else if (existingTranslation) {
+            imageId = existingTranslation.imageId
+          }
+
+          if (existingTranslation) {
+            // Update existing translation
+            await this.translationRepo.update(existingTranslation.id, {
+              title: titleValue,
+              content: contentValue,
+              imageId: imageId,
+              linkPreview: linkPreview,
+              updatedAt: new Date(),
+            })
+          } else {
+            // Create new translation if it doesn't exist
+            await this.translationRepo.save({
+              templateId: id,
+              language: translation.language,
+              title: titleValue,
+              content: contentValue,
+              imageId: imageId,
+              linkPreview: translation.linkPreview,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+          }
         }
       }
 
@@ -1031,129 +1096,47 @@ export class TemplateService implements OnModuleInit {
         console.log(
           `📝 [editPublishedNotification] Editing published notification - updating data without resending FCM`,
         )
-
-        // Ensure it stays published - force isSent: true and sendType: SEND_NOW
-        await this.repo.update(newTemplate.id, {
-          isSent: true,
-          sendType: SendType.SEND_NOW,
-          sendSchedule: null, // Clear any schedule to keep in published tab
-          sendInterval: null, // Clear any interval to keep in published tab
-          updatedAt: new Date(),
-        })
         console.log(
-          `✅ [editPublishedNotification] Template updated and marked as published (no FCM resend, kept in published tab)`,
+          `✅ [editPublishedNotification] Template ${id} updated and marked as published (no FCM resend, kept in published tab)`,
         )
 
-        // Update notification records to point to new templateId BEFORE deleting old template
-        // This ensures notification center shows updated data
-        await this.notificationService.updateNotificationTemplateId(id, newTemplate.id)
-
-        // Delete old template and return the updated one
-        await this.forceDeleteTemplate(id)
-        const templateToReturn = await this.findOneRaw(newTemplate.id)
+        // Return the updated template (same ID)
+        const templateToReturn = await this.findOneRaw(id)
         return this.formatTemplateResponse(templateToReturn)
-      } else if (newTemplate.sendType === 'SEND_NOW' && dto.isSent === true) {
-        // This shouldn't happen in editPublishedNotification (only drafts go through update method)
-        // But handle it just in case - this would be publishing a draft for the first time
-        console.log(
-          `⚠️ [editPublishedNotification] Unexpected: Publishing draft in editPublishedNotification`,
-        )
+      } else {
+        // Handle non-published notifications (drafts being edited)
+        const updatedTemplate = await this.findOneRaw(id)
+        
+        if (updatedTemplate.sendType === 'SEND_SCHEDULE' && updatedTemplate.sendSchedule) {
+          console.log(
+            `Scheduling updated notification for template ${id} at ${updatedTemplate.sendSchedule}`,
+          )
 
-        // FLASH_NOTIFICATION now sends FCM push like other notification types
-        // Mobile app will display it differently (as popup/flash screen)
-        console.log(
-          `🔵 [editPublishedNotification] Publishing notification (type: ${newTemplate.notificationType}) - will send FCM push`,
-        )
-
-        const templateWithTranslations = await this.repo.findOne({
-          where: { id: newTemplate.id },
-          relations: ['translations', 'translations.image'],
-        })
-
-        if (templateWithTranslations && templateWithTranslations.translations) {
-          let sendResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } =
-            { successfulCount: 0, failedCount: 0, failedUsers: [] }
-          let noUsersForPlatform = false
-          try {
-            sendResult = await this.notificationService.sendWithTemplate(templateWithTranslations)
-            console.log(`sendWithTemplate returned:`, sendResult)
-          } catch (error: any) {
-            console.error(`❌ ERROR in sendWithTemplate for update:`, error?.message)
-            if (error?.message && error.message.includes('No users found for')) {
-              noUsersForPlatform = true
-              console.log(`⚠️ No users found for bakongPlatform - keeping as draft`)
+          // Validate if there are matching users before scheduling
+          // If no matching users, keep as draft (isSent: false)
+          if (updatedTemplate.isSent === true) {
+            const hasMatchingUsers = await this.validateMatchingUsers(updatedTemplate)
+            if (!hasMatchingUsers) {
+              console.log(
+                `🔵 [EDIT PUBLISHED] ⚠️ No matching users found for scheduled notification - keeping as draft`,
+              )
+              await this.repo.update(id, { isSent: false, updatedAt: new Date() })
+              console.log('✅ Template kept as draft due to no matching users')
             }
           }
 
-          if (noUsersForPlatform) {
-            await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
-            ;(newTemplate as any).savedAsDraftNoUsers = true
-          } else if (sendResult.successfulCount && sendResult.successfulCount > 0) {
-            await this.repo.update(newTemplate.id, { isSent: true, updatedAt: new Date() })
-            ;(newTemplate as any).successfulCount = sendResult.successfulCount
-            ;(newTemplate as any).failedCount = sendResult.failedCount
-            ;(newTemplate as any).failedUsers = sendResult.failedUsers || []
-          } else {
-            await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
-            ;(newTemplate as any).savedAsDraftNoUsers = true
-            ;(newTemplate as any).successfulCount = sendResult.successfulCount
-            ;(newTemplate as any).failedCount = sendResult.failedCount
-            ;(newTemplate as any).failedUsers = sendResult.failedUsers || []
-          }
+          this.addScheduleNotification(updatedTemplate)
+        } else if (updatedTemplate.sendType === 'SEND_INTERVAL' && updatedTemplate.sendInterval) {
+          console.log(`Scheduling updated notification with interval for template ${id}`)
+          this.addIntervalNotification(updatedTemplate)
         }
 
-        await this.forceDeleteTemplate(id)
-        const templateToReturn = await this.findOneRaw(newTemplate.id)
+        console.log(`📝 [editPublishedNotification] Template ${id} updated`)
+
+        // Return the updated template (same ID)
+        const templateToReturn = await this.findOneRaw(id)
         return this.formatTemplateResponse(templateToReturn)
-      } else {
-        // Keep as draft if isSent is false
-        await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
-        console.log(`📝 [editPublishedNotification] Template updated and kept as draft`)
       }
-
-      if (newTemplate.sendType === 'SEND_SCHEDULE' && newTemplate.sendSchedule) {
-        console.log(
-          `Scheduling updated notification for template ${newTemplate.id} at ${newTemplate.sendSchedule}`,
-        )
-
-        // Validate if there are matching users before scheduling
-        // If no matching users, keep as draft (isSent: false)
-        if (newTemplate.isSent === true) {
-          const hasMatchingUsers = await this.validateMatchingUsers(newTemplate)
-          if (!hasMatchingUsers) {
-            console.log(
-              `🔵 [EDIT PUBLISHED] ⚠️ No matching users found for scheduled notification - keeping as draft`,
-            )
-            await this.repo.update(newTemplate.id, { isSent: false, updatedAt: new Date() })
-            console.log('✅ Template kept as draft due to no matching users')
-            ;(newTemplate as any).savedAsDraftNoUsers = true
-          }
-        }
-
-        this.addScheduleNotification(newTemplate)
-      } else if (newTemplate.sendType === 'SEND_INTERVAL' && newTemplate.sendInterval) {
-        console.log(`Scheduling updated notification with interval for template ${newTemplate.id}`)
-        this.addIntervalNotification(newTemplate)
-      }
-
-      await this.forceDeleteTemplate(id)
-
-      console.log(
-        `Published notification edited: Old template ${id} deleted, new template ${newTemplate.id} created`,
-      )
-
-      // Preserve the savedAsDraftNoUsers flag if it was set
-      const templateToReturn = await this.findOneRaw(newTemplate.id)
-      if ((newTemplate as any).savedAsDraftNoUsers) {
-        ;(templateToReturn as any).savedAsDraftNoUsers = true
-      }
-      // Preserve send result properties if they were set
-      if ((newTemplate as any).successfulCount !== undefined) {
-        ;(templateToReturn as any).successfulCount = (newTemplate as any).successfulCount
-        ;(templateToReturn as any).failedCount = (newTemplate as any).failedCount
-        ;(templateToReturn as any).failedUsers = (newTemplate as any).failedUsers
-      }
-      return this.formatTemplateResponse(templateToReturn)
     } catch (error) {
       console.error('Error editing published notification:', error)
       throw new Error(error)

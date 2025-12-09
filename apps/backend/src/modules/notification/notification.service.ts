@@ -163,7 +163,7 @@ export class NotificationService {
 
   async sendWithTemplate(
     template: Template,
-  ): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[] }> {
+  ): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean }> {
     console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
     console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
 
@@ -318,13 +318,21 @@ export class NotificationService {
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
+    // Track users with empty/invalid tokens BEFORE filtering
+    const usersWithoutTokens = matchingUsers.filter((user) => !user.fcmToken?.trim())
+    const usersWithEmptyTokens = usersWithoutTokens.map((user) => ({
+      accountId: user.accountId,
+      error: 'FCM token is empty or missing',
+      errorCode: 'messaging/invalid-registration-token',
+    }))
+    
+    console.log('📤 [sendWithTemplate] Users without FCM tokens:', usersWithoutTokens.length)
+    if (usersWithoutTokens.length > 0) {
+      console.log('📤 [sendWithTemplate] Users with empty tokens:', usersWithoutTokens.map(u => u.accountId))
+    }
+
     const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
     console.log('📤 [sendWithTemplate] Users with FCM tokens:', usersWithTokens.length)
-
-    if (!usersWithTokens.length) {
-      console.warn('⚠️ [sendWithTemplate] No users have FCM tokens')
-      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
-    }
 
     // Get FCM instance for template's bakongPlatform
     const fcm = this.getFCM(template.bakongPlatform)
@@ -332,7 +340,13 @@ export class NotificationService {
       console.error(
         '❌ [sendWithTemplate] Firebase FCM is not initialized. Cannot send notifications.',
       )
-      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
+      // Return users with empty tokens as failed
+      return { 
+        successfulCount: 0, 
+        failedCount: usersWithoutTokens.length, 
+        failedUsers: usersWithoutTokens.map(u => u.accountId),
+        failedDueToInvalidTokens: usersWithoutTokens.length > 0,
+      }
     }
 
     console.log('📤 [sendWithTemplate] Validating FCM tokens...')
@@ -343,6 +357,21 @@ export class NotificationService {
     })
     const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, fcm)
     console.log('📤 [sendWithTemplate] Valid users after token validation:', validUsers.length)
+    
+    // Track users filtered out due to invalid format
+    const usersWithInvalidFormat = usersWithTokens.filter((user) => 
+      !validUsers.some((vu) => vu.accountId === user.accountId)
+    )
+    const invalidFormatUsers = usersWithInvalidFormat.map((user) => ({
+      accountId: user.accountId,
+      error: 'FCM token format is invalid',
+      errorCode: 'messaging/invalid-registration-token',
+    }))
+    
+    console.log('📤 [sendWithTemplate] Users filtered out due to invalid token format:', invalidFormatUsers.length)
+    if (invalidFormatUsers.length > 0) {
+      console.log('📤 [sendWithTemplate] Users with invalid format:', invalidFormatUsers.map(u => u.accountId))
+    }
     
     // Log token prefixes for debugging
     if (validUsers.length > 0) {
@@ -355,7 +384,14 @@ export class NotificationService {
 
     if (!validUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users have valid FCM tokens after validation')
-      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
+      // Return all users with invalid tokens as failed
+      const allInvalidUsers = [...usersWithEmptyTokens, ...invalidFormatUsers]
+      return { 
+        successfulCount: 0, 
+        failedCount: allInvalidUsers.length, 
+        failedUsers: allInvalidUsers.map(u => u.accountId),
+        failedDueToInvalidTokens: allInvalidUsers.length > 0,
+      }
     }
 
     console.log('📤 [sendWithTemplate] Sending FCM notifications to', validUsers.length, 'users...')
@@ -372,17 +408,37 @@ export class NotificationService {
       failedUsers?: string[]
     }
 
+    // Combine users filtered out BEFORE sending (empty/invalid format) with users that failed DURING sending
+    const allFailedUsers = [
+      ...usersWithEmptyTokens.map(u => u.accountId),
+      ...invalidFormatUsers.map(u => u.accountId),
+      ...(result.failedUsers || []),
+    ]
+    
+    const totalFailedCount = usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount
+    
+    // Check if failures are due to invalid tokens (empty, invalid format, or FCM errors)
+    const hasInvalidTokens = 
+      usersWithoutTokens.length > 0 || 
+      invalidFormatUsers.length > 0 ||
+      (result as any).failedDueToInvalidTokens === true
+
     console.log('✅ [sendWithTemplate] Notification send complete:', {
       successfulCount: result.successfulCount,
-      failedCount: result.failedCount,
-      failedUsers: result.failedUsers?.length || 0,
-      totalUsers: validUsers.length,
+      failedCount: totalFailedCount,
+      failedUsers: allFailedUsers.length,
+      failedDueToEmptyTokens: usersWithoutTokens.length,
+      failedDueToInvalidFormat: invalidFormatUsers.length,
+      failedDuringSend: result.failedCount,
+      totalUsers: matchingUsers.length,
+      validUsersAttempted: validUsers.length,
     })
 
     return {
       successfulCount: result.successfulCount,
-      failedCount: result.failedCount,
-      failedUsers: result.failedUsers || [],
+      failedCount: totalFailedCount,
+      failedUsers: allFailedUsers,
+      failedDueToInvalidTokens: hasInvalidTokens,
     }
   }
 
@@ -785,6 +841,7 @@ export class NotificationService {
       console.log('📨 [sendFCM] Filtered FCM users:', fcmUsers.length)
 
       for (const user of fcmUsers) {
+        let notificationId: number | null = null
         try {
           console.log('📨 [sendFCM] Sending to user:', {
             accountId: user.accountId,
@@ -793,7 +850,8 @@ export class NotificationService {
             fcmToken: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           })
 
-          let notificationId = sharedNotificationId ?? 0
+          // For individual mode, we need to create notification record first to get ID for payload
+          // But we'll delete it if FCM send fails
           if (mode === 'individual') {
             const saved = await this.storeNotification({
               accountId: user.accountId,
@@ -803,7 +861,9 @@ export class NotificationService {
               firebaseMessageId: 0,
             })
             notificationId = saved.id
-            console.log('📨 [sendFCM] Created notification record:', notificationId)
+            console.log('📨 [sendFCM] Created notification record (temporary):', notificationId)
+          } else {
+            notificationId = sharedNotificationId ?? 0
           }
 
           const notificationIdStr = String(notificationId)
@@ -837,18 +897,27 @@ export class NotificationService {
             await this.updateNotificationRecord(
               user,
               template,
-              notificationId,
+              notificationId!,
               responseString,
               mode,
             )
             console.log('✅ [sendFCM] Successfully sent to user:', user.accountId)
             if (mode === 'individual') {
-              successfulNotifications.push({ id: notificationId })
+              successfulNotifications.push({ id: notificationId! })
             } else if (mode === 'shared') {
               sharedSuccessfulCount++
             }
           } else {
             console.warn('⚠️ [sendFCM] No response from FCM for user:', user.accountId)
+            // Delete notification record if it was created but FCM send failed
+            if (mode === 'individual' && notificationId) {
+              try {
+                await this.notiRepo.delete({ id: notificationId })
+                console.log(`🗑️ [sendFCM] Deleted notification record ${notificationId} due to failed FCM send`)
+              } catch (deleteError) {
+                console.error(`❌ [sendFCM] Failed to delete notification record ${notificationId}:`, deleteError)
+              }
+            }
             // Count as failed for BOTH individual and shared modes
             if (mode === 'individual') {
               failedUsers.push({
@@ -871,6 +940,17 @@ export class NotificationService {
             'Error:',
             error.message,
           )
+          
+          // Delete notification record if it was created but FCM send failed
+          if (mode === 'individual' && notificationId) {
+            try {
+              await this.notiRepo.delete({ id: notificationId })
+              console.log(`🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${error.message}`)
+            } catch (deleteError) {
+              console.error(`❌ [sendFCM] Failed to delete notification record ${notificationId}:`, deleteError)
+            }
+          }
+          
           if (mode === 'individual') {
             failedUsers.push({
               accountId: user.accountId,
@@ -903,7 +983,7 @@ export class NotificationService {
               `⚠️ [sendFCM] Invalid token detected for user ${user.accountId} (error: ${error.code})`,
             )
             console.log(
-              `📝 [sendFCM] Keeping token for tracking - user will be skipped in future sends until mobile app updates token via API`,
+              `📝 [sendFCM] Notification record NOT created - user will be skipped in future sends until mobile app updates token via API`,
             )
             // NOTE: We keep the token because:
             // - Users are filtered by fcmToken?.trim() before sending, so invalid tokens won't cause repeated failures

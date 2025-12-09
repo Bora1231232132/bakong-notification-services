@@ -193,12 +193,40 @@ export class InboxResponseDto implements NotificationData {
     sharedFailedCount?: number,
     sharedFailedUsers?: Array<{ accountId: string; error: string; errorCode?: string }>,
   ) {
+    // Check if failures are due to invalid tokens
+    const checkInvalidTokens = (users: Array<{ accountId: string; error?: string; errorCode?: string }>): boolean => {
+      if (!users || users.length === 0) return false
+      
+      const invalidTokenErrorCodes = [
+        'messaging/registration-token-not-registered',
+        'messaging/invalid-registration-token',
+        'messaging/invalid-argument',
+      ]
+      
+      // Check if all failures are due to invalid tokens
+      const allInvalidTokens = users.every((u) => 
+        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      )
+      
+      // Or check if majority are invalid tokens (more than 50%)
+      const invalidTokenCount = users.filter((u) => 
+        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      ).length
+      const majorityInvalidTokens = invalidTokenCount > users.length / 2
+      
+      return allInvalidTokens || majorityInvalidTokens
+    }
+    
+    const allFailedUsers = mode === 'individual' ? failedUsers : (sharedFailedUsers || [])
+    const failedDueToInvalidTokens = checkInvalidTokens(allFailedUsers)
+    
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
         successfulCount: successfulNotifications.length,
         failedCount: failedUsers.length,
         failedUsers: failedUsers.map((u) => u.accountId),
+        failedDueToInvalidTokens,
       }
     } else {
       return {
@@ -206,6 +234,7 @@ export class InboxResponseDto implements NotificationData {
         successfulCount: sharedSuccessfulCount ?? 0,
         failedCount: sharedFailedCount ?? 0,
         failedUsers: (sharedFailedUsers || []).map((u) => u.accountId),
+        failedDueToInvalidTokens,
       }
     }
   }
