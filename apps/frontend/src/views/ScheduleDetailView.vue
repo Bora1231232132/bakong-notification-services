@@ -65,7 +65,7 @@ import { ElDialog, ElButton } from 'element-plus'
 import { Warning, Picture } from '@element-plus/icons-vue'
 import { typeApi } from '../services/typeApi'
 import { notificationApi } from '@/services/notificationApi'
-import { SendType, Platform } from '@/utils/helpers'
+import { SendType, Platform, getNotificationMessage } from '@/utils/helpers'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { api } from '@/services/api'
 
@@ -172,6 +172,19 @@ const handlePublishNow = async () => {
       const errorMessage =
         result?.responseMessage || result?.message || 'Failed to publish schedule'
       showInfo(errorMessage)
+      return
+    }
+
+    // Use unified message handler
+    const bakongPlatform = result?.data?.bakongPlatform || template?.bakongPlatform
+    const platformName = bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform'
+    const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+    
+    // Show appropriate message based on result
+    if (messageConfig.type === 'error' || messageConfig.type === 'warning' || messageConfig.type === 'info') {
+      // Remove HTML tags for showInfo (it doesn't support HTML)
+      const plainMessage = messageConfig.message.replace(/<strong>/g, '').replace(/<\/strong>/g, '')
+      showInfo(plainMessage)
       return
     }
 

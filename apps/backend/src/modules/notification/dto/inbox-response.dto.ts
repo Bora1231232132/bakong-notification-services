@@ -111,6 +111,30 @@ export class InboxResponseDto implements NotificationData {
     return response
   }
 
+  static getSyncResponse(
+    accountId: string,
+    bakongPlatform: string,
+    dataUpdated: boolean = true,
+    syncStatus?: {
+      status: 'SUCCESS' | 'FAILED'
+      lastSyncAt: string | null
+      lastSyncMessage: string | null
+    },
+  ) {
+    return BaseResponseDto.success({
+      message: dataUpdated
+        ? 'User data synchronized successfully'
+        : 'User data is already up to date',
+      data: {
+        accountId,
+        bakongPlatform,
+        syncedAt: new Date().toISOString(),
+        dataUpdated,
+        syncStatus: syncStatus || null,
+      },
+    })
+  }
+
   static buildBaseNotificationData(
     template: any,
     translation: any,
@@ -175,12 +199,40 @@ export class InboxResponseDto implements NotificationData {
     sharedFailedCount?: number,
     sharedFailedUsers?: Array<{ accountId: string; error: string; errorCode?: string }>,
   ) {
+    // Check if failures are due to invalid tokens
+    const checkInvalidTokens = (users: Array<{ accountId: string; error?: string; errorCode?: string }>): boolean => {
+      if (!users || users.length === 0) return false
+      
+      const invalidTokenErrorCodes = [
+        'messaging/registration-token-not-registered',
+        'messaging/invalid-registration-token',
+        'messaging/invalid-argument',
+      ]
+      
+      // Check if all failures are due to invalid tokens
+      const allInvalidTokens = users.every((u) => 
+        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      )
+      
+      // Or check if majority are invalid tokens (more than 50%)
+      const invalidTokenCount = users.filter((u) => 
+        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      ).length
+      const majorityInvalidTokens = invalidTokenCount > users.length / 2
+      
+      return allInvalidTokens || majorityInvalidTokens
+    }
+    
+    const allFailedUsers = mode === 'individual' ? failedUsers : (sharedFailedUsers || [])
+    const failedDueToInvalidTokens = checkInvalidTokens(allFailedUsers)
+    
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
         successfulCount: successfulNotifications.length,
         failedCount: failedUsers.length,
         failedUsers: failedUsers.map((u) => u.accountId),
+        failedDueToInvalidTokens,
       }
     } else {
       return {
@@ -188,6 +240,7 @@ export class InboxResponseDto implements NotificationData {
         successfulCount: sharedSuccessfulCount ?? 0,
         failedCount: sharedFailedCount ?? 0,
         failedUsers: (sharedFailedUsers || []).map((u) => u.accountId),
+        failedDueToInvalidTokens,
       }
     }
   }
@@ -225,6 +278,8 @@ export class InboxResponseDto implements NotificationData {
       notification: {
         title,
         body,
+        // Root notification field - cross-platform (iOS & Android)
+        // Do NOT put clickAction here - it's Android-specific
         ...(extra?.imageUrl ? { imageUrl: extra.imageUrl } : {}),
       },
       data: stringDataPayload,
@@ -241,7 +296,7 @@ export class InboxResponseDto implements NotificationData {
           tag: `notification_${notificationId}`,
           color: '#FF5722',
           icon: 'ic_notification',
-          clickAction: 'OPEN_NOTIFICATION',
+          clickAction: 'OPEN_APP',
           ...(extra?.imageUrl ? { imageUrl: extra.imageUrl } : {}),
         },
       },

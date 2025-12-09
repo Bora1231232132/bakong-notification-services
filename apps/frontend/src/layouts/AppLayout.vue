@@ -21,8 +21,8 @@
           </el-button>
           <div class="user-avatar">
             <img
-              :src="avatarImage"
-              alt="User Avatar"
+            :src="avatarUrl"
+            alt="User Avatar"
               class="user-image"
               @click="handleGoToSettings"
             />
@@ -153,13 +153,22 @@ import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
 // Use fallback to public folder if LogoNBC.svg is missing (handled at build time)
-import nbcLogo from '@/assets/image/LogoNBC.svg'
-import homeIcon from '@/assets/image/Home.svg'
-import calendarIcon from '@/assets/image/Schedule.svg'
-import typeIcon from '@/assets/image/type-pattern.svg'
-import chartIcon from '@/assets/image/chart--bar-target.svg'
-import settingsIcon from '@/assets/image/settings_16.svg'
-import avatarImage from '@/assets/image/avatar.svg'
+import nbcLogoImg from '@/assets/image/LogoNBC.svg'
+import homeIconImg from '@/assets/image/Home.svg'
+import calendarIconImg from '@/assets/image/Schedule.svg'
+import typeIconImg from '@/assets/image/type-pattern.svg'
+import chartIconImg from '@/assets/image/chart--bar-target.svg'
+import settingsIconImg from '@/assets/image/settings_16.svg'
+import avatarImageImg from '@/assets/image/avatar.svg'
+
+// Explicitly declare const variables for TypeScript
+const nbcLogo = nbcLogoImg
+const homeIcon = homeIconImg
+const calendarIcon = calendarIconImg
+const typeIcon = typeIconImg
+const chartIcon = chartIconImg
+const settingsIcon = settingsIconImg
+const avatarImage = avatarImageImg
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -173,9 +182,9 @@ const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
-const userAvatar = ref(
-  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face',
-)
+const avatarUrl = computed(() => {
+  return authStore.userAvatar || avatarImage
+})
 
 const pageTitle = computed(() => {
   switch (route.name) {

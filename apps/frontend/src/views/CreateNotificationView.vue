@@ -354,6 +354,7 @@ import {
   formatPlatform,
   formatCategoryType,
   getNoUsersAvailableMessage,
+  getNotificationMessage,
 } from '@/utils/helpers'
 import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import type { CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
@@ -449,6 +450,12 @@ const languageFormData = reactive<Record<string, LanguageFormData>>({
   },
 })
 const existingImageIds = reactive<Record<string, string | null>>({
+  [Language.KM]: null,
+  [Language.EN]: null,
+  [Language.JP]: null,
+})
+
+const existingTranslationIds = reactive<Record<string, number | null>>({
   [Language.KM]: null,
   [Language.EN]: null,
   [Language.JP]: null,
@@ -606,6 +613,8 @@ const loadNotificationData = async () => {
         languageFormData[lang].imageUrl = fileId ? `/api/v1/image/${fileId}` : null
         languageFormData[lang].imageFile = null
         existingImageIds[lang] = fileId || null
+        // Store translation ID to preserve it during updates
+        existingTranslationIds[lang] = t.id || null
       }
     }
   } catch (error) {
@@ -820,8 +829,10 @@ const handlePublishNowInternal = async () => {
         let imageId: string | undefined = undefined
         if (langData.imageFile) {
           try {
+            // Compress to 2MB per image (safer for batch uploads)
+            // 3 images × 2MB = 6MB total, well under 18MB limit
             const { file: compressed, dataUrl } = await compressImage(langData.imageFile, {
-              maxBytes: 10 * 1024 * 1024,
+              maxBytes: 2 * 1024 * 1024, // 2MB per image (safer for batch uploads)
               maxWidth: 2000,
               targetAspectRatio: 2 / 1, // 2:1 aspect ratio as shown in UI
               correctAspectRatio: true, // Automatically correct aspect ratio
@@ -846,13 +857,18 @@ const handlePublishNowInternal = async () => {
           imageId = existingImageIds[langKey] || undefined
         }
 
-        translations.push({
+        const translationData: any = {
           language: mapLanguageToEnum(langKey),
           title: langData.title,
           content: langData.description,
           linkPreview: langData.linkToSeeMore || undefined,
           image: imageId || '',
-        })
+        }
+        // Include translation ID when updating to preserve the same record
+        if (isEditMode.value && existingTranslationIds[langKey]) {
+          translationData.id = existingTranslationIds[langKey]
+        }
+        translations.push(translationData)
       }
     }
     let uploadedImages: {
@@ -867,6 +883,10 @@ const handlePublishNowInternal = async () => {
           file: item.file,
           language: String(item.language),
         }))
+        // Calculate total size before upload
+        const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
+        const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
+        
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -877,18 +897,27 @@ const handlePublishNowInternal = async () => {
             language: i.language,
           })),
         )
+        console.log(`Total upload size: ${totalSizeMB}MB (limit: 18MB)`)
 
         uploadedImages = await notificationApi.uploadImages(items)
         console.log('Batch uploaded images:', uploadedImages)
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading images:', error)
+        const errorMessage =
+          error?.response?.status === 413
+            ? 'Upload size too large. Images have been compressed, but total size still exceeds limit. Please try uploading fewer images or use smaller images.'
+            : error?.message ||
+              error?.response?.data?.responseMessage ||
+              'Failed to upload images. Please ensure total size is under 18MB and try again.'
+        
         ElNotification({
-          title: 'Error',
-          message: 'Failed to upload images. Please ensure each is <= 10MB and try again.',
+          title: 'Upload Error',
+          message: errorMessage,
           type: 'error',
-          duration: 2000,
+          duration: 5000,
         })
         loadingNotification.close()
+        isSavingOrPublishing.value = false
         return
       }
     }
@@ -941,13 +970,18 @@ const handlePublishNowInternal = async () => {
         isSavingOrPublishing.value = false
         return
       }
-      translations.push({
+      const fallbackTranslationData: any = {
         language: mapLanguageToEnum(activeLanguage.value),
         title: currentTitle.value,
         content: currentDescription.value,
         linkPreview: currentLinkToSeeMore.value || undefined,
         image: fallbackImageId,
-      })
+      }
+      // Include translation ID when updating to preserve the same record
+      if (isEditMode.value && existingTranslationIds[activeLanguage.value]) {
+        fallbackTranslationData.id = existingTranslationIds[activeLanguage.value]
+      }
+      translations.push(fallbackTranslationData)
     }
 
     const templateData: CreateTemplateRequest = {
@@ -982,43 +1016,47 @@ const handlePublishNowInternal = async () => {
 
     loadingNotification.close()
 
-    // Check if saved as draft due to no users
-    if (result?.data?.savedAsDraftNoUsers) {
-      // Format platform name using helper function
-      const platformName = formatBakongApp(formData.platform)
-
-      ElNotification({
-        title: 'Info',
-        message: getNoUsersAvailableMessage(platformName),
-        type: 'info',
-        duration: 3000,
-        dangerouslyUseHTMLString: true,
-      })
-      redirectTab = 'draft'
-    } else if (
-      result?.data?.successfulCount !== undefined &&
-      result?.data?.successfulCount === 0 &&
-      result?.data?.failedCount !== undefined &&
-      result?.data?.failedCount > 0
-    ) {
-      // All sends failed - show warning message
-      ElNotification({
-        title: 'Warning',
-        message: `Failed to send notification to ${result.data.failedCount} user(s). The notification has been saved as a draft.`,
-        type: 'warning',
-        duration: 5000,
-      })
-      redirectTab = 'draft'
-    } else if (redirectTab === 'scheduled') {
+    // Special handling for updating published notifications
+    if (isEditMode.value && isEditingPublished.value) {
+      // When updating a published notification, show update success message
       ElNotification({
         title: 'Success',
-        message: isEditMode.value
-          ? 'Notification updated and scheduled successfully!'
-          : 'Notification created and scheduled successfully!',
+        message: `Notification for ${formatBakongApp(formData.platform)} has been updated successfully!`,
         type: 'success',
-        duration: 2000,
+        duration: 3000,
       })
+      // Stay in published tab
+      redirectTab = 'published'
     } else {
+      // Use unified message handler for draft/failure cases
+      const platformName = formatBakongApp(formData.platform)
+      const bakongPlatform = formData.platform || result?.data?.bakongPlatform
+      const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+      
+      // Only show notification if it's not a success (success messages are handled separately below)
+      if (messageConfig.type !== 'success') {
+        ElNotification({
+          title: messageConfig.title,
+          message: messageConfig.message,
+          type: messageConfig.type,
+          duration: messageConfig.duration,
+          dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+        })
+        
+        // Redirect to draft tab for failures
+        if (messageConfig.type === 'error' || messageConfig.type === 'warning' || messageConfig.type === 'info') {
+          redirectTab = 'draft'
+        }
+      } else if (redirectTab === 'scheduled') {
+        ElNotification({
+          title: 'Success',
+          message: isEditMode.value
+            ? 'Notification updated and scheduled successfully!'
+            : 'Notification created and scheduled successfully!',
+          type: 'success',
+          duration: 2000,
+        })
+      } else {
       // Get successful count from response if available
       // Debug: log the full result to see the structure
       console.log('📊 [CreateNotificationView] Full result:', result)
@@ -1075,6 +1113,7 @@ const handlePublishNowInternal = async () => {
       // Log failed users to console if any
       if (failedCount > 0 && failedUsers.length > 0) {
         console.warn(`⚠️ Failed to send notification to ${failedCount} user(s):`, failedUsers)
+      }
       }
     }
     try {
@@ -1239,13 +1278,18 @@ const handleSaveDraft = async () => {
         continue
       }
 
-      translations.push({
+      const translationData: any = {
         language: mapLanguageToEnum(langKey),
         title: title || '',
         content: content || '',
         linkPreview: langData.linkToSeeMore || undefined,
         image: imageId || '',
-      })
+      }
+      // Include translation ID when updating to preserve the same record
+      if (isEditMode.value && existingTranslationIds[langKey]) {
+        translationData.id = existingTranslationIds[langKey]
+      }
+      translations.push(translationData)
     }
     let uploadedImages: {
       language?: string
@@ -1259,6 +1303,10 @@ const handleSaveDraft = async () => {
           file: item.file,
           language: String(item.language),
         }))
+        // Calculate total size before upload
+        const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
+        const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
+        
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -1269,6 +1317,7 @@ const handleSaveDraft = async () => {
             language: i.language,
           })),
         )
+        console.log(`Total upload size: ${totalSizeMB}MB (limit: 18MB)`)
 
         uploadedImages = await notificationApi.uploadImages(items)
         console.log('Batch uploaded images:', uploadedImages)
@@ -1325,13 +1374,18 @@ const handleSaveDraft = async () => {
       const draftTitle = currentTitle.value?.trim() || ''
       const draftDescription = currentDescription.value?.trim() || ''
 
-      translations.push({
+      const draftTranslationData: any = {
         language: mapLanguageToEnum(activeLanguage.value),
         title: draftTitle || '',
         content: draftDescription || '',
         linkPreview: currentLinkToSeeMore.value || undefined,
         image: fallbackImageId || '',
-      })
+      }
+      // Include translation ID when updating to preserve the same record
+      if (isEditMode.value && existingTranslationIds[activeLanguage.value]) {
+        draftTranslationData.id = existingTranslationIds[activeLanguage.value]
+      }
+      translations.push(draftTranslationData)
     }
     const templateData: CreateTemplateRequest = {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],

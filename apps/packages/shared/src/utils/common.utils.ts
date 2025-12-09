@@ -255,9 +255,11 @@ export class ValidationUtils {
     }
   }
 
-  static normalizeEnum(enumValue: string): string {
-    if (!enumValue) return ''
-    return enumValue
+  static normalizeEnum(enumValue: string | number | null | undefined): string {
+    if (!enumValue && enumValue !== 0) return ''
+    // Convert to string first to handle numbers and other types
+    const stringValue = String(enumValue)
+    return stringValue
       .replace(/[^a-zA-Z0-9_]/g, '')
       .toUpperCase()
       .trim()

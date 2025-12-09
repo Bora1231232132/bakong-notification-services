@@ -39,15 +39,15 @@ export class NotificationInboxDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
-  @Transform(({ value }) => parseInt(value) || 1)
-  page?: number = 1
+  @Transform(({ value }) => (value !== null && value !== undefined ? parseInt(value) : undefined))
+  page?: number
 
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(100)
-  @Transform(({ value }) => parseInt(value) || 10)
-  size?: number = 10
+  @Transform(({ value }) => (value !== null && value !== undefined ? parseInt(value) : undefined))
+  size?: number
 
   @IsNotEmpty({
     message: 'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',

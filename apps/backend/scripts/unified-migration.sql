@@ -660,6 +660,111 @@ END$$;
 \echo ''
 
 -- ============================================================================
+-- Step 7.6: Add syncStatus column to bakong_user table
+-- ============================================================================
+\echo '📊 Step 7.6: Adding syncStatus column to bakong_user table...'
+
+-- Check if column already exists (safety check)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'bakong_user' 
+        AND column_name = 'syncStatus'
+    ) THEN
+        -- Add syncStatus column
+        ALTER TABLE bakong_user 
+        ADD COLUMN "syncStatus" JSONB DEFAULT '{
+          "status": "SUCCESS",
+          "lastSyncAt": null,
+          "lastSyncMessage": null
+        }'::jsonb;
+        
+        RAISE NOTICE '✅ Added syncStatus column to bakong_user table';
+    ELSE
+        RAISE NOTICE 'ℹ️  syncStatus column already exists, skipping';
+    END IF;
+END $$;
+
+-- Create GIN index on entire syncStatus JSONB column for faster JSON queries
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_indexes 
+        WHERE indexname = 'idx_bakong_user_sync_status_gin'
+    ) THEN
+        CREATE INDEX idx_bakong_user_sync_status_gin 
+        ON bakong_user USING GIN ("syncStatus");
+        
+        RAISE NOTICE '✅ Created GIN index on syncStatus';
+    ELSE
+        RAISE NOTICE 'ℹ️  GIN index already exists, skipping';
+    END IF;
+END $$;
+
+-- Create BTREE index on syncStatus->>'status' for status filtering
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_indexes 
+        WHERE indexname = 'idx_bakong_user_sync_status'
+    ) THEN
+        CREATE INDEX idx_bakong_user_sync_status 
+        ON bakong_user USING BTREE (("syncStatus"->>'status'));
+        
+        RAISE NOTICE '✅ Created BTREE index on syncStatus status';
+    ELSE
+        RAISE NOTICE 'ℹ️  BTREE status index already exists, skipping';
+    END IF;
+END $$;
+
+-- Create BTREE index on syncStatus->>'lastSyncAt' for date-based queries
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_indexes 
+        WHERE indexname = 'idx_bakong_user_sync_last_sync_at'
+    ) THEN
+        -- Create partial index for non-NULL values
+        CREATE INDEX idx_bakong_user_sync_last_sync_at 
+        ON bakong_user USING BTREE (((syncStatus->>'lastSyncAt')::timestamp))
+        WHERE syncStatus->>'lastSyncAt' IS NOT NULL;
+        
+        RAISE NOTICE '✅ Created BTREE index on syncStatus lastSyncAt';
+    ELSE
+        RAISE NOTICE 'ℹ️  BTREE lastSyncAt index already exists, skipping';
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE '⚠️  Could not create lastSyncAt index (may have NULL values): %', SQLERRM;
+END $$;
+
+-- Update existing users with default sync status if they don't have one
+UPDATE bakong_user 
+SET "syncStatus" = '{
+  "status": "SUCCESS",
+  "lastSyncAt": null,
+  "lastSyncMessage": "Migration: existing user"
+}'::jsonb
+WHERE "syncStatus" IS NULL;
+
+-- Log how many users were updated
+DO $$
+DECLARE
+    updated_count INTEGER;
+BEGIN
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    RAISE NOTICE '✅ Updated % users with default syncStatus', updated_count;
+END $$;
+
+\echo '   ✅ syncStatus migration completed'
+\echo ''
+
+-- ============================================================================
 -- Step 8: Add Comments
 -- ============================================================================
 \echo '📝 Step 8: Adding column comments...'
@@ -671,6 +776,7 @@ COMMENT ON COLUMN "category_type"."mimeType" IS 'MIME type of the icon (e.g., im
 COMMENT ON COLUMN "category_type"."originalFileName" IS 'Original filename of the uploaded icon';
 COMMENT ON COLUMN "template"."categoryTypeId" IS 'Foreign key reference to category_type table';
 COMMENT ON COLUMN notification."sendCount" IS 'Number of times notification has been sent';
+COMMENT ON COLUMN bakong_user."syncStatus" IS 'JSONB column tracking sync status. Structure: {"status": "SUCCESS"|"FAILED", "lastSyncAt": "ISO8601 timestamp", "lastSyncMessage": "message string"}';
 
 \echo '   ✅ Comments added'
 \echo ''
@@ -713,6 +819,7 @@ WHERE schemaname = 'public';
 \echo '💡 Next steps:'
 \echo '   1. Verify tables: \dt'
 \echo '   2. Check template columns: \d template'
-\echo '   3. Restart your application'
+\echo '   3. Check syncStatus column: SELECT "accountId", "syncStatus" FROM bakong_user LIMIT 5;'
+\echo '   4. Restart your application'
 \echo ''
 

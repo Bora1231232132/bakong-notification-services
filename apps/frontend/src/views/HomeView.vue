@@ -103,6 +103,7 @@ import {
   formatBakongApp,
   getFormattedPlatformName,
   getNoUsersAvailableMessage,
+  getNotificationMessage,
 } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
@@ -869,38 +870,40 @@ const handlePublishNotification = async (notification: Notification) => {
           return
         }
 
-        // Check if template was saved as draft due to no users
-        if (result?.data?.savedAsDraftNoUsers) {
-          // Template was kept as draft - show info message and stay in draft tab
-          const platformName = getFormattedPlatformName({
-            platformName: result?.data?.platformName,
-            bakongPlatform: result?.data?.bakongPlatform,
-            notification: notification as any,
-          })
-
+        // Use unified message handler for draft/failure cases
+        const platformName = getFormattedPlatformName({
+          platformName: result?.data?.platformName,
+          bakongPlatform: result?.data?.bakongPlatform,
+          notification: notification as any,
+        })
+        
+              const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
+              const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+        
+        // Show notification for non-success cases (errors, warnings, info)
+        if (messageConfig.type !== 'success') {
           ElNotification({
-            title: 'Info',
-            message: getNoUsersAvailableMessage(platformName),
-            type: 'info',
-            duration: 3000,
-            dangerouslyUseHTMLString: true,
+            title: messageConfig.title,
+            message: messageConfig.message,
+            type: messageConfig.type,
+            duration: messageConfig.duration,
+            dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
           })
-          activeTab.value = 'draft'
-        } else if (
-          result?.data?.successfulCount !== undefined &&
-          result?.data?.successfulCount === 0 &&
-          result?.data?.failedCount !== undefined &&
-          result?.data?.failedCount > 0
-        ) {
-          // All sends failed - show error message
-          ElNotification({
-            title: 'Warning',
-            message: `Failed to send notification to ${result.data.failedCount} user(s). The notification has been saved as a draft.`,
-            type: 'warning',
-            duration: 5000,
-          })
-          activeTab.value = 'draft'
-        } else if (
+          
+          // Stay in draft tab for failures
+          if (messageConfig.type === 'error' || messageConfig.type === 'warning' || messageConfig.type === 'info') {
+            activeTab.value = 'draft'
+            cachedNotifications = null
+            cacheTimestamp = 0
+            clearCacheFromStorage()
+            await fetchNotifications(true)
+            applyFilters()
+            return
+          }
+        }
+        
+        // Handle success cases (only reached if messageConfig.type === 'success')
+        if (
           result?.data?.successfulCount !== undefined &&
           result?.data?.successfulCount > 0
         ) {
@@ -995,13 +998,22 @@ const handlePublishNotification = async (notification: Notification) => {
               }
               activeTab.value = 'published'
             } else {
-              // No users received the notification - show warning and keep in draft
+              // No users received the notification - use unified message handler
+              const platformName = getFormattedPlatformName({
+                platformName: result?.data?.platformName,
+                bakongPlatform: result?.data?.bakongPlatform,
+                notification: notification as any,
+              })
+              
+              const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
+              const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+              
               ElNotification({
-                title: 'Info',
-                message:
-                  'Notification could not be sent. No users received the notification. It has been kept as a draft.',
-                type: 'info',
-                duration: 3000,
+                title: messageConfig.title,
+                message: messageConfig.message,
+                type: messageConfig.type,
+                duration: messageConfig.duration,
+                dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
               })
               activeTab.value = 'draft'
             }
@@ -1025,15 +1037,42 @@ const handlePublishNotification = async (notification: Notification) => {
       error?.message ||
       'Failed to publish notification'
 
-    // Check if it's a "no users" error
-    if (
+    // Use unified message handler for error cases
+    const errorData = error?.response?.data?.data || {}
+    const failedDueToInvalidTokens = errorData.failedDueToInvalidTokens === true
+    const failedCount = errorData.failedCount || 0
+    
+    if (failedDueToInvalidTokens && failedCount > 0) {
+      // Failures due to invalid tokens - use unified message handler
+      const bakongPlatform = errorData.bakongPlatform || (notification as any)?.bakongPlatform
+      const platformName = bakongPlatform ? formatBakongApp(bakongPlatform) : undefined
+      const messageConfig = getNotificationMessage(
+        { failedDueToInvalidTokens: true, failedCount },
+        platformName,
+        bakongPlatform,
+      )
+      ElNotification({
+        title: messageConfig.title,
+        message: messageConfig.message,
+        type: messageConfig.type,
+        duration: messageConfig.duration,
+        dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+      })
+      activeTab.value = 'draft'
+      cachedNotifications = null
+      cacheTimestamp = 0
+      clearCacheFromStorage()
+      await fetchNotifications(true)
+      applyFilters()
+    } else if (
       errorMessage.includes('NO_USERS_FOR_BAKONG_PLATFORM') ||
       errorMessage.includes('No users found for')
     ) {
       // Get platform name from error response data or notification
+      const bakongPlatform = errorData.bakongPlatform || (notification as any)?.bakongPlatform
       const platformName = getFormattedPlatformName({
-        platformName: error?.response?.data?.data?.platformName,
-        bakongPlatform: error?.response?.data?.data?.bakongPlatform,
+        platformName: errorData.platformName,
+        bakongPlatform: bakongPlatform,
         notification: notification as any,
       })
 

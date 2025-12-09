@@ -44,7 +44,7 @@
                 letter-spacing: 0%;
               "
             >
-              Supported format: PNG (120x120px)
+              Supported format: PNG, JPG (500x500px)
             </p>
             <p
               class="text-[#011246]"
@@ -57,13 +57,13 @@
                 text-align: right;
               "
             >
-              Maximum size: 800KB
+              Maximum size: 2MB
             </p>
           </div>
           <input
             ref="fileInput"
             type="file"
-            accept="image/png"
+            accept="image/png,image/jpeg,image/jpg"
             @change="handleFileSelect"
             class="hidden"
           />
@@ -166,12 +166,14 @@ const handleFileDrop = (event: DragEvent) => {
 }
 
 const processFile = (file: File) => {
-  if (file.type !== 'image/png') {
-    alert('Please select a PNG file')
+  const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg']
+  if (!allowedTypes.includes(file.type)) {
+    alert('Please select a PNG or JPG file')
     return
   }
-  if (file.size > 819200) {
-    alert('File size must be less than 800KB')
+  const maxSize = 2 * 1024 * 1024 // 2MB
+  if (file.size > maxSize) {
+    alert('File size must be less than 2MB')
     return
   }
 

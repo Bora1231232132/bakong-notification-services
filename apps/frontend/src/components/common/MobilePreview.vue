@@ -3,15 +3,16 @@
     <div
       class="relative h-[651.49px] w-[322.07px] rounded-[34px] overflow-hidden p-[30px] bg-white-100"
     >
-      <img :src="bg" alt="" class="absolute inset-0 h-full w-full object-top" />
+      <img :src="bg" alt="" class=" absolute inset-0 h-full w-full object-top" />
       <section
         class="absolute bottom-[0px] left-[2px] bottom-[2px] w-[319.00px] h-[521.19px] justify-center items-center bg-white/97 backdrop-blur-[3.01882px] border ring-1 ring-black/5 rounded-t-[18.1129px] rounded-b-[39.2447px] shadow-[0_12px_40px_rgba(0,0,0,0.25)] overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
         <div
-          class="absolute inset-x-0 top-0 h-[159.5px] rounded-t-[18.1129px] overflow-hidden"
+          class="image-container absolute top-0 h-[159.5px] rounded-t-[18.1129px]"
           :class="props.image ? 'bg-transparent' : 'bg-[#E2E2E2]'"
+          style="left: -1px; right: -1px; width: calc(100% + 5px);"
         >
           <div
             class="absolute left-1/2 -translate-x-1/2 top-[5px] w-[46px] h-[6px] rounded-full bg-gray-400 z-10"
@@ -20,7 +21,8 @@
             v-if="props.image"
             :src="displayImage"
             alt=""
-            class="absolute inset-0 w-full h-full object-cover rounded-t-[18.1129px]"
+            class="absolute inset-0 rounded-t-[18.1129px]"
+            style="width: 100%; height: 100%; object-fit: cover;"
           />
           <div v-else class="grid place-items-center h-full w-full">
             <img :src="displayImage" alt="" class="w-full h-full object-contain" />
@@ -77,9 +79,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import bg from '@/assets/image/Home-Defualt.png'
+import bgImage from '@/assets/image/Home-Defualt.png'
 import headerImg from '@/assets/image/empty-image.svg'
 import { formatCategoryType } from '@/utils/helpers'
+
+const bg = bgImage
 
 interface Props {
   title?: string
@@ -223,5 +227,29 @@ const currentDate = computed(() => {
 
 .scrollable-content::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
+}
+
+/* Ensure image container spans full width of section */
+.image-container {
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Ensure image fills container completely - full width, no gaps */
+.image-container img {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 </style>

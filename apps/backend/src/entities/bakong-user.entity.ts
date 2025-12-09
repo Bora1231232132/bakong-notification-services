@@ -39,4 +39,11 @@ export class BakongUser {
 
   @UpdateDateColumn({ nullable: true, type: 'timestamp' })
   updatedAt?: Date
+
+  @Column({ nullable: true, type: 'jsonb' })
+  syncStatus?: {
+    status: 'SUCCESS' | 'FAILED'
+    lastSyncAt: string | null
+    lastSyncMessage: string | null
+  }
 }

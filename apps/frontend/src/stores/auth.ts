@@ -35,6 +35,9 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('auth_token'))
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const userAvatar = ref<string | null>(
+    localStorage.getItem('user_avatar') || null,
+  )
 
   const isAuthenticated = computed(() => !!token.value && !!user.value)
 
@@ -43,6 +46,14 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem('auth_token', newToken)
     } else {
       localStorage.removeItem('auth_token')
+    }
+  })
+
+  watch(userAvatar, (newAvatar) => {
+    if (newAvatar) {
+      localStorage.setItem('user_avatar', newAvatar)
+    } else {
+      localStorage.removeItem('user_avatar')
     }
   })
 
@@ -180,8 +191,14 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     user.value = null
     token.value = null
+    userAvatar.value = null
     localStorage.removeItem('auth_token')
     localStorage.removeItem('user')
+    localStorage.removeItem('user_avatar')
+  }
+
+  const updateUserAvatar = (avatarUrl: string | null) => {
+    userAvatar.value = avatarUrl
   }
 
   const clearError = () => {
@@ -250,6 +267,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     loading,
     error,
+    userAvatar,
     isAuthenticated,
     isAdmin,
     isNormalUser,
@@ -264,5 +282,6 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     isTokenExpired,
     checkAndRefreshToken,
+    updateUserAvatar,
   }
 })

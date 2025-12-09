@@ -145,6 +145,45 @@ export const syncUsers = async (): Promise<SyncUsersResponse> => {
   return result as SyncUsersResponse
 }
 
+export interface InboxRequest {
+  fcmToken: string
+  accountId: string
+  platform?: string
+  participantCode?: string
+  language?: string
+  bakongPlatform: string
+  page?: number | null
+  size?: number | null
+}
+
+export interface InboxSyncResponse {
+  accountId: string
+  bakongPlatform: string
+  syncedAt: string
+}
+
+export interface InboxNotificationCenterResponse {
+  notifications: any[]
+  page: number
+  size: number
+  itemCount: number
+  pageCount: number
+  totalCount: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
+  userBakongPlatform?: string
+}
+
+export const testInbox = async (data: InboxRequest): Promise<any> => {
+  const response = await api.post('/api/v1/notification/inbox', data)
+  console.log('🔍 [testInbox] Full API response:', response.data)
+  
+  // Backend returns BaseResponseDto format:
+  // { responseCode, errorCode, responseMessage, data }
+  // Return the full response object so TestView can access all fields
+  return response.data
+}
+
 const mapBackendStatusToFrontend = (backendStatus: string): string => {
   switch (backendStatus) {
     case 'SENT':
@@ -427,6 +466,40 @@ export const notificationApi = {
         Array.isArray(items) && (items as any[])[0] && (items as any[])[0].file
           ? (items as any)
           : (items as File[]).map((f) => ({ file: f }))
+
+      // Validate total size before upload (safety check)
+      // Nginx limit is 20MB, but we'll use 18MB as safe limit (leaves 2MB buffer for FormData overhead)
+      const MAX_TOTAL_SIZE = 18 * 1024 * 1024 // 18MB
+      const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file (backend limit)
+      
+      let totalSize = 0
+      const sizeErrors: string[] = []
+      
+      normalized.forEach((item, index) => {
+        const fileSize = item.file.size
+        
+        // Check individual file size
+        if (fileSize > MAX_SINGLE_FILE_SIZE) {
+          sizeErrors.push(
+            `File ${index + 1} (${item.file.name}) is ${(fileSize / 1024 / 1024).toFixed(2)}MB, exceeds 10MB limit`,
+          )
+        }
+        
+        totalSize += fileSize
+      })
+      
+      // Check total size
+      if (totalSize > MAX_TOTAL_SIZE) {
+        const totalMB = (totalSize / 1024 / 1024).toFixed(2)
+        throw new Error(
+          `Total upload size (${totalMB}MB) exceeds limit (18MB). Please compress images further or upload fewer images.`,
+        )
+      }
+      
+      // Check individual file errors
+      if (sizeErrors.length > 0) {
+        throw new Error(sizeErrors.join('; '))
+      }
 
       const languages: string[] = []
       normalized.forEach((item) => {

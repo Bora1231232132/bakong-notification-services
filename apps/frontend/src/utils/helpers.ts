@@ -130,6 +130,103 @@ export const getNoUsersAvailableMessage = (platformName: string): string => {
   return `No users are available yet for <strong>${platformName}</strong>, so it will be saved as a draft and sent once users are available.`
 }
 
+/**
+ * Notification message result interface
+ */
+export interface NotificationMessageResult {
+  title: string
+  message: string
+  type: 'success' | 'warning' | 'error' | 'info'
+  duration: number
+  dangerouslyUseHTMLString?: boolean
+}
+
+/**
+ * Determines the appropriate notification message based on send result
+ * @param result - The API response result data
+ * @param platformName - The formatted platform name (optional)
+ * @param bakongPlatform - The raw bakongPlatform value (optional, e.g., "BAKONG", "BAKONG_TOURIST")
+ * @returns Notification message configuration
+ */
+export const getNotificationMessage = (
+  result: any,
+  platformName?: string,
+  bakongPlatform?: string,
+): NotificationMessageResult => {
+  const failedDueToInvalidTokens = result?.failedDueToInvalidTokens === true
+  const failedCount = result?.failedCount || 0
+  const successfulCount = result?.successfulCount || 0
+  const savedAsDraftNoUsers = result?.savedAsDraftNoUsers === true
+  
+  // Get formatted platform name with bakongPlatform info
+  const formattedPlatform = platformName || (bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform')
+  const platformInfo = bakongPlatform ? ` for <strong>${formattedPlatform}</strong>` : ''
+
+  // Case 1: Invalid tokens (highest priority)
+  if (failedDueToInvalidTokens && failedCount > 0) {
+    return {
+      title: 'Invalid User Data',
+      message: `Failed to send notification${platformInfo} to ${failedCount} user(s) due to invalid user data (wrong FCM tokens). The notification has been saved as a draft. Please sync user data or wait for mobile apps to update their tokens.`,
+      type: 'error',
+      duration: 6000,
+      dangerouslyUseHTMLString: !!bakongPlatform,
+    }
+  }
+
+  // Case 2: No users available (only if no failures and savedAsDraftNoUsers is true)
+  if (savedAsDraftNoUsers && failedCount === 0 && successfulCount === 0) {
+    return {
+      title: 'Info',
+      message: getNoUsersAvailableMessage(formattedPlatform),
+      type: 'info',
+      duration: 3000,
+      dangerouslyUseHTMLString: true,
+    }
+  }
+
+  // Case 3: All sends failed (generic failure)
+  if (successfulCount === 0 && failedCount > 0) {
+    return {
+      title: 'Warning',
+      message: `Failed to send notification${platformInfo} to ${failedCount} user(s). The notification has been saved as a draft.`,
+      type: 'warning',
+      duration: 5000,
+      dangerouslyUseHTMLString: !!bakongPlatform,
+    }
+  }
+
+  // Case 4: Partial success (some succeeded, some failed)
+  if (successfulCount > 0 && failedCount > 0) {
+    return {
+      title: 'Partial Success',
+      message: `Notification${platformInfo} sent to ${successfulCount} user(s) successfully. Failed to send to ${failedCount} user(s).`,
+      type: 'warning',
+      duration: 5000,
+      dangerouslyUseHTMLString: !!bakongPlatform,
+    }
+  }
+
+  // Case 5: Full success (default - should be handled by caller, but included for completeness)
+  if (successfulCount > 0 && failedCount === 0) {
+    return {
+      title: 'Success',
+      message: `Notification${platformInfo} sent successfully to ${successfulCount} user(s).`,
+      type: 'success',
+      duration: 3000,
+      dangerouslyUseHTMLString: !!bakongPlatform,
+    }
+  }
+
+  // Default fallback
+  return {
+    title: 'Info',
+    message: `Notification${platformInfo} has been saved as a draft.`,
+    type: 'info',
+    duration: 3000,
+    dangerouslyUseHTMLString: !!bakongPlatform,
+  }
+}
+
 export const formatFileSize = (size: number) => {
   if (size < 1024) return size + ' B'
   if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
@@ -314,7 +411,7 @@ export const processFile = async (
   onError: (error: string) => void,
   validateAspectRatio: boolean = true,
   acceptTypes: string = 'image/*',
-  maxSize: number = 5 * 1024 * 1024,
+  maxSize: number = 2 * 1024 * 1024, // 2MB default (safer for batch uploads)
   autoConvert: boolean = true, // New parameter: automatically convert instead of rejecting
   targetAspectRatio: number = 2 / 1, // Default to 2:1 as shown in UI
 ) => {

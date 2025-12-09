@@ -29,8 +29,11 @@ export class ValidationHelper {
     let parsedArray: string[] = []
 
     if (Array.isArray(platforms)) {
-      // Already an array - normalize values
-      parsedArray = platforms.map((p) => this.normalizeEnum(p))
+      // Already an array - normalize values, ensuring they're strings first
+      parsedArray = platforms
+        .map((p) => (p != null ? String(p) : ''))
+        .map((p) => this.normalizeEnum(p))
+        .filter((p) => p.length > 0)
     } else if (typeof platforms === 'string') {
       const platformsStr = platforms.trim()
 
@@ -46,6 +49,7 @@ export class ValidationHelper {
             parsedArray = content
               .split(',')
               .map((p) => p.trim().replace(/^["']|["']$/g, '')) // Remove surrounding quotes
+              .map((p) => (p != null ? String(p) : '')) // Ensure string
               .map((p) => this.normalizeEnum(p)) // Normalize each platform
               .filter((p) => p.length > 0)
             if (parsedArray.length === 0) {
@@ -61,11 +65,17 @@ export class ValidationHelper {
         try {
           const parsed = JSON.parse(platformsStr)
           if (Array.isArray(parsed)) {
-            parsedArray = parsed.map((p) => this.normalizeEnum(p))
+            parsedArray = parsed
+              .map((p) => (p != null ? String(p) : ''))
+              .map((p) => this.normalizeEnum(p))
+              .filter((p) => p.length > 0)
           } else if (typeof parsed === 'object' && parsed !== null) {
             // Handle object format: {"platforms": ["ANDROID"]}
             if (Array.isArray(parsed.platforms)) {
-              parsedArray = parsed.platforms.map((p) => this.normalizeEnum(p))
+              parsedArray = parsed.platforms
+                .map((p) => (p != null ? String(p) : ''))
+                .map((p) => this.normalizeEnum(p))
+                .filter((p) => p.length > 0)
             } else {
               parsedArray = ['ALL']
             }
