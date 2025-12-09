@@ -106,20 +106,20 @@ export class BaseFunctionHelper {
       // Empty string means "no token" (app deleted/reinstalled), so we should clear old token
       const updatesToApply: any = {}
 
-      // CRITICAL: Always process fcmToken if provided (even if empty string)
-      // Empty string means app was deleted - we MUST clear the old token
-      if (updateData.fcmToken !== undefined) {
+      // Only update fcmToken if it's provided AND has an actual value (not null/empty)
+      // If null or empty string, keep the old token (same behavior as other fields)
+      if (updateData.fcmToken !== undefined && updateData.fcmToken !== null && updateData.fcmToken !== '') {
         const currentToken = user.fcmToken || ''
-        const newToken = updateData.fcmToken || ''
+        const newToken = updateData.fcmToken
 
-        // Check if token format is valid (if not empty)
-        if (newToken && newToken.length < 50) {
+        // Check if token format is valid
+        if (newToken.length < 50) {
           console.warn(
             `⚠️ [syncUser] User ${accountId} provided suspiciously short fcmToken: "${newToken}" (length: ${newToken.length}). This might be invalid!`,
           )
         }
 
-        // ALWAYS add to updatesToApply - we will update even if same value
+        // Add to updatesToApply - will update with new token
         updatesToApply.fcmToken = updateData.fcmToken
         console.log(`📝 [syncUser] fcmToken WILL BE UPDATED for user ${accountId}:`, {
           current: currentToken
@@ -127,32 +127,58 @@ export class BaseFunctionHelper {
             : 'EMPTY',
           new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
           tokensMatch: currentToken.trim() === newToken.trim(),
-          willUpdate: true, // Always update when provided
+          willUpdate: true,
         })
+      } else if (updateData.fcmToken !== undefined) {
+        console.log(
+          `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (null or empty - preserving existing token)`,
+        )
       } else {
         console.log(
           `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (not provided in sync data - undefined)`,
         )
       }
 
-      if (updateData.participantCode !== undefined) {
+      // Only update participantCode if it's provided AND not null/empty
+      // null/empty means "not provided" - don't overwrite existing value
+      if (updateData.participantCode !== undefined && updateData.participantCode !== null && updateData.participantCode !== '') {
         updatesToApply.participantCode = updateData.participantCode
+      } else if (updateData.participantCode !== undefined) {
+        console.log(
+          `⏭️ [syncUser] Skipping participantCode update for user ${accountId} (null or empty - preserving existing value)`,
+        )
       }
 
-      if (updateData.platform !== undefined) {
+      // Only update platform if it's provided AND not null/empty
+      if (updateData.platform !== undefined && updateData.platform !== null && updateData.platform !== '') {
         updatesToApply.platform = this.normalizePlatform(updateData.platform)
+      } else if (updateData.platform !== undefined) {
+        console.log(
+          `⏭️ [syncUser] Skipping platform update for user ${accountId} (null or empty - preserving existing value)`,
+        )
       }
 
-      if (updateData.language !== undefined) {
+      // Only update language if it's provided AND not null/empty
+      if (updateData.language !== undefined && updateData.language !== null && updateData.language !== '') {
         updatesToApply.language = this.normalizeLanguage(updateData.language)
+      } else if (updateData.language !== undefined) {
+        console.log(
+          `⏭️ [syncUser] Skipping language update for user ${accountId} (null or empty - preserving existing value)`,
+        )
       }
 
-      if (updateData.bakongPlatform !== undefined) {
+      // Only update bakongPlatform if it's provided AND not null/empty
+      // If not provided or null/empty, keep the existing value
+      if (updateData.bakongPlatform !== undefined && updateData.bakongPlatform !== null && updateData.bakongPlatform !== '') {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(
           `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${
             user.bakongPlatform || 'NULL'
           } -> ${updateData.bakongPlatform}`,
+        )
+      } else if (updateData.bakongPlatform !== undefined) {
+        console.log(
+          `⏭️ [syncUser] Skipping bakongPlatform update for user ${accountId} (null or empty - preserving existing value)`,
         )
       }
 

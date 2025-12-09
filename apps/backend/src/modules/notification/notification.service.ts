@@ -1725,14 +1725,31 @@ export class NotificationService {
         bakongPlatform: bakongPlatform || 'NOT PROVIDED',
       })
 
-      const syncResult = await this.baseFunctionHelper.updateUserData({
+      // CRITICAL: Only include fields if they have actual values (not null/empty)
+      // If a field is not provided (undefined), null, or empty string, we keep the existing value in database
+      // This prevents accidentally overwriting existing data with null/empty values
+      const syncData: any = {
         accountId,
-        fcmToken: fcmToken, // Pass as-is (required field, should always be string)
-        participantCode,
-        platform,
-        language,
-        bakongPlatform: bakongPlatform, // Required field - always provided
-      })
+      }
+      
+      // Only add fields if they have actual values - if not provided/null/empty, keep old data
+      if (fcmToken !== undefined && fcmToken !== null && fcmToken !== '') {
+        syncData.fcmToken = fcmToken
+      }
+      if (bakongPlatform !== undefined && bakongPlatform !== null && bakongPlatform !== '') {
+        syncData.bakongPlatform = bakongPlatform
+      }
+      if (participantCode !== undefined && participantCode !== null && participantCode !== '') {
+        syncData.participantCode = participantCode
+      }
+      if (platform !== undefined && platform !== null && platform !== '') {
+        syncData.platform = platform
+      }
+      if (language !== undefined && language !== null && language !== '') {
+        syncData.language = language
+      }
+      
+      const syncResult = await this.baseFunctionHelper.updateUserData(syncData)
 
       // Log sync result
       if ('isNewUser' in syncResult) {

@@ -104,18 +104,31 @@ export class NotificationController {
         }
 
         // SYNC USER DATA FIRST - This happens when FCM push is received, before processing notification
-        // Mobile app always provides all data including bakongPlatform when receiving FCM push (all notification types)
-        // Preserve undefined vs empty string distinction for fcmToken:
-        // - undefined = not provided, don't update
-        // - empty string = explicitly cleared (app deleted), clear old token
-        await this.baseFunctionHelper.updateUserData({
+        // CRITICAL RULE: If a field is not provided (undefined), null, or empty string, KEEP THE OLD DATA
+        // Only update fields that have actual values - this prevents data loss
+        // This applies to ALL fields including fcmToken - if null/empty, keep the old token
+        const syncData: any = {
           accountId: dto.accountId,
-          language: dto.language,
-          fcmToken: dto.fcmToken !== undefined ? dto.fcmToken : undefined, // Preserve undefined if not provided
-          platform: dto.platform,
-          participantCode: dto.participantCode,
-          bakongPlatform: dto.bakongPlatform, // Mobile always provides this
-        })
+        }
+        
+        // Only add fields if they have actual values - if not provided/null/empty, keep old data
+        if (dto.fcmToken !== undefined && dto.fcmToken !== null && dto.fcmToken !== '') {
+          syncData.fcmToken = dto.fcmToken
+        }
+        if (dto.bakongPlatform !== undefined && dto.bakongPlatform !== null && dto.bakongPlatform !== '') {
+          syncData.bakongPlatform = dto.bakongPlatform
+        }
+        if (dto.language !== undefined && dto.language !== null && dto.language !== '') {
+          syncData.language = dto.language
+        }
+        if (dto.platform !== undefined && dto.platform !== null && dto.platform !== '') {
+          syncData.platform = dto.platform
+        }
+        if (dto.participantCode !== undefined && dto.participantCode !== null && dto.participantCode !== '') {
+          syncData.participantCode = dto.participantCode
+        }
+        
+        await this.baseFunctionHelper.updateUserData(syncData)
 
         console.log(
           `✅ [sendNotification] User data synced successfully for ${
