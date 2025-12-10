@@ -218,6 +218,44 @@ fi
 echo ""
 
 # ============================================================================
+# Step 4.6: Run Migration NOW (before starting backend to avoid TypeORM sync conflicts)
+# ============================================================================
+if [ "$DB_RUNNING" = false ]; then
+    echo "🔄 Step 4.6: Starting database container to run migration..."
+    docker compose -f "$COMPOSE_FILE" up -d db
+    echo "   ⏳ Waiting for database to be ready (20 seconds)..."
+    sleep 20
+    
+    # Wait for database to be ready
+    for i in {1..15}; do
+        if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" -p 5432 > /dev/null 2>&1; then
+            echo "   ✅ Database is ready"
+            DB_RUNNING=true
+            break
+        fi
+        echo "   ⏳ Waiting... ($i/15)"
+        sleep 2
+    done
+    
+    # Now run migration if database is ready
+    if [ "$DB_RUNNING" = true ]; then
+        # Run unified migration (handles NULL cleanup automatically)
+        MIGRATION_FILE="apps/backend/scripts/unified-migration.sql"
+        if [ -f "$MIGRATION_FILE" ]; then
+            echo "   Running migration before starting backend..."
+            DB_PASSWORD="${POSTGRES_PASSWORD:-0101bkns_sit}"
+            export PGPASSWORD="$DB_PASSWORD"
+            if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" > /dev/null 2>&1; then
+                echo "   ✅ Migration completed before backend start"
+            else
+                echo "   ⚠️  Migration had warnings (check manually)"
+            fi
+            unset PGPASSWORD
+        fi
+    fi
+fi
+
+# ============================================================================
 # Step 5: Stop and Clean
 # ============================================================================
 echo "🛑 Step 5: Stopping containers..."

@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS image (
     "fileId" VARCHAR(255) NOT NULL UNIQUE,
     file BYTEA NOT NULL,
     "fileHash" VARCHAR(32) UNIQUE,
-    "mimeType" VARCHAR(100) NOT NULL,
+    "mimeType" VARCHAR(255) NOT NULL,
     "originalFileName" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -490,7 +490,18 @@ END$$;
 
 -- Fix notification.templateId to be NOT NULL and BIGINT (if needed)
 DO $$
+DECLARE
+    null_count INTEGER;
 BEGIN
+    -- First, check and clean up NULL values BEFORE making any changes
+    SELECT COUNT(*) INTO null_count FROM notification WHERE "templateId" IS NULL;
+    
+    IF null_count > 0 THEN
+        RAISE NOTICE '⚠️  Found % notification records with NULL templateId - cleaning up...', null_count;
+        DELETE FROM notification WHERE "templateId" IS NULL;
+        RAISE NOTICE '✅ Deleted % notification records with NULL templateId', null_count;
+    END IF;
+    
     -- Change to BIGINT if it's INTEGER
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -502,15 +513,19 @@ BEGIN
         RAISE NOTICE '✅ Changed notification.templateId from INTEGER to BIGINT';
     END IF;
     
-    -- Make NOT NULL if it's nullable
+    -- Make NOT NULL if it's nullable (after cleaning NULL values)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'notification' 
         AND column_name = 'templateId'
         AND is_nullable = 'YES'
     ) THEN
-        -- Clean up NULL values first
-        DELETE FROM notification WHERE "templateId" IS NULL;
+        -- Double-check no NULL values remain
+        SELECT COUNT(*) INTO null_count FROM notification WHERE "templateId" IS NULL;
+        IF null_count > 0 THEN
+            RAISE EXCEPTION 'Cannot make templateId NOT NULL: % records still have NULL values', null_count;
+        END IF;
+        
         ALTER TABLE notification ALTER COLUMN "templateId" SET NOT NULL;
         RAISE NOTICE '✅ Made notification.templateId NOT NULL';
     ELSE
