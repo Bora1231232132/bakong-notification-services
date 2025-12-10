@@ -369,6 +369,11 @@ export const mapPlatformToFormPlatform = (platforms: string | string[]): Platfor
   if (Array.isArray(platforms)) {
     if (platforms.includes(Platform.ALL)) return Platform.ALL
     if (platforms.includes('BAKONG')) return Platform.ALL
+    // If both IOS and ANDROID are present, treat as ALL
+    const hasIOS = platforms.includes(Platform.IOS) || platforms.includes('IOS')
+    const hasAndroid = platforms.includes(Platform.ANDROID) || platforms.includes('ANDROID')
+    if (hasIOS && hasAndroid) return Platform.ALL
+    // Return the first platform if only one is present
     return (platforms[0] as Platform) || Platform.ALL
   }
   return (platforms as Platform) || Platform.ALL

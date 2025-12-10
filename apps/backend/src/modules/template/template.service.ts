@@ -1421,6 +1421,7 @@ export class TemplateService implements OnModuleInit {
       successfulCount: (template as any).successfulCount,
       failedCount: (template as any).failedCount,
       failedUsers: (template as any).failedUsers,
+      failedDueToInvalidTokens: (template as any).failedDueToInvalidTokens,
       // Preserve savedAsDraftNoUsers flag if it exists
       savedAsDraftNoUsers: (template as any).savedAsDraftNoUsers,
       translations: template.translations
@@ -1461,6 +1462,7 @@ export class TemplateService implements OnModuleInit {
       formattedTemplate.successfulCount = (template as any).successfulCount
       formattedTemplate.failedCount = (template as any).failedCount
       formattedTemplate.failedUsers = (template as any).failedUsers || []
+      formattedTemplate.failedDueToInvalidTokens = (template as any).failedDueToInvalidTokens || false
     }
 
     return formattedTemplate

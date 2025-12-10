@@ -741,7 +741,7 @@ export class NotificationService {
 
       const firstRecord = savedRecords[0]
 
-      let fcmResult: { successfulCount: number; failedCount: number; failedUsers?: string[] } | void
+      let fcmResult: { successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean } | void
       try {
         fcmResult = await this.sendFCM(
           template,
@@ -807,6 +807,7 @@ export class NotificationService {
         responseData.successfulCount = fcmResult.successfulCount
         responseData.failedCount = fcmResult.failedCount
         responseData.failedUsers = fcmResult.failedUsers || []
+        responseData.failedDueToInvalidTokens = fcmResult.failedDueToInvalidTokens || false
       }
 
       return BaseResponseDto.success({
@@ -834,6 +835,7 @@ export class NotificationService {
     successfulCount: number
     failedCount: number
     failedUsers?: string[]
+    failedDueToInvalidTokens?: boolean
   } | void> {
     console.log('📨 [sendFCM] Starting FCM send process:', {
       templateId: template.id,
