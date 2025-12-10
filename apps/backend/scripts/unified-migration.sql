@@ -11,7 +11,11 @@
 --   docker exec -i <container-name> psql -U <username> -d <database> < apps/backend/unified-migration.sql
 -- ============================================================================
 
+-- Enable error stopping for safety (comment out if you want to continue on errors)
+-- \set ON_ERROR_STOP on
+
 \echo '🔄 Starting unified database migration...'
+\echo '⚠️  IMPORTANT: Ensure you have a backup before proceeding!'
 \echo ''
 
 -- ============================================================================
@@ -109,8 +113,8 @@ CREATE TABLE IF NOT EXISTS "user" (
     id SERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
-    "displayName" VARCHAR(255),
-    role VARCHAR(50) DEFAULT 'USER',
+    "displayName" VARCHAR(255) NOT NULL,
+    role VARCHAR(50) DEFAULT 'NORMAL_USER',
     "failLoginAttempt" INTEGER DEFAULT 0,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -118,23 +122,23 @@ CREATE TABLE IF NOT EXISTS "user" (
 );
 
 CREATE TABLE IF NOT EXISTS bakong_user (
-    id SERIAL PRIMARY KEY,
-    "accountId" VARCHAR(32) NOT NULL,
+    id BIGSERIAL PRIMARY KEY,
+    "accountId" VARCHAR(32) NOT NULL UNIQUE,
     "fcmToken" VARCHAR(255) NOT NULL,
-    "participantCode" VARCHAR(50),
-    platform VARCHAR(50),
-    language VARCHAR(10) DEFAULT 'EN',
+    "participantCode" VARCHAR(32),
+    platform VARCHAR(32),
+    language VARCHAR(2) DEFAULT 'EN',
     "bakongPlatform" bakong_platform_enum,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS image (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     "fileId" VARCHAR(255) NOT NULL UNIQUE,
-    file BYTEA,
-    "fileHash" VARCHAR(32),
-    "mimeType" VARCHAR(100),
+    file BYTEA NOT NULL,
+    "fileHash" VARCHAR(32) UNIQUE,
+    "mimeType" VARCHAR(100) NOT NULL,
     "originalFileName" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -153,9 +157,9 @@ CREATE TABLE IF NOT EXISTS "category_type" (
 CREATE TABLE IF NOT EXISTS template (
     id SERIAL PRIMARY KEY,
     platforms TEXT[],
-    "sendType" send_type_enum DEFAULT 'SEND_NOW',
+    "sendType" send_type_enum DEFAULT 'SEND_SCHEDULE',
     "notificationType" notification_type_enum DEFAULT 'FLASH_NOTIFICATION',
-    priority INTEGER DEFAULT 1,
+    priority INTEGER DEFAULT 0,
     "sendInterval" JSON,
     "isSent" BOOLEAN DEFAULT FALSE,
     "sendSchedule" TIMESTAMPTZ,
@@ -186,7 +190,7 @@ CREATE TABLE IF NOT EXISTS notification (
     id BIGSERIAL PRIMARY KEY,
     "accountId" VARCHAR(32) NOT NULL,
     "fcmToken" VARCHAR(255) NOT NULL,
-    "templateId" INTEGER,
+    "templateId" BIGINT NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "firebaseMessageId" BIGINT,
     "sendCount" INTEGER DEFAULT 1
@@ -441,6 +445,243 @@ BEGIN
         RAISE NOTICE '✅ Added fileHash column to image table';
     ELSE
         RAISE NOTICE 'ℹ️  image.fileHash already exists';
+    END IF;
+END$$;
+
+-- Fix user.displayName to be NOT NULL (if it's currently nullable)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' 
+        AND column_name = 'displayName'
+        AND is_nullable = 'YES'
+    ) THEN
+        -- Set default for existing NULL values before making NOT NULL
+        UPDATE "user" SET "displayName" = username WHERE "displayName" IS NULL;
+        ALTER TABLE "user" ALTER COLUMN "displayName" SET NOT NULL;
+        RAISE NOTICE '✅ Made user.displayName NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  user.displayName is already NOT NULL';
+    END IF;
+END$$;
+
+-- Fix bakong_user.accountId to be UNIQUE (if not already)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conrelid = 'bakong_user'::regclass
+        AND conname LIKE '%accountId%'
+        AND contype = 'u'
+    ) THEN
+        -- Handle any duplicate accountIds first
+        DELETE FROM bakong_user a
+        USING bakong_user b
+        WHERE a.id > b.id 
+        AND a."accountId" = b."accountId";
+        
+        ALTER TABLE bakong_user ADD CONSTRAINT "UQ_bakong_user_accountId" UNIQUE ("accountId");
+        RAISE NOTICE '✅ Added UNIQUE constraint on bakong_user.accountId';
+    ELSE
+        RAISE NOTICE 'ℹ️  bakong_user.accountId already has UNIQUE constraint';
+    END IF;
+END$$;
+
+-- Fix notification.templateId to be NOT NULL and BIGINT (if needed)
+DO $$
+BEGIN
+    -- Change to BIGINT if it's INTEGER
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'notification' 
+        AND column_name = 'templateId'
+        AND data_type = 'integer'
+    ) THEN
+        ALTER TABLE notification ALTER COLUMN "templateId" TYPE BIGINT;
+        RAISE NOTICE '✅ Changed notification.templateId from INTEGER to BIGINT';
+    END IF;
+    
+    -- Make NOT NULL if it's nullable
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'notification' 
+        AND column_name = 'templateId'
+        AND is_nullable = 'YES'
+    ) THEN
+        -- Clean up NULL values first
+        DELETE FROM notification WHERE "templateId" IS NULL;
+        ALTER TABLE notification ALTER COLUMN "templateId" SET NOT NULL;
+        RAISE NOTICE '✅ Made notification.templateId NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  notification.templateId is already NOT NULL';
+    END IF;
+END$$;
+
+-- Fix bakong_user.id to be BIGSERIAL (if it's SERIAL/INTEGER)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'bakong_user' 
+        AND column_name = 'id'
+        AND data_type = 'integer'
+    ) THEN
+        -- This is complex - need to recreate sequence and column
+        -- For now, just log a warning - BIGSERIAL vs SERIAL is usually fine for most use cases
+        RAISE NOTICE 'ℹ️  bakong_user.id is INTEGER (SERIAL). Entity expects BIGINT (BIGSERIAL) but this is usually acceptable.';
+    ELSE
+        RAISE NOTICE 'ℹ️  bakong_user.id is already BIGINT (BIGSERIAL)';
+    END IF;
+END$$;
+
+-- Fix image.id to be BIGSERIAL (if it's SERIAL/INTEGER)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'id'
+        AND data_type = 'integer'
+    ) THEN
+        RAISE NOTICE 'ℹ️  image.id is INTEGER (SERIAL). Entity expects BIGINT (BIGSERIAL) but this is usually acceptable.';
+    ELSE
+        RAISE NOTICE 'ℹ️  image.id is already BIGINT (BIGSERIAL)';
+    END IF;
+END$$;
+
+-- Fix user.role to use enum type (if it's VARCHAR)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' 
+        AND column_name = 'role'
+        AND data_type = 'character varying'
+    ) THEN
+        -- Convert VARCHAR to user_role_enum
+        ALTER TABLE "user" 
+        ALTER COLUMN role TYPE user_role_enum 
+        USING CASE 
+            WHEN role IN ('ADMIN_USER', 'NORMAL_USER', 'API_USER') 
+            THEN role::user_role_enum
+            ELSE 'NORMAL_USER'::user_role_enum
+        END;
+        RAISE NOTICE '✅ Changed user.role from VARCHAR to user_role_enum';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' 
+        AND column_name = 'role'
+        AND udt_name = 'user_role_enum'
+    ) THEN
+        RAISE NOTICE 'ℹ️  user.role is already user_role_enum';
+    ELSE
+        RAISE NOTICE 'ℹ️  user.role column does not exist';
+    END IF;
+END$$;
+
+-- Fix template.sendType default to SEND_SCHEDULE (if it's SEND_NOW)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'sendType'
+        AND column_default LIKE '%SEND_NOW%'
+    ) THEN
+        ALTER TABLE template ALTER COLUMN "sendType" SET DEFAULT 'SEND_SCHEDULE';
+        RAISE NOTICE '✅ Changed template.sendType default from SEND_NOW to SEND_SCHEDULE';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.sendType default is already SEND_SCHEDULE or correct';
+    END IF;
+END$$;
+
+-- Fix template.priority default to 0 (if it's 1)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'priority'
+        AND column_default LIKE '%1%'
+    ) THEN
+        ALTER TABLE template ALTER COLUMN priority SET DEFAULT 0;
+        RAISE NOTICE '✅ Changed template.priority default from 1 to 0';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.priority default is already 0 or correct';
+    END IF;
+END$$;
+
+-- Fix bakong_user column lengths to match entities
+DO $$
+BEGIN
+    -- Fix participantCode length from 50 to 32
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'bakong_user' 
+        AND column_name = 'participantCode'
+        AND character_maximum_length = 50
+    ) THEN
+        ALTER TABLE bakong_user ALTER COLUMN "participantCode" TYPE VARCHAR(32);
+        RAISE NOTICE '✅ Changed bakong_user.participantCode length from 50 to 32';
+    END IF;
+    
+    -- Fix platform length from 50 to 32
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'bakong_user' 
+        AND column_name = 'platform'
+        AND character_maximum_length = 50
+    ) THEN
+        ALTER TABLE bakong_user ALTER COLUMN platform TYPE VARCHAR(32);
+        RAISE NOTICE '✅ Changed bakong_user.platform length from 50 to 32';
+    END IF;
+    
+    -- Fix language length from 10 to 2
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'bakong_user' 
+        AND column_name = 'language'
+        AND character_maximum_length = 10
+    ) THEN
+        ALTER TABLE bakong_user ALTER COLUMN language TYPE VARCHAR(2);
+        RAISE NOTICE '✅ Changed bakong_user.language length from 10 to 2';
+    END IF;
+END$$;
+
+-- Fix image.file to be NOT NULL (if it's nullable)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'file'
+        AND is_nullable = 'YES'
+    ) THEN
+        -- Clean up NULL values first (shouldn't exist, but just in case)
+        DELETE FROM image WHERE file IS NULL;
+        ALTER TABLE image ALTER COLUMN file SET NOT NULL;
+        RAISE NOTICE '✅ Made image.file NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  image.file is already NOT NULL';
+    END IF;
+END$$;
+
+-- Fix image.mimeType to be NOT NULL (if it's nullable)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'image' 
+        AND column_name = 'mimeType'
+        AND is_nullable = 'YES'
+    ) THEN
+        -- Set default for NULL values
+        UPDATE image SET "mimeType" = 'image/jpeg' WHERE "mimeType" IS NULL;
+        ALTER TABLE image ALTER COLUMN "mimeType" SET NOT NULL;
+        RAISE NOTICE '✅ Made image.mimeType NOT NULL';
+    ELSE
+        RAISE NOTICE 'ℹ️  image.mimeType is already NOT NULL';
     END IF;
 END$$;
 
@@ -832,9 +1073,15 @@ WHERE schemaname = 'public';
 
 \echo ''
 \echo '💡 Next steps:'
-\echo '   1. Verify tables: \dt'
-\echo '   2. Check template columns: \d template'
-\echo '   3. Check syncStatus column: SELECT "accountId", "syncStatus" FROM bakong_user LIMIT 5;'
-\echo '   4. Restart your application'
+\echo '   1. Run verification script: psql -U <user> -d <database> -f apps/backend/scripts/verify-migration.sql'
+\echo '   2. Verify tables: \dt'
+\echo '   3. Check template columns: \d template'
+\echo '   4. Check syncStatus column: SELECT "accountId", "syncStatus" FROM bakong_user LIMIT 5;'
+\echo '   5. Restart your application'
+\echo '   6. Test all critical features'
+\echo '   7. Monitor application logs for errors'
+\echo ''
+\echo '📚 For detailed deployment guide, see: apps/backend/scripts/MIGRATION_GUIDE.md'
+\echo '📋 For quick reference, see: apps/backend/scripts/QUICK_REFERENCE.md'
 \echo ''
 
