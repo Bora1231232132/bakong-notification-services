@@ -135,35 +135,46 @@ export class NotificationService {
   private getFCM(bakongPlatform?: string | null): Messaging | null {
     const fcm = FirebaseManager.getMessaging(bakongPlatform)
     if (fcm) {
-      const appName = bakongPlatform 
-        ? FirebaseManager.getAppName(bakongPlatform)
-        : 'DEFAULT'
-      const serviceAccountPath = bakongPlatform 
+      const appName = bakongPlatform ? FirebaseManager.getAppName(bakongPlatform) : 'DEFAULT'
+      const serviceAccountPath = bakongPlatform
         ? FirebaseManager.getServiceAccountPath(bakongPlatform)
         : null
-      console.log(`🔥 [getFCM] Using Firebase app: ${appName} for platform: ${bakongPlatform || 'DEFAULT'}`)
+      console.log(
+        `🔥 [getFCM] Using Firebase app: ${appName} for platform: ${bakongPlatform || 'DEFAULT'}`,
+      )
       console.log(`🔥 [getFCM] Service account path: ${serviceAccountPath || 'Using default'}`)
-      
+
       // Try to read and log project_id from service account
       if (serviceAccountPath && require('fs').existsSync(serviceAccountPath)) {
         try {
           const fs = require('fs')
           const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'))
-          console.log(`🔥 [getFCM] Firebase Project ID: ${serviceAccount.project_id || 'NOT FOUND'}`)
-          console.log(`🔥 [getFCM] Service Account Email: ${serviceAccount.client_email || 'NOT FOUND'}`)
+          console.log(
+            `🔥 [getFCM] Firebase Project ID: ${serviceAccount.project_id || 'NOT FOUND'}`,
+          )
+          console.log(
+            `🔥 [getFCM] Service Account Email: ${serviceAccount.client_email || 'NOT FOUND'}`,
+          )
         } catch (e: any) {
           console.warn(`⚠️ [getFCM] Could not read service account file: ${e.message}`)
         }
       }
     } else {
-      console.error(`❌ [getFCM] No FCM instance available for platform: ${bakongPlatform || 'DEFAULT'}`)
+      console.error(
+        `❌ [getFCM] No FCM instance available for platform: ${bakongPlatform || 'DEFAULT'}`,
+      )
     }
     return fcm
   }
 
   async sendWithTemplate(
     template: Template,
-  ): Promise<{ successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean }> {
+  ): Promise<{
+    successfulCount: number
+    failedCount: number
+    failedUsers?: string[]
+    failedDueToInvalidTokens?: boolean
+  }> {
     console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
     console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
 
@@ -227,8 +238,8 @@ export class NotificationService {
           template.bakongPlatform === 'BAKONG_TOURIST'
             ? 'Bakong Tourist'
             : template.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
+            ? 'Bakong Junior'
+            : 'Bakong'
         throw new Error(
           `No users found for ${platformName} app. Please ensure there are registered users for this platform before sending notifications.`,
         )
@@ -325,10 +336,13 @@ export class NotificationService {
       error: 'FCM token is empty or missing',
       errorCode: 'messaging/invalid-registration-token',
     }))
-    
+
     console.log('📤 [sendWithTemplate] Users without FCM tokens:', usersWithoutTokens.length)
     if (usersWithoutTokens.length > 0) {
-      console.log('📤 [sendWithTemplate] Users with empty tokens:', usersWithoutTokens.map(u => u.accountId))
+      console.log(
+        '📤 [sendWithTemplate] Users with empty tokens:',
+        usersWithoutTokens.map((u) => u.accountId),
+      )
     }
 
     const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
@@ -341,10 +355,10 @@ export class NotificationService {
         '❌ [sendWithTemplate] Firebase FCM is not initialized. Cannot send notifications.',
       )
       // Return users with empty tokens as failed
-      return { 
-        successfulCount: 0, 
-        failedCount: usersWithoutTokens.length, 
-        failedUsers: usersWithoutTokens.map(u => u.accountId),
+      return {
+        successfulCount: 0,
+        failedCount: usersWithoutTokens.length,
+        failedUsers: usersWithoutTokens.map((u) => u.accountId),
         failedDueToInvalidTokens: usersWithoutTokens.length > 0,
       }
     }
@@ -357,39 +371,48 @@ export class NotificationService {
     })
     const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, fcm)
     console.log('📤 [sendWithTemplate] Valid users after token validation:', validUsers.length)
-    
+
     // Track users filtered out due to invalid format
-    const usersWithInvalidFormat = usersWithTokens.filter((user) => 
-      !validUsers.some((vu) => vu.accountId === user.accountId)
+    const usersWithInvalidFormat = usersWithTokens.filter(
+      (user) => !validUsers.some((vu) => vu.accountId === user.accountId),
     )
     const invalidFormatUsers = usersWithInvalidFormat.map((user) => ({
       accountId: user.accountId,
       error: 'FCM token format is invalid',
       errorCode: 'messaging/invalid-registration-token',
     }))
-    
-    console.log('📤 [sendWithTemplate] Users filtered out due to invalid token format:', invalidFormatUsers.length)
+
+    console.log(
+      '📤 [sendWithTemplate] Users filtered out due to invalid token format:',
+      invalidFormatUsers.length,
+    )
     if (invalidFormatUsers.length > 0) {
-      console.log('📤 [sendWithTemplate] Users with invalid format:', invalidFormatUsers.map(u => u.accountId))
+      console.log(
+        '📤 [sendWithTemplate] Users with invalid format:',
+        invalidFormatUsers.map((u) => u.accountId),
+      )
     }
-    
+
     // Log token prefixes for debugging
     if (validUsers.length > 0) {
-      console.log('📤 [sendWithTemplate] Valid user tokens:', validUsers.map(u => ({
-        accountId: u.accountId,
-        tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
-        platform: u.platform,
-      })))
+      console.log(
+        '📤 [sendWithTemplate] Valid user tokens:',
+        validUsers.map((u) => ({
+          accountId: u.accountId,
+          tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+          platform: u.platform,
+        })),
+      )
     }
 
     if (!validUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users have valid FCM tokens after validation')
       // Return all users with invalid tokens as failed
       const allInvalidUsers = [...usersWithEmptyTokens, ...invalidFormatUsers]
-      return { 
-        successfulCount: 0, 
-        failedCount: allInvalidUsers.length, 
-        failedUsers: allInvalidUsers.map(u => u.accountId),
+      return {
+        successfulCount: 0,
+        failedCount: allInvalidUsers.length,
+        failedUsers: allInvalidUsers.map((u) => u.accountId),
         failedDueToInvalidTokens: allInvalidUsers.length > 0,
       }
     }
@@ -410,16 +433,17 @@ export class NotificationService {
 
     // Combine users filtered out BEFORE sending (empty/invalid format) with users that failed DURING sending
     const allFailedUsers = [
-      ...usersWithEmptyTokens.map(u => u.accountId),
-      ...invalidFormatUsers.map(u => u.accountId),
+      ...usersWithEmptyTokens.map((u) => u.accountId),
+      ...invalidFormatUsers.map((u) => u.accountId),
       ...(result.failedUsers || []),
     ]
-    
-    const totalFailedCount = usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount
-    
+
+    const totalFailedCount =
+      usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount
+
     // Check if failures are due to invalid tokens (empty, invalid format, or FCM errors)
-    const hasInvalidTokens = 
-      usersWithoutTokens.length > 0 || 
+    const hasInvalidTokens =
+      usersWithoutTokens.length > 0 ||
       invalidFormatUsers.length > 0 ||
       (result as any).failedDueToInvalidTokens === true
 
@@ -616,8 +640,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -668,8 +692,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -913,9 +937,14 @@ export class NotificationService {
             if (mode === 'individual' && notificationId) {
               try {
                 await this.notiRepo.delete({ id: notificationId })
-                console.log(`🗑️ [sendFCM] Deleted notification record ${notificationId} due to failed FCM send`)
+                console.log(
+                  `🗑️ [sendFCM] Deleted notification record ${notificationId} due to failed FCM send`,
+                )
               } catch (deleteError) {
-                console.error(`❌ [sendFCM] Failed to delete notification record ${notificationId}:`, deleteError)
+                console.error(
+                  `❌ [sendFCM] Failed to delete notification record ${notificationId}:`,
+                  deleteError,
+                )
               }
             }
             // Count as failed for BOTH individual and shared modes
@@ -940,17 +969,22 @@ export class NotificationService {
             'Error:',
             error.message,
           )
-          
+
           // Delete notification record if it was created but FCM send failed
           if (mode === 'individual' && notificationId) {
             try {
               await this.notiRepo.delete({ id: notificationId })
-              console.log(`🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${error.message}`)
+              console.log(
+                `🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${error.message}`,
+              )
             } catch (deleteError) {
-              console.error(`❌ [sendFCM] Failed to delete notification record ${notificationId}:`, deleteError)
+              console.error(
+                `❌ [sendFCM] Failed to delete notification record ${notificationId}:`,
+                deleteError,
+              )
             }
           }
-          
+
           if (mode === 'individual') {
             failedUsers.push({
               accountId: user.accountId,
@@ -977,7 +1011,7 @@ export class NotificationService {
             error.code === 'messaging/registration-token-not-registered' ||
             error.code === 'messaging/invalid-registration-token' ||
             error.code === 'messaging/invalid-argument'
-          
+
           if (isInvalidTokenError) {
             console.log(
               `⚠️ [sendFCM] Invalid token detected for user ${user.accountId} (error: ${error.code})`,
@@ -991,7 +1025,7 @@ export class NotificationService {
             // - Preserves data for debugging and tracking
             // - Only obviously invalid tokens (too short/wrong format) are cleared in syncAllUsers()
           }
-          
+
           // Continue to next user instead of throwing - don't stop sending to other users
           continue
         }
@@ -1165,14 +1199,17 @@ export class NotificationService {
           apsBadge: iosPayloadResponse.apns?.payload?.aps?.badge,
           dataKeys: iosPayloadResponse.data ? Object.keys(iosPayloadResponse.data) : [],
         })
-        
+
         // Log full iOS payload (sanitized) for debugging
         const sanitizedIOSPayload = {
           ...iosPayloadResponse,
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
         }
-        console.log('📱 [sendFCMPayloadToPlatform] Full iOS payload:', JSON.stringify(sanitizedIOSPayload, null, 2))
-        
+        console.log(
+          '📱 [sendFCMPayloadToPlatform] Full iOS payload:',
+          JSON.stringify(sanitizedIOSPayload, null, 2),
+        )
+
         console.log('📱 [sendFCMPayloadToPlatform] Sending iOS FCM message...', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
@@ -1188,7 +1225,7 @@ export class NotificationService {
           accountId: user.accountId,
           tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
         })
-        
+
         // Log success with full details
         console.log('='.repeat(80))
         console.log('✅ [FCM SEND SUCCESS] iOS Notification sent successfully!')
@@ -1197,7 +1234,10 @@ export class NotificationService {
         console.log('Account ID:', user.accountId)
         console.log('Platform:', user.platform)
         console.log('Bakong Platform:', user.bakongPlatform)
-        console.log('Token (first 50 chars):', user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN')
+        console.log(
+          'Token (first 50 chars):',
+          user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN',
+        )
         console.log('Token length:', user.fcmToken?.length || 0)
         console.log('Title:', title)
         console.log('Body:', body?.substring(0, 100))
@@ -1209,10 +1249,13 @@ export class NotificationService {
         console.log('   4. Token matches the Firebase project (dnode-176823)')
         console.log('   5. App is properly configured to receive FCM notifications')
         console.log('='.repeat(80))
-        
+
         // Verify we got a valid message ID (should be a string)
         if (!sendResponse || typeof sendResponse !== 'string') {
-          console.warn('⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:', typeof sendResponse)
+          console.warn(
+            '⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:',
+            typeof sendResponse,
+          )
         }
         return sendResponse
       } catch (error: any) {
@@ -1275,17 +1318,20 @@ export class NotificationService {
         dataKeys: msg.data ? Object.keys(msg.data) : [],
         androidPriority: msg.android?.priority,
         androidTtl: msg.android?.ttl,
-      androidCollapseKey: msg.android?.collapseKey,
+        androidCollapseKey: msg.android?.collapseKey,
         androidNotificationChannelId: msg.android?.notification?.channelId,
         androidNotificationSound: msg.android?.notification?.sound,
       })
-      
+
       // Log full payload (sanitized) for debugging
       const sanitizedPayload = {
         ...msg,
         token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
       }
-      console.log('📱 [sendFCMPayloadToPlatform] Full Android payload:', JSON.stringify(sanitizedPayload, null, 2))
+      console.log(
+        '📱 [sendFCMPayloadToPlatform] Full Android payload:',
+        JSON.stringify(sanitizedPayload, null, 2),
+      )
 
       try {
         // Get FCM instance for user's bakongPlatform
@@ -1314,7 +1360,7 @@ export class NotificationService {
           accountId: user.accountId,
           tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
         })
-        
+
         // Log success with full details
         console.log('='.repeat(80))
         console.log('✅ [FCM SEND SUCCESS] Notification sent successfully!')
@@ -1323,14 +1369,20 @@ export class NotificationService {
         console.log('Account ID:', user.accountId)
         console.log('Platform:', user.platform)
         console.log('Bakong Platform:', user.bakongPlatform)
-        console.log('Token (first 50 chars):', user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN')
+        console.log(
+          'Token (first 50 chars):',
+          user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN',
+        )
         console.log('Title:', title)
         console.log('Body:', body?.substring(0, 100))
         console.log('='.repeat(80))
-        
+
         // Verify we got a valid message ID (should be a string)
         if (!sendResponse || typeof sendResponse !== 'string') {
-          console.warn('⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:', typeof sendResponse)
+          console.warn(
+            '⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:',
+            typeof sendResponse,
+          )
         }
         return sendResponse
       } catch (error: any) {
@@ -1462,15 +1514,12 @@ export class NotificationService {
           return createdAt >= last24Hours && createdAt <= now
         })
 
-        const templateCounts = todayNotifications.reduce(
-          (acc, notif) => {
-            if (notif.templateId) {
-              acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
-            }
-            return acc
-          },
-          {} as Record<number, number>,
-        )
+        const templateCounts = todayNotifications.reduce((acc, notif) => {
+          if (notif.templateId) {
+            acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
+          }
+          return acc
+        }, {} as Record<number, number>)
 
         const templatesAtLimit = Object.entries(templateCounts)
           .filter(([_, count]) => count >= 2)
@@ -1670,8 +1719,8 @@ export class NotificationService {
         fcmToken: fcmToken
           ? `${fcmToken.substring(0, 30)}...`
           : fcmToken === ''
-            ? 'EMPTY (explicitly cleared)'
-            : 'NOT PROVIDED',
+          ? 'EMPTY (explicitly cleared)'
+          : 'NOT PROVIDED',
         platform: platform || 'N/A',
         language: language || 'N/A',
         bakongPlatform: bakongPlatform || 'N/A',
@@ -1681,7 +1730,8 @@ export class NotificationService {
       if (!bakongPlatform) {
         return BaseResponseDto.error({
           errorCode: ErrorCode.FLASH_NOTIFICATION_POPUP_FAILED,
-          message: 'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+          message:
+            'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
           data: { accountId },
         })
       }
@@ -1708,8 +1758,8 @@ export class NotificationService {
         fcmTokenValue: fcmToken
           ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length})`
           : fcmToken === ''
-            ? 'EMPTY STRING'
-            : 'UNDEFINED',
+          ? 'EMPTY STRING'
+          : 'UNDEFINED',
         fcmTokenType: typeof fcmToken,
       })
       console.log(`🔄 [getNotificationCenter] Calling updateUserData with:`, {
@@ -1717,8 +1767,8 @@ export class NotificationService {
         fcmToken: fcmToken
           ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length}, type: ${typeof fcmToken})`
           : fcmToken === ''
-            ? 'EMPTY STRING'
-            : 'UNDEFINED',
+          ? 'EMPTY STRING'
+          : 'UNDEFINED',
         participantCode: participantCode || 'NOT PROVIDED',
         platform: platform || 'NOT PROVIDED',
         language: language || 'NOT PROVIDED',
@@ -1732,33 +1782,33 @@ export class NotificationService {
       const syncData: any = {
         accountId,
       }
-      
+
       // fcmToken: Include even if empty string (means app deleted, should clear token)
       // Only skip if undefined or null
       if (fcmToken !== undefined && fcmToken !== null) {
         syncData.fcmToken = fcmToken
       }
-      
+
       // bakongPlatform: Enum type (BakongApp) - only check for undefined/null
       if (bakongPlatform !== undefined && bakongPlatform !== null) {
         syncData.bakongPlatform = bakongPlatform
       }
-      
+
       // participantCode: String - check for undefined/null/empty
       if (participantCode !== undefined && participantCode !== null && participantCode !== '') {
         syncData.participantCode = participantCode
       }
-      
+
       // platform: Enum type (Platform) - only check for undefined/null
       if (platform !== undefined && platform !== null) {
         syncData.platform = platform
       }
-      
+
       // language: Enum type (Language) - only check for undefined/null
       if (language !== undefined && language !== null) {
         syncData.language = language
       }
-      
+
       const syncResult = await this.baseFunctionHelper.updateUserData(syncData)
 
       // Log sync result
@@ -1815,11 +1865,11 @@ export class NotificationService {
         console.log(
           `✅ [getNotificationCenter] Sync flow complete for ${accountId}, isNewUser: ${isNewUser}, dataUpdated: ${dataUpdated}`,
         )
-        
+
         // Get syncStatus from user after sync
         const syncedUser = await this.baseFunctionHelper.findUserByAccountId(accountId)
         const syncStatus = syncedUser?.syncStatus || null
-        
+
         return InboxResponseDto.getSyncResponse(accountId, userPlatform, dataUpdated, syncStatus)
       }
 
@@ -1896,8 +1946,7 @@ export class NotificationService {
         userPlatform,
       )
     } catch (error) {
-      const errorMessage =
-        (error as any).message || ResponseMessage.INTERNAL_SERVER_ERROR
+      const errorMessage = (error as any).message || ResponseMessage.INTERNAL_SERVER_ERROR
       console.error(`❌ [getNotificationCenter] Error for ${dto.accountId}:`, errorMessage)
       return BaseResponseDto.error({
         errorCode: ErrorCode.INTERNAL_SERVER_ERROR,

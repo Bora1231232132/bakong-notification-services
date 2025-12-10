@@ -157,9 +157,10 @@ export const getNotificationMessage = (
   const failedCount = result?.failedCount || 0
   const successfulCount = result?.successfulCount || 0
   const savedAsDraftNoUsers = result?.savedAsDraftNoUsers === true
-  
+
   // Get formatted platform name with bakongPlatform info
-  const formattedPlatform = platformName || (bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform')
+  const formattedPlatform =
+    platformName || (bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform')
   const platformInfo = bakongPlatform ? ` for <strong>${formattedPlatform}</strong>` : ''
 
   // Case 1: Invalid tokens (highest priority)

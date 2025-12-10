@@ -61,11 +61,7 @@
                     Preview
                   </h3>
                 </div>
-                <el-button
-                  type="primary"
-                  class="create-notification-btn"
-                  disabled
-                >
+                <el-button type="primary" class="create-notification-btn" disabled>
                   Create Notification
                   <div class="plus-icon">
                     <el-icon>
@@ -169,9 +165,9 @@ const handleChangeProfile = async () => {
     if (!imagePath) {
       throw new Error('Image path not found in response')
     }
-    
+
     console.log('Image path from backend:', imagePath)
-    
+
     const imageUrl = import.meta.env.DEV
       ? imagePath // Use relative URL in dev (goes through Vite proxy)
       : import.meta.env.VITE_API_BASE_URL && !imagePath.startsWith('http')

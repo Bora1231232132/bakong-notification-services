@@ -14,65 +14,70 @@
             <p class="section-description">
               Test if an FCM token is valid. This will send a test notification to verify the token.
             </p>
-            
+
             <div class="platform-info-box">
               <el-icon class="info-icon"><InfoFilled /></el-icon>
               <div class="info-content">
                 <strong>Platform Selection Note:</strong>
                 <p>
-                  In <strong>development</strong> environment, all platforms (BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST) 
-                  use the same Firebase project. Therefore, any valid token from that project will work regardless 
-                  of which platform you select. In <strong>production/SIT</strong>, each platform has its own Firebase 
-                  project, so platform selection matters.
+                  In <strong>development</strong> environment, all platforms (BAKONG, BAKONG_JUNIOR,
+                  BAKONG_TOURIST) use the same Firebase project. Therefore, any valid token from
+                  that project will work regardless of which platform you select. In
+                  <strong>production/SIT</strong>, each platform has its own Firebase project, so
+                  platform selection matters.
                 </p>
               </div>
             </div>
-            
+
             <div class="token-input-group">
-          <el-form :model="tokenTestForm" label-width="140px">
-            <el-form-item label="FCM Token" required>
-              <el-input
-                v-model="tokenTestForm.token"
-                type="textarea"
-                :rows="4"
-                placeholder="Enter FCM token to test..."
-                class="token-input"
-                clearable
-                @input="handleTokenInput"
-              />
-              <div v-if="!tokenTestForm.token || !tokenTestForm.token.trim()" class="input-hint">
-                ⚠️ Please enter a token to enable the test button
-              </div>
-            </el-form-item>
-            <el-form-item label="Platform">
-              <el-select 
-                v-model="tokenTestForm.bakongPlatform" 
-                placeholder="Select platform (optional)" 
-                clearable
-                style="width: 100%"
-              >
-                <el-option label="BAKONG" value="BAKONG" />
-                <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
-                <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
-              </el-select>
-              <div class="input-hint">
-                ℹ️ Platform selection determines which Firebase project to use (only matters in production/SIT)
-              </div>
-            </el-form-item>
-            <el-form-item>
-              <el-button
-                type="primary"
-                :loading="testingToken"
-                @click="handleTestToken"
-                :disabled="!tokenTestForm.token || !tokenTestForm.token.trim()"
-                size="large"
-                class="test-token-btn"
-              >
-                <el-icon v-if="!testingToken" style="margin-right: 8px;"><Check /></el-icon>
-                {{ testingToken ? 'Testing Token...' : 'Test Token' }}
-              </el-button>
-            </el-form-item>
-          </el-form>
+              <el-form :model="tokenTestForm" label-width="140px">
+                <el-form-item label="FCM Token" required>
+                  <el-input
+                    v-model="tokenTestForm.token"
+                    type="textarea"
+                    :rows="4"
+                    placeholder="Enter FCM token to test..."
+                    class="token-input"
+                    clearable
+                    @input="handleTokenInput"
+                  />
+                  <div
+                    v-if="!tokenTestForm.token || !tokenTestForm.token.trim()"
+                    class="input-hint"
+                  >
+                    ⚠️ Please enter a token to enable the test button
+                  </div>
+                </el-form-item>
+                <el-form-item label="Platform">
+                  <el-select
+                    v-model="tokenTestForm.bakongPlatform"
+                    placeholder="Select platform (optional)"
+                    clearable
+                    style="width: 100%"
+                  >
+                    <el-option label="BAKONG" value="BAKONG" />
+                    <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
+                    <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
+                  </el-select>
+                  <div class="input-hint">
+                    ℹ️ Platform selection determines which Firebase project to use (only matters in
+                    production/SIT)
+                  </div>
+                </el-form-item>
+                <el-form-item>
+                  <el-button
+                    type="primary"
+                    :loading="testingToken"
+                    @click="handleTestToken"
+                    :disabled="!tokenTestForm.token || !tokenTestForm.token.trim()"
+                    size="large"
+                    class="test-token-btn"
+                  >
+                    <el-icon v-if="!testingToken" style="margin-right: 8px"><Check /></el-icon>
+                    {{ testingToken ? 'Testing Token...' : 'Test Token' }}
+                  </el-button>
+                </el-form-item>
+              </el-form>
             </div>
 
             <div v-if="tokenTestResult" class="test-result">
@@ -117,129 +122,150 @@
         <el-tab-pane label="🔄 Sync All Users" name="sync">
           <div class="test-section">
             <h2 class="section-title">🔄 Sync User Data</h2>
-        <p class="section-description">
-          Manually sync all user data from the database. This normalizes user fields, validates tokens, updates platform/language information, and tracks sync status.
-        </p>
-        
-        <div class="sync-info-box" style="margin-top: 20px;">
-          <el-icon class="info-icon"><InfoFilled /></el-icon>
-          <div class="info-content">
-            <strong>Sync Status Tracking:</strong>
-            <p>
-              Each user sync now tracks: <code>status</code> (SUCCESS/FAILED), <code>lastSyncAt</code> (timestamp), 
-              and <code>lastSyncMessage</code> (success message or error details). Check the database to see syncStatus JSONB column.
+            <p class="section-description">
+              Manually sync all user data from the database. This normalizes user fields, validates
+              tokens, updates platform/language information, and tracks sync status.
             </p>
-          </div>
-        </div>
-        
-        <div class="sync-info-box">
-          <h3 class="info-box-title">When does user sync happen automatically?</h3>
-          <ul class="sync-scenarios">
-            <li>
-              <strong>1. When mobile app calls API endpoints:</strong>
-              <p>
-                <strong>✅ Syncs individual user data:</strong> When mobile app calls <code>/notification/send</code> or 
-                <code>/notification/inbox</code>, that specific user's data (FCM token, platform, language) is synced immediately.
-              </p>
-              <p class="warning-note">
-                ⚠️ <strong>Important:</strong> If mobile app only receives FCM push notifications without calling any API, 
-                user data won't be synced. The mobile app must call at least one API endpoint to update their data.
-              </p>
-            </li>
-            <li>
-              <strong>2. When sending notifications via template:</strong>
-              <p>
-                Before sending notifications, the system automatically normalizes all existing user data in the database 
-                (platform, language, token format validation). This only works with data already in the database - it doesn't 
-                fetch new data from external sources.
-              </p>
-            </li>
-            <li>
-              <strong>3. Manual sync (this page):</strong>
-              <p>
-                You can manually trigger a sync to normalize all user data, validate tokens, and update platform/language fields. 
-                This also only works with existing database data.
-              </p>
-            </li>
-          </ul>
-          
-          <div class="sync-improvement-box">
-            <strong>✅ Backend Auto-Cleanup Feature:</strong>
-            <p>
-              The backend now <strong>automatically cleans up invalid tokens</strong> when FCM sends fail:
-            </p>
-            <ul class="auto-cleanup-list">
-              <li>When sending notifications fails with invalid token errors, the backend automatically clears those tokens</li>
-              <li>When syncing users, the backend automatically removes tokens that are too short or malformed</li>
-              <li>This helps keep the database clean even if mobile apps don't call APIs frequently</li>
-            </ul>
-            <p class="note-text">
-              <strong>Note:</strong> While backend auto-cleanup helps maintain data quality, mobile apps should still call 
-              <code>/notification/send</code> or <code>/notification/inbox</code> to sync NEW tokens and updated user information 
-              (platform, language). Backend cleanup only removes invalid tokens - it doesn't fetch new data from external sources.
-            </p>
-          </div>
-        </div>
-        
-        <div class="sync-actions">
-          <el-button
-            type="primary"
-            :loading="syncingUsers"
-            @click="handleSyncUsers"
-            size="large"
-            class="sync-users-btn"
-          >
-            <el-icon v-if="!syncingUsers" style="margin-right: 8px;"><Check /></el-icon>
-            {{ syncingUsers ? 'Syncing Users...' : 'Sync All Users' }}
-          </el-button>
-        </div>
 
-        <div v-if="syncResult" class="test-result">
-          <h3 class="result-title">Sync Result:</h3>
-          <div class="result-content">
-            <div class="result-item">
-              <span class="result-label">Total Users:</span>
-              <el-tag type="info">{{ syncResult.totalCount }}</el-tag>
+            <div class="sync-info-box" style="margin-top: 20px">
+              <el-icon class="info-icon"><InfoFilled /></el-icon>
+              <div class="info-content">
+                <strong>Sync Status Tracking:</strong>
+                <p>
+                  Each user sync now tracks: <code>status</code> (SUCCESS/FAILED),
+                  <code>lastSyncAt</code> (timestamp), and <code>lastSyncMessage</code> (success
+                  message or error details). Check the database to see syncStatus JSONB column.
+                </p>
+              </div>
             </div>
-            <div class="result-item">
-              <span class="result-label">Updated Users:</span>
-              <el-tag :type="syncResult.updatedCount > 0 ? 'success' : 'info'">
-                {{ syncResult.updatedCount }}
-              </el-tag>
+
+            <div class="sync-info-box">
+              <h3 class="info-box-title">When does user sync happen automatically?</h3>
+              <ul class="sync-scenarios">
+                <li>
+                  <strong>1. When mobile app calls API endpoints:</strong>
+                  <p>
+                    <strong>✅ Syncs individual user data:</strong> When mobile app calls
+                    <code>/notification/send</code> or <code>/notification/inbox</code>, that
+                    specific user's data (FCM token, platform, language) is synced immediately.
+                  </p>
+                  <p class="warning-note">
+                    ⚠️ <strong>Important:</strong> If mobile app only receives FCM push
+                    notifications without calling any API, user data won't be synced. The mobile app
+                    must call at least one API endpoint to update their data.
+                  </p>
+                </li>
+                <li>
+                  <strong>2. When sending notifications via template:</strong>
+                  <p>
+                    Before sending notifications, the system automatically normalizes all existing
+                    user data in the database (platform, language, token format validation). This
+                    only works with data already in the database - it doesn't fetch new data from
+                    external sources.
+                  </p>
+                </li>
+                <li>
+                  <strong>3. Manual sync (this page):</strong>
+                  <p>
+                    You can manually trigger a sync to normalize all user data, validate tokens, and
+                    update platform/language fields. This also only works with existing database
+                    data.
+                  </p>
+                </li>
+              </ul>
+
+              <div class="sync-improvement-box">
+                <strong>✅ Backend Auto-Cleanup Feature:</strong>
+                <p>
+                  The backend now <strong>automatically cleans up invalid tokens</strong> when FCM
+                  sends fail:
+                </p>
+                <ul class="auto-cleanup-list">
+                  <li>
+                    When sending notifications fails with invalid token errors, the backend
+                    automatically clears those tokens
+                  </li>
+                  <li>
+                    When syncing users, the backend automatically removes tokens that are too short
+                    or malformed
+                  </li>
+                  <li>
+                    This helps keep the database clean even if mobile apps don't call APIs
+                    frequently
+                  </li>
+                </ul>
+                <p class="note-text">
+                  <strong>Note:</strong> While backend auto-cleanup helps maintain data quality,
+                  mobile apps should still call <code>/notification/send</code> or
+                  <code>/notification/inbox</code> to sync NEW tokens and updated user information
+                  (platform, language). Backend cleanup only removes invalid tokens - it doesn't
+                  fetch new data from external sources.
+                </p>
+              </div>
             </div>
-            <div class="result-item">
-              <span class="result-label">Platform Updates:</span>
-              <el-tag type="warning">{{ syncResult.platformUpdates }}</el-tag>
+
+            <div class="sync-actions">
+              <el-button
+                type="primary"
+                :loading="syncingUsers"
+                @click="handleSyncUsers"
+                size="large"
+                class="sync-users-btn"
+              >
+                <el-icon v-if="!syncingUsers" style="margin-right: 8px"><Check /></el-icon>
+                {{ syncingUsers ? 'Syncing Users...' : 'Sync All Users' }}
+              </el-button>
             </div>
-            <div class="result-item">
-              <span class="result-label">Language Updates:</span>
-              <el-tag type="warning">{{ syncResult.languageUpdates }}</el-tag>
-            </div>
-            <div class="result-item">
-              <span class="result-label">Invalid Tokens:</span>
-              <el-tag :type="syncResult.invalidTokens > 0 ? 'danger' : 'success'">
-                {{ syncResult.invalidTokens }}
-              </el-tag>
-            </div>
-            <div v-if="syncResult.updatedIds && syncResult.updatedIds.length > 0" class="result-item">
-              <span class="result-label">Updated Account IDs:</span>
-              <div class="updated-ids-list">
-                <el-tag
-                  v-for="(id, index) in syncResult.updatedIds.slice(0, 10)"
-                  :key="index"
-                  size="small"
-                  style="margin: 2px"
+
+            <div v-if="syncResult" class="test-result">
+              <h3 class="result-title">Sync Result:</h3>
+              <div class="result-content">
+                <div class="result-item">
+                  <span class="result-label">Total Users:</span>
+                  <el-tag type="info">{{ syncResult.totalCount }}</el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Updated Users:</span>
+                  <el-tag :type="syncResult.updatedCount > 0 ? 'success' : 'info'">
+                    {{ syncResult.updatedCount }}
+                  </el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Platform Updates:</span>
+                  <el-tag type="warning">{{ syncResult.platformUpdates }}</el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Language Updates:</span>
+                  <el-tag type="warning">{{ syncResult.languageUpdates }}</el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Invalid Tokens:</span>
+                  <el-tag :type="syncResult.invalidTokens > 0 ? 'danger' : 'success'">
+                    {{ syncResult.invalidTokens }}
+                  </el-tag>
+                </div>
+                <div
+                  v-if="syncResult.updatedIds && syncResult.updatedIds.length > 0"
+                  class="result-item"
                 >
-                  {{ id }}
-                </el-tag>
-                <span v-if="syncResult.updatedIds.length > 10" class="more-ids">
-                  ... and {{ syncResult.updatedIds.length - 10 }} more
-                </span>
+                  <span class="result-label">Updated Account IDs:</span>
+                  <div class="updated-ids-list">
+                    <el-tag
+                      v-for="(id, index) in syncResult.updatedIds.slice(0, 10)"
+                      :key="index"
+                      size="small"
+                      style="margin: 2px"
+                    >
+                      {{ id }}
+                    </el-tag>
+                    <span v-if="syncResult.updatedIds.length > 10" class="more-ids">
+                      ... and {{ syncResult.updatedIds.length - 10 }} more
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        </div>
         </el-tab-pane>
 
         <!-- Inbox API Test Tab -->
@@ -247,7 +273,8 @@
           <div class="test-section">
             <h2 class="section-title">📬 Test Inbox API</h2>
             <p class="section-description">
-              Test the /inbox endpoint with two flows: Sync Data (when page/size are null) and Notification Center (when page/size are provided).
+              Test the /inbox endpoint with two flows: Sync Data (when page/size are null) and
+              Notification Center (when page/size are provided).
             </p>
 
             <div class="inbox-info-box">
@@ -256,300 +283,378 @@
                 <li>
                   <strong>1. Sync Data Flow:</strong>
                   <p>
-                    When <code>page</code> and <code>size</code> are <code>null</code> or not provided, the API syncs user data and returns a simple sync response.
+                    When <code>page</code> and <code>size</code> are <code>null</code> or not
+                    provided, the API syncs user data and returns a simple sync response.
                   </p>
                 </li>
                 <li>
                   <strong>2. Notification Center Flow:</strong>
                   <p>
-                    When <code>page</code> and <code>size</code> are provided, the API returns paginated notifications (existing behavior).
+                    When <code>page</code> and <code>size</code> are provided, the API returns
+                    paginated notifications (existing behavior).
                   </p>
                 </li>
               </ul>
             </div>
 
             <el-tabs v-model="inboxActiveTab" class="inbox-tabs">
-          <el-tab-pane label="🔄 Sync Data Flow" name="sync">
-            <div class="inbox-form-container">
-              <el-form :model="inboxSyncForm" label-width="140px">
-                <el-form-item label="Account ID" required>
-                  <el-input
-                    v-model="inboxSyncForm.accountId"
-                    placeholder="e.g., tny_ttny@bkrt"
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="FCM Token" required>
-                  <el-input
-                    v-model="inboxSyncForm.fcmToken"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="Enter FCM token..."
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="Platform">
-                  <el-select 
-                    v-model="inboxSyncForm.platform" 
-                    placeholder="Select platform (optional)" 
-                    clearable
-                    style="width: 100%"
-                  >
-                    <el-option label="IOS" value="IOS" />
-                    <el-option label="ANDROID" value="ANDROID" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Participant Code">
-                  <el-input
-                    v-model="inboxSyncForm.participantCode"
-                    placeholder="e.g., BKRTKHPPXXX"
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="Language">
-                  <el-select 
-                    v-model="inboxSyncForm.language" 
-                    placeholder="Select language (optional)" 
-                    clearable
-                    style="width: 100%"
-                  >
-                    <el-option label="English (en)" value="en" />
-                    <el-option label="Khmer (km)" value="km" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Bakong Platform" required>
-                  <el-select 
-                    v-model="inboxSyncForm.bakongPlatform" 
-                    placeholder="Select Bakong platform" 
-                    style="width: 100%"
-                  >
-                    <el-option label="BAKONG" value="BAKONG" />
-                    <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
-                    <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item>
-                  <div style="display: flex; gap: 12px;">
-                    <el-button
-                      type="primary"
-                      :loading="testingInboxSync"
-                      @click="handleTestInboxSync"
-                      :disabled="!inboxSyncForm.accountId || !inboxSyncForm.fcmToken || !inboxSyncForm.bakongPlatform"
-                      size="large"
-                      class="test-inbox-btn"
-                    >
-                      <el-icon v-if="!testingInboxSync" style="margin-right: 8px;"><Check /></el-icon>
-                      {{ testingInboxSync ? 'Syncing...' : 'Test Sync Data Flow' }}
-                    </el-button>
-                    <el-button
-                      type="danger"
-                      :loading="testingInboxSync"
-                      @click="handleTestSyncFailure"
-                      :disabled="!inboxSyncForm.accountId || !inboxSyncForm.bakongPlatform"
-                      size="large"
-                      class="test-failure-btn"
-                    >
-                      <el-icon v-if="!testingInboxSync" style="margin-right: 8px;"><Warning /></el-icon>
-                      Test Failure Scenario
-                    </el-button>
-                  </div>
-                  <div class="input-hint" style="margin-top: 8px;">
-                    💡 <strong>Test Failure:</strong> Click "Test Failure Scenario" to simulate a sync failure (uses invalid accountId format to trigger database error)
-                  </div>
-                </el-form-item>
-              </el-form>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane label="📋 Notification Center Flow" name="notification">
-            <div class="inbox-form-container">
-              <el-form :model="inboxNotificationForm" label-width="140px">
-                <el-form-item label="Account ID" required>
-                  <el-input
-                    v-model="inboxNotificationForm.accountId"
-                    placeholder="e.g., tny_ttny@bkrt"
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="FCM Token" required>
-                  <el-input
-                    v-model="inboxNotificationForm.fcmToken"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="Enter FCM token..."
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="Platform">
-                  <el-select 
-                    v-model="inboxNotificationForm.platform" 
-                    placeholder="Select platform (optional)" 
-                    clearable
-                    style="width: 100%"
-                  >
-                    <el-option label="IOS" value="IOS" />
-                    <el-option label="ANDROID" value="ANDROID" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Participant Code">
-                  <el-input
-                    v-model="inboxNotificationForm.participantCode"
-                    placeholder="e.g., BKRTKHPPXXX"
-                    clearable
-                  />
-                </el-form-item>
-                <el-form-item label="Language">
-                  <el-select 
-                    v-model="inboxNotificationForm.language" 
-                    placeholder="Select language (optional)" 
-                    clearable
-                    style="width: 100%"
-                  >
-                    <el-option label="English (en)" value="en" />
-                    <el-option label="Khmer (km)" value="km" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Bakong Platform" required>
-                  <el-select 
-                    v-model="inboxNotificationForm.bakongPlatform" 
-                    placeholder="Select Bakong platform" 
-                    style="width: 100%"
-                  >
-                    <el-option label="BAKONG" value="BAKONG" />
-                    <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
-                    <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Page" required>
-                  <el-input-number
-                    v-model="inboxNotificationForm.page"
-                    :min="1"
-                    placeholder="Page number"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-                <el-form-item label="Size" required>
-                  <el-input-number
-                    v-model="inboxNotificationForm.size"
-                    :min="1"
-                    :max="100"
-                    placeholder="Page size"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-                <el-form-item>
-                  <el-button
-                    type="primary"
-                    :loading="testingInboxNotification"
-                    @click="handleTestInboxNotification"
-                    :disabled="!inboxNotificationForm.accountId || !inboxNotificationForm.fcmToken || !inboxNotificationForm.bakongPlatform || !inboxNotificationForm.page || !inboxNotificationForm.size"
-                    size="large"
-                    class="test-inbox-btn"
-                  >
-                    <el-icon v-if="!testingInboxNotification" style="margin-right: 8px;"><Check /></el-icon>
-                    {{ testingInboxNotification ? 'Loading...' : 'Test Notification Center Flow' }}
-                  </el-button>
-                </el-form-item>
-              </el-form>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-
-        <!-- Sync Flow Result -->
-        <div v-if="inboxSyncResult" class="test-result">
-          <h3 class="result-title">Sync Flow Result:</h3>
-          <div class="result-content">
-            <div class="result-item">
-              <span class="result-label">Response Code:</span>
-              <el-tag :type="inboxSyncResult.responseCode === 0 ? 'success' : 'danger'">
-                {{ inboxSyncResult.responseCode }}
-              </el-tag>
-            </div>
-            <div class="result-item">
-              <span class="result-label">Message:</span>
-              <span class="result-value">{{ inboxSyncResult.responseMessage }}</span>
-            </div>
-            <div v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data" class="result-item">
-              <span class="result-label">Account ID:</span>
-              <span class="result-value">{{ inboxSyncResult.data.accountId }}</span>
-            </div>
-            <div v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data" class="result-item">
-              <span class="result-label">Bakong Platform:</span>
-              <el-tag type="info">{{ inboxSyncResult.data.bakongPlatform }}</el-tag>
-            </div>
-            <div v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data" class="result-item">
-              <span class="result-label">Synced At:</span>
-              <span class="result-value">{{ inboxSyncResult.data.syncedAt }}</span>
-            </div>
-            <!-- Sync Status Display -->
-            <div v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data?.syncStatus" class="result-item">
-              <span class="result-label">Sync Status:</span>
-              <div class="sync-status-details">
-                <el-tag :type="inboxSyncResult.data.syncStatus.status === 'SUCCESS' ? 'success' : 'danger'" style="margin-right: 8px;">
-                  {{ inboxSyncResult.data.syncStatus.status }}
-                </el-tag>
-                <div v-if="inboxSyncResult.data.syncStatus.lastSyncAt" class="sync-status-info">
-                  <div><strong>Last Sync:</strong> {{ new Date(inboxSyncResult.data.syncStatus.lastSyncAt).toLocaleString() }}</div>
+              <el-tab-pane label="🔄 Sync Data Flow" name="sync">
+                <div class="inbox-form-container">
+                  <el-form :model="inboxSyncForm" label-width="140px">
+                    <el-form-item label="Account ID" required>
+                      <el-input
+                        v-model="inboxSyncForm.accountId"
+                        placeholder="e.g., tny_ttny@bkrt"
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="FCM Token" required>
+                      <el-input
+                        v-model="inboxSyncForm.fcmToken"
+                        type="textarea"
+                        :rows="3"
+                        placeholder="Enter FCM token..."
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="Platform">
+                      <el-select
+                        v-model="inboxSyncForm.platform"
+                        placeholder="Select platform (optional)"
+                        clearable
+                        style="width: 100%"
+                      >
+                        <el-option label="IOS" value="IOS" />
+                        <el-option label="ANDROID" value="ANDROID" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="Participant Code">
+                      <el-input
+                        v-model="inboxSyncForm.participantCode"
+                        placeholder="e.g., BKRTKHPPXXX"
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="Language">
+                      <el-select
+                        v-model="inboxSyncForm.language"
+                        placeholder="Select language (optional)"
+                        clearable
+                        style="width: 100%"
+                      >
+                        <el-option label="English (en)" value="en" />
+                        <el-option label="Khmer (km)" value="km" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="Bakong Platform" required>
+                      <el-select
+                        v-model="inboxSyncForm.bakongPlatform"
+                        placeholder="Select Bakong platform"
+                        style="width: 100%"
+                      >
+                        <el-option label="BAKONG" value="BAKONG" />
+                        <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
+                        <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item>
+                      <div style="display: flex; gap: 12px">
+                        <el-button
+                          type="primary"
+                          :loading="testingInboxSync"
+                          @click="handleTestInboxSync"
+                          :disabled="
+                            !inboxSyncForm.accountId ||
+                            !inboxSyncForm.fcmToken ||
+                            !inboxSyncForm.bakongPlatform
+                          "
+                          size="large"
+                          class="test-inbox-btn"
+                        >
+                          <el-icon v-if="!testingInboxSync" style="margin-right: 8px"
+                            ><Check
+                          /></el-icon>
+                          {{ testingInboxSync ? 'Syncing...' : 'Test Sync Data Flow' }}
+                        </el-button>
+                        <el-button
+                          type="danger"
+                          :loading="testingInboxSync"
+                          @click="handleTestSyncFailure"
+                          :disabled="!inboxSyncForm.accountId || !inboxSyncForm.bakongPlatform"
+                          size="large"
+                          class="test-failure-btn"
+                        >
+                          <el-icon v-if="!testingInboxSync" style="margin-right: 8px"
+                            ><Warning
+                          /></el-icon>
+                          Test Failure Scenario
+                        </el-button>
+                      </div>
+                      <div class="input-hint" style="margin-top: 8px">
+                        💡 <strong>Test Failure:</strong> Click "Test Failure Scenario" to simulate
+                        a sync failure (uses invalid accountId format to trigger database error)
+                      </div>
+                    </el-form-item>
+                  </el-form>
                 </div>
-                <div v-if="inboxSyncResult.data.syncStatus.lastSyncMessage" class="sync-status-message">
-                  <strong>Message:</strong> {{ inboxSyncResult.data.syncStatus.lastSyncMessage }}
+              </el-tab-pane>
+              <el-tab-pane label="📋 Notification Center Flow" name="notification">
+                <div class="inbox-form-container">
+                  <el-form :model="inboxNotificationForm" label-width="140px">
+                    <el-form-item label="Account ID" required>
+                      <el-input
+                        v-model="inboxNotificationForm.accountId"
+                        placeholder="e.g., tny_ttny@bkrt"
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="FCM Token" required>
+                      <el-input
+                        v-model="inboxNotificationForm.fcmToken"
+                        type="textarea"
+                        :rows="3"
+                        placeholder="Enter FCM token..."
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="Platform">
+                      <el-select
+                        v-model="inboxNotificationForm.platform"
+                        placeholder="Select platform (optional)"
+                        clearable
+                        style="width: 100%"
+                      >
+                        <el-option label="IOS" value="IOS" />
+                        <el-option label="ANDROID" value="ANDROID" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="Participant Code">
+                      <el-input
+                        v-model="inboxNotificationForm.participantCode"
+                        placeholder="e.g., BKRTKHPPXXX"
+                        clearable
+                      />
+                    </el-form-item>
+                    <el-form-item label="Language">
+                      <el-select
+                        v-model="inboxNotificationForm.language"
+                        placeholder="Select language (optional)"
+                        clearable
+                        style="width: 100%"
+                      >
+                        <el-option label="English (en)" value="en" />
+                        <el-option label="Khmer (km)" value="km" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="Bakong Platform" required>
+                      <el-select
+                        v-model="inboxNotificationForm.bakongPlatform"
+                        placeholder="Select Bakong platform"
+                        style="width: 100%"
+                      >
+                        <el-option label="BAKONG" value="BAKONG" />
+                        <el-option label="BAKONG_JUNIOR" value="BAKONG_JUNIOR" />
+                        <el-option label="BAKONG_TOURIST" value="BAKONG_TOURIST" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="Page" required>
+                      <el-input-number
+                        v-model="inboxNotificationForm.page"
+                        :min="1"
+                        placeholder="Page number"
+                        style="width: 100%"
+                      />
+                    </el-form-item>
+                    <el-form-item label="Size" required>
+                      <el-input-number
+                        v-model="inboxNotificationForm.size"
+                        :min="1"
+                        :max="100"
+                        placeholder="Page size"
+                        style="width: 100%"
+                      />
+                    </el-form-item>
+                    <el-form-item>
+                      <el-button
+                        type="primary"
+                        :loading="testingInboxNotification"
+                        @click="handleTestInboxNotification"
+                        :disabled="
+                          !inboxNotificationForm.accountId ||
+                          !inboxNotificationForm.fcmToken ||
+                          !inboxNotificationForm.bakongPlatform ||
+                          !inboxNotificationForm.page ||
+                          !inboxNotificationForm.size
+                        "
+                        size="large"
+                        class="test-inbox-btn"
+                      >
+                        <el-icon v-if="!testingInboxNotification" style="margin-right: 8px"
+                          ><Check
+                        /></el-icon>
+                        {{
+                          testingInboxNotification ? 'Loading...' : 'Test Notification Center Flow'
+                        }}
+                      </el-button>
+                    </el-form-item>
+                  </el-form>
                 </div>
-              </div>
-            </div>
-            <div v-if="inboxSyncResult.responseCode === 1 && inboxSyncResult.data" class="result-item error-item">
-              <span class="result-label">Error:</span>
-              <span class="result-value error-text">{{ inboxSyncResult.data.error }}</span>
-            </div>
-          </div>
-        </div>
+              </el-tab-pane>
+            </el-tabs>
 
-        <!-- Notification Center Flow Result -->
-        <div v-if="inboxNotificationResult" class="test-result">
-          <h3 class="result-title">Notification Center Flow Result:</h3>
-          <div class="result-content">
-            <div class="result-item">
-              <span class="result-label">Response Code:</span>
-              <el-tag :type="inboxNotificationResult.responseCode === 0 ? 'success' : 'danger'">
-                {{ inboxNotificationResult.responseCode }}
-              </el-tag>
-            </div>
-            <div class="result-item">
-              <span class="result-label">Message:</span>
-              <span class="result-value">{{ inboxNotificationResult.responseMessage }}</span>
-            </div>
-            <div v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data" class="result-item">
-              <span class="result-label">Total Notifications:</span>
-              <el-tag type="info">{{ inboxNotificationResult.data.totalCount || 0 }}</el-tag>
-            </div>
-            <div v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data" class="result-item">
-              <span class="result-label">Page:</span>
-              <el-tag>{{ inboxNotificationResult.data.page }} / {{ inboxNotificationResult.data.pageCount }}</el-tag>
-            </div>
-            <div v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data" class="result-item">
-              <span class="result-label">Items on Page:</span>
-              <el-tag type="success">{{ inboxNotificationResult.data.itemCount }}</el-tag>
-            </div>
-            <div v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data && inboxNotificationResult.data.notifications" class="result-item">
-              <span class="result-label">Notifications:</span>
-              <div class="notifications-preview">
-                <el-tag
-                  v-for="(notif, index) in inboxNotificationResult.data.notifications.slice(0, 5)"
-                  :key="index"
-                  size="small"
-                  style="margin: 2px"
+            <!-- Sync Flow Result -->
+            <div v-if="inboxSyncResult" class="test-result">
+              <h3 class="result-title">Sync Flow Result:</h3>
+              <div class="result-content">
+                <div class="result-item">
+                  <span class="result-label">Response Code:</span>
+                  <el-tag :type="inboxSyncResult.responseCode === 0 ? 'success' : 'danger'">
+                    {{ inboxSyncResult.responseCode }}
+                  </el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Message:</span>
+                  <span class="result-value">{{ inboxSyncResult.responseMessage }}</span>
+                </div>
+                <div
+                  v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data"
+                  class="result-item"
                 >
-                  #{{ notif.id }}: {{ notif.title?.substring(0, 30) || 'No title' }}...
-                </el-tag>
-                <span v-if="inboxNotificationResult.data.notifications.length > 5" class="more-ids">
-                  ... and {{ inboxNotificationResult.data.notifications.length - 5 }} more
-                </span>
+                  <span class="result-label">Account ID:</span>
+                  <span class="result-value">{{ inboxSyncResult.data.accountId }}</span>
+                </div>
+                <div
+                  v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data"
+                  class="result-item"
+                >
+                  <span class="result-label">Bakong Platform:</span>
+                  <el-tag type="info">{{ inboxSyncResult.data.bakongPlatform }}</el-tag>
+                </div>
+                <div
+                  v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data"
+                  class="result-item"
+                >
+                  <span class="result-label">Synced At:</span>
+                  <span class="result-value">{{ inboxSyncResult.data.syncedAt }}</span>
+                </div>
+                <!-- Sync Status Display -->
+                <div
+                  v-if="inboxSyncResult.responseCode === 0 && inboxSyncResult.data?.syncStatus"
+                  class="result-item"
+                >
+                  <span class="result-label">Sync Status:</span>
+                  <div class="sync-status-details">
+                    <el-tag
+                      :type="
+                        inboxSyncResult.data.syncStatus.status === 'SUCCESS' ? 'success' : 'danger'
+                      "
+                      style="margin-right: 8px"
+                    >
+                      {{ inboxSyncResult.data.syncStatus.status }}
+                    </el-tag>
+                    <div v-if="inboxSyncResult.data.syncStatus.lastSyncAt" class="sync-status-info">
+                      <div>
+                        <strong>Last Sync:</strong>
+                        {{ new Date(inboxSyncResult.data.syncStatus.lastSyncAt).toLocaleString() }}
+                      </div>
+                    </div>
+                    <div
+                      v-if="inboxSyncResult.data.syncStatus.lastSyncMessage"
+                      class="sync-status-message"
+                    >
+                      <strong>Message:</strong>
+                      {{ inboxSyncResult.data.syncStatus.lastSyncMessage }}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  v-if="inboxSyncResult.responseCode === 1 && inboxSyncResult.data"
+                  class="result-item error-item"
+                >
+                  <span class="result-label">Error:</span>
+                  <span class="result-value error-text">{{ inboxSyncResult.data.error }}</span>
+                </div>
               </div>
             </div>
-            <div v-if="inboxNotificationResult.responseCode === 1 && inboxNotificationResult.data" class="result-item error-item">
-              <span class="result-label">Error:</span>
-              <span class="result-value error-text">{{ inboxNotificationResult.data.error }}</span>
+
+            <!-- Notification Center Flow Result -->
+            <div v-if="inboxNotificationResult" class="test-result">
+              <h3 class="result-title">Notification Center Flow Result:</h3>
+              <div class="result-content">
+                <div class="result-item">
+                  <span class="result-label">Response Code:</span>
+                  <el-tag :type="inboxNotificationResult.responseCode === 0 ? 'success' : 'danger'">
+                    {{ inboxNotificationResult.responseCode }}
+                  </el-tag>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">Message:</span>
+                  <span class="result-value">{{ inboxNotificationResult.responseMessage }}</span>
+                </div>
+                <div
+                  v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data"
+                  class="result-item"
+                >
+                  <span class="result-label">Total Notifications:</span>
+                  <el-tag type="info">{{ inboxNotificationResult.data.totalCount || 0 }}</el-tag>
+                </div>
+                <div
+                  v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data"
+                  class="result-item"
+                >
+                  <span class="result-label">Page:</span>
+                  <el-tag
+                    >{{ inboxNotificationResult.data.page }} /
+                    {{ inboxNotificationResult.data.pageCount }}</el-tag
+                  >
+                </div>
+                <div
+                  v-if="inboxNotificationResult.responseCode === 0 && inboxNotificationResult.data"
+                  class="result-item"
+                >
+                  <span class="result-label">Items on Page:</span>
+                  <el-tag type="success">{{ inboxNotificationResult.data.itemCount }}</el-tag>
+                </div>
+                <div
+                  v-if="
+                    inboxNotificationResult.responseCode === 0 &&
+                    inboxNotificationResult.data &&
+                    inboxNotificationResult.data.notifications
+                  "
+                  class="result-item"
+                >
+                  <span class="result-label">Notifications:</span>
+                  <div class="notifications-preview">
+                    <el-tag
+                      v-for="(notif, index) in inboxNotificationResult.data.notifications.slice(
+                        0,
+                        5,
+                      )"
+                      :key="index"
+                      size="small"
+                      style="margin: 2px"
+                    >
+                      #{{ notif.id }}: {{ notif.title?.substring(0, 30) || 'No title' }}...
+                    </el-tag>
+                    <span
+                      v-if="inboxNotificationResult.data.notifications.length > 5"
+                      class="more-ids"
+                    >
+                      ... and {{ inboxNotificationResult.data.notifications.length - 5 }} more
+                    </span>
+                  </div>
+                </div>
+                <div
+                  v-if="inboxNotificationResult.responseCode === 1 && inboxNotificationResult.data"
+                  class="result-item error-item"
+                >
+                  <span class="result-label">Error:</span>
+                  <span class="result-value error-text">{{
+                    inboxNotificationResult.data.error
+                  }}</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -561,7 +666,14 @@
 import { ref } from 'vue'
 import { Check, InfoFilled, Warning } from '@element-plus/icons-vue'
 import { ElNotification, ElMessage } from 'element-plus'
-import { testFCMToken, syncUsers, testInbox, type TestTokenResponse, type SyncUsersResponse, type InboxRequest } from '@/services/notificationApi'
+import {
+  testFCMToken,
+  syncUsers,
+  testInbox,
+  type TestTokenResponse,
+  type SyncUsersResponse,
+  type InboxRequest,
+} from '@/services/notificationApi'
 
 // Token testing
 const testingToken = ref(false)
@@ -639,7 +751,7 @@ const handleTestToken = async () => {
       ElNotification({
         title: 'Token Test Successful ✅',
         type: 'success',
-        message: result.messageId 
+        message: result.messageId
           ? `Token is valid! Test notification sent (ID: ${result.messageId.substring(0, 20)}...)`
           : 'Token is valid! A test notification has been sent.',
         duration: 5000,
@@ -657,16 +769,20 @@ const handleTestToken = async () => {
   } catch (err: any) {
     console.error('❌ [handleTestToken] Token test error:', err)
     console.error('❌ [handleTestToken] Error response:', err.response?.data)
-    
-    const errorMessage = err.response?.data?.responseMessage || err.response?.data?.message || err.message || 'Failed to test token'
-    
+
+    const errorMessage =
+      err.response?.data?.responseMessage ||
+      err.response?.data?.message ||
+      err.message ||
+      'Failed to test token'
+
     ElNotification({
       title: 'Test Error',
       type: 'error',
       message: errorMessage,
       duration: 5000,
     })
-    
+
     // Set error result for display
     tokenTestResult.value = {
       isValid: false,
@@ -721,7 +837,11 @@ const handleSyncUsers = async () => {
 }
 
 const handleTestInboxSync = async () => {
-  if (!inboxSyncForm.value.accountId || !inboxSyncForm.value.fcmToken || !inboxSyncForm.value.bakongPlatform) {
+  if (
+    !inboxSyncForm.value.accountId ||
+    !inboxSyncForm.value.fcmToken ||
+    !inboxSyncForm.value.bakongPlatform
+  ) {
     ElMessage.warning('Please fill in all required fields')
     return
   }
@@ -756,8 +876,9 @@ const handleTestInboxSync = async () => {
     })
   } catch (err: any) {
     console.error('❌ [handleTestInboxSync] Error:', err)
-    const errorMessage = err.response?.data?.responseMessage || err.message || 'Failed to sync user data'
-    
+    const errorMessage =
+      err.response?.data?.responseMessage || err.message || 'Failed to sync user data'
+
     inboxSyncResult.value = {
       responseCode: 1,
       errorCode: err.response?.data?.errorCode || 1,
@@ -792,7 +913,7 @@ const handleTestSyncFailure = async () => {
     // Test failure scenario: Use an accountId that's too long (will cause database error)
     // PostgreSQL VARCHAR(32) constraint will fail
     const invalidAccountId = 'a'.repeat(50) // 50 characters - exceeds 32 char limit
-    
+
     const payload: InboxRequest = {
       fcmToken: inboxSyncForm.value.fcmToken || 'f', // Use short token "f" to test
       accountId: invalidAccountId, // This will cause database error
@@ -809,8 +930,9 @@ const handleTestSyncFailure = async () => {
     inboxSyncResult.value = response
   } catch (err: any) {
     console.error('❌ [handleTestSyncFailure] Error:', err)
-    const errorMessage = err.response?.data?.responseMessage || err.message || 'Failed to sync user data'
-    
+    const errorMessage =
+      err.response?.data?.responseMessage || err.message || 'Failed to sync user data'
+
     // Show error result
     inboxSyncResult.value = {
       responseCode: 1,
@@ -833,9 +955,13 @@ const handleTestSyncFailure = async () => {
 }
 
 const handleTestInboxNotification = async () => {
-  if (!inboxNotificationForm.value.accountId || !inboxNotificationForm.value.fcmToken || 
-      !inboxNotificationForm.value.bakongPlatform || !inboxNotificationForm.value.page || 
-      !inboxNotificationForm.value.size) {
+  if (
+    !inboxNotificationForm.value.accountId ||
+    !inboxNotificationForm.value.fcmToken ||
+    !inboxNotificationForm.value.bakongPlatform ||
+    !inboxNotificationForm.value.page ||
+    !inboxNotificationForm.value.size
+  ) {
     ElMessage.warning('Please fill in all required fields')
     return
   }
@@ -871,8 +997,9 @@ const handleTestInboxNotification = async () => {
     })
   } catch (err: any) {
     console.error('❌ [handleTestInboxNotification] Error:', err)
-    const errorMessage = err.response?.data?.responseMessage || err.message || 'Failed to retrieve notifications'
-    
+    const errorMessage =
+      err.response?.data?.responseMessage || err.message || 'Failed to retrieve notifications'
+
     inboxNotificationResult.value = {
       responseCode: 1,
       errorCode: err.response?.data?.errorCode || 1,
@@ -1371,4 +1498,3 @@ const handleTestInboxNotification = async () => {
   }
 }
 </style>
-

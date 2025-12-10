@@ -104,17 +104,17 @@ export interface TestTokenResponse {
 export const testFCMToken = async (data: TestTokenRequest): Promise<TestTokenResponse> => {
   const response = await api.post('/api/v1/notification/test-token', data)
   console.log('🔍 [testFCMToken] Full API response:', response.data)
-  
+
   // Handle response structure: response.data.data contains the TestTokenResponse
   const result = response.data?.data || response.data
-  
+
   console.log('🔍 [testFCMToken] Parsed result:', result)
-  
+
   // Ensure we have the expected structure
   if (!result || typeof result !== 'object') {
     throw new Error('Invalid response structure from token test endpoint')
   }
-  
+
   return result as TestTokenResponse
 }
 
@@ -131,17 +131,17 @@ export interface SyncUsersResponse {
 export const syncUsers = async (): Promise<SyncUsersResponse> => {
   const response = await api.post('/api/v1/notification/sync-users')
   console.log('🔍 [syncUsers] Full API response:', response.data)
-  
+
   // Handle response structure: response.data.data contains the SyncUsersResponse
   const result = response.data?.data || response.data
-  
+
   console.log('🔍 [syncUsers] Parsed result:', result)
-  
+
   // Ensure we have the expected structure
   if (!result || typeof result !== 'object') {
     throw new Error('Invalid response structure from sync users endpoint')
   }
-  
+
   return result as SyncUsersResponse
 }
 
@@ -177,7 +177,7 @@ export interface InboxNotificationCenterResponse {
 export const testInbox = async (data: InboxRequest): Promise<any> => {
   const response = await api.post('/api/v1/notification/inbox', data)
   console.log('🔍 [testInbox] Full API response:', response.data)
-  
+
   // Backend returns BaseResponseDto format:
   // { responseCode, errorCode, responseMessage, data }
   // Return the full response object so TestView can access all fields
@@ -471,23 +471,23 @@ export const notificationApi = {
       // Nginx limit is 20MB, but we'll use 18MB as safe limit (leaves 2MB buffer for FormData overhead)
       const MAX_TOTAL_SIZE = 18 * 1024 * 1024 // 18MB
       const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file (backend limit)
-      
+
       let totalSize = 0
       const sizeErrors: string[] = []
-      
+
       normalized.forEach((item, index) => {
         const fileSize = item.file.size
-        
+
         // Check individual file size
         if (fileSize > MAX_SINGLE_FILE_SIZE) {
           sizeErrors.push(
             `File ${index + 1} (${item.file.name}) is ${(fileSize / 1024 / 1024).toFixed(2)}MB, exceeds 10MB limit`,
           )
         }
-        
+
         totalSize += fileSize
       })
-      
+
       // Check total size
       if (totalSize > MAX_TOTAL_SIZE) {
         const totalMB = (totalSize / 1024 / 1024).toFixed(2)
@@ -495,7 +495,7 @@ export const notificationApi = {
           `Total upload size (${totalMB}MB) exceeds limit (18MB). Please compress images further or upload fewer images.`,
         )
       }
-      
+
       // Check individual file errors
       if (sizeErrors.length > 0) {
         throw new Error(sizeErrors.join('; '))

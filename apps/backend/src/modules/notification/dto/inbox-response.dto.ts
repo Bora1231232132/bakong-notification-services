@@ -200,32 +200,34 @@ export class InboxResponseDto implements NotificationData {
     sharedFailedUsers?: Array<{ accountId: string; error: string; errorCode?: string }>,
   ) {
     // Check if failures are due to invalid tokens
-    const checkInvalidTokens = (users: Array<{ accountId: string; error?: string; errorCode?: string }>): boolean => {
+    const checkInvalidTokens = (
+      users: Array<{ accountId: string; error?: string; errorCode?: string }>,
+    ): boolean => {
       if (!users || users.length === 0) return false
-      
+
       const invalidTokenErrorCodes = [
         'messaging/registration-token-not-registered',
         'messaging/invalid-registration-token',
         'messaging/invalid-argument',
       ]
-      
+
       // Check if all failures are due to invalid tokens
-      const allInvalidTokens = users.every((u) => 
-        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      const allInvalidTokens = users.every(
+        (u) => u.errorCode && invalidTokenErrorCodes.includes(u.errorCode),
       )
-      
+
       // Or check if majority are invalid tokens (more than 50%)
-      const invalidTokenCount = users.filter((u) => 
-        u.errorCode && invalidTokenErrorCodes.includes(u.errorCode)
+      const invalidTokenCount = users.filter(
+        (u) => u.errorCode && invalidTokenErrorCodes.includes(u.errorCode),
       ).length
       const majorityInvalidTokens = invalidTokenCount > users.length / 2
-      
+
       return allInvalidTokens || majorityInvalidTokens
     }
-    
-    const allFailedUsers = mode === 'individual' ? failedUsers : (sharedFailedUsers || [])
+
+    const allFailedUsers = mode === 'individual' ? failedUsers : sharedFailedUsers || []
     const failedDueToInvalidTokens = checkInvalidTokens(allFailedUsers)
-    
+
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
@@ -374,7 +376,7 @@ export class InboxResponseDto implements NotificationData {
         }
       })
     }
-    
+
     // IMPORTANT: Set 'type' AFTER all other fields to ensure it's always 'NOTIFICATION'
     // Mobile app requires this field and expects it to be 'NOTIFICATION'
     dataPayload.type = 'NOTIFICATION'

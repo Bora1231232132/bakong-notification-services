@@ -396,16 +396,16 @@ export class ValidationHelper {
 
   /**
    * Validate FCM token WITHOUT sending test notifications
-   * 
+   *
    * IMPORTANT: This function only validates token format, NOT Firebase validity.
    * Invalid tokens will be caught when actually sending notifications.
-   * 
+   *
    * Why this approach?
    * 1. Firebase Admin SDK doesn't have a dry-run API that doesn't send notifications
    * 2. Sending test notifications bothers users with "Test message" notifications
    * 3. Format validation + error handling on real sends is sufficient
    * 4. Tokens are synced from mobile app, so they should be current
-   * 
+   *
    * @param token - FCM token to validate
    * @param fcm - Firebase Messaging instance (not used, kept for API compatibility)
    * @returns true if token format is valid (actual validity checked on send)
@@ -414,16 +414,20 @@ export class ValidationHelper {
     // Only validate format - don't send test notifications!
     // Real validation happens when we try to send actual notifications
     // Invalid tokens will fail with specific error codes that we handle
-    
+
     if (!this.isValidFCMTokenFormat(token)) {
-      console.warn(`❌ [validateFCMTokenWithFirebase] Invalid token format: ${token.substring(0, 30)}...`)
+      console.warn(
+        `❌ [validateFCMTokenWithFirebase] Invalid token format: ${token.substring(0, 30)}...`,
+      )
       return false
     }
 
     // Token format is valid - assume it's valid
     // If it's actually invalid, Firebase will return an error when we try to send
     // This prevents users from receiving annoying "Test message" notifications
-    console.log(`✅ [validateFCMTokenWithFirebase] Token format valid: ${token.substring(0, 30)}...`)
+    console.log(
+      `✅ [validateFCMTokenWithFirebase] Token format valid: ${token.substring(0, 30)}...`,
+    )
     return true
   }
 

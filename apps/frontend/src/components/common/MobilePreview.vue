@@ -3,7 +3,7 @@
     <div
       class="relative h-[651.49px] w-[322.07px] rounded-[34px] overflow-hidden p-[30px] bg-white-100"
     >
-      <img :src="bg" alt="" class=" absolute inset-0 h-full w-full object-top" />
+      <img :src="bg" alt="" class="absolute inset-0 h-full w-full object-top" />
       <section
         class="absolute bottom-[0px] left-[2px] bottom-[2px] w-[319.00px] h-[521.19px] justify-center items-center bg-white/97 backdrop-blur-[3.01882px] border ring-1 ring-black/5 rounded-t-[18.1129px] rounded-b-[39.2447px] shadow-[0_12px_40px_rgba(0,0,0,0.25)] overflow-hidden"
         role="dialog"
@@ -12,7 +12,7 @@
         <div
           class="image-container absolute top-0 h-[159.5px] rounded-t-[18.1129px]"
           :class="props.image ? 'bg-transparent' : 'bg-[#E2E2E2]'"
-          style="left: -1px; right: -1px; width: calc(100% + 5px);"
+          style="left: -1px; right: -1px; width: calc(100% + 5px)"
         >
           <div
             class="absolute left-1/2 -translate-x-1/2 top-[5px] w-[46px] h-[6px] rounded-full bg-gray-400 z-10"
@@ -22,7 +22,7 @@
             :src="displayImage"
             alt=""
             class="absolute inset-0 rounded-t-[18.1129px]"
-            style="width: 100%; height: 100%; object-fit: cover;"
+            style="width: 100%; height: 100%; object-fit: cover"
           />
           <div v-else class="grid place-items-center h-full w-full">
             <img :src="displayImage" alt="" class="w-full h-full object-contain" />

@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Post, Req, UseGuards, Query, Param, Put, UploadedFiles, UseInterceptors } from '@nestjs/common'
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UseGuards,
+  Query,
+  Param,
+  Put,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common'
 import { AnyFilesInterceptor } from '@nestjs/platform-express'
 import { UserRole } from '@bakong/shared'
 import { Public } from 'src/common/middleware/jwt-auth.guard'
@@ -58,7 +70,7 @@ export class AuthController {
   @UseInterceptors(AnyFilesInterceptor())
   async uploadAvatar(@Req() req, @UploadedFiles() files: Express.Multer.File[]) {
     const userId = req.user.id
-    
+
     if (!files || files.length === 0) {
       return {
         responseCode: 1,
@@ -100,9 +112,7 @@ export class AuthController {
       req,
     )
 
-    const image = result.imageId
-      ? `/api/v1/image/${result.imageId}`
-      : null
+    const image = result.imageId ? `/api/v1/image/${result.imageId}` : null
 
     return {
       responseCode: 0,

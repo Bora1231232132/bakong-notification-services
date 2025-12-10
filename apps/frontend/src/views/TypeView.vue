@@ -129,7 +129,7 @@ const handlePerPageChange = (newPerPage: number) => {
 const addNew = () => {
   // Commented out: Add Category feature - coming soon
   // router.push('/templates/create')
-  
+
   // Show notification that feature is coming soon
   ElNotification({
     title: 'Coming Soon',

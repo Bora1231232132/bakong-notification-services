@@ -38,8 +38,8 @@ export class BaseFunctionHelper {
       nodeEnv === 'development'
         ? 'http://localhost:4005'
         : nodeEnv === 'staging'
-          ? 'http://10.20.6.57:4002'
-          : 'https://10.20.6.58:8080'
+        ? 'http://10.20.6.57:4002'
+        : 'https://10.20.6.58:8080'
 
     let baseUrl = defaultBaseUrl
 
@@ -108,7 +108,11 @@ export class BaseFunctionHelper {
 
       // Only update fcmToken if it's provided AND has an actual value (not null/empty)
       // If null or empty string, keep the old token (same behavior as other fields)
-      if (updateData.fcmToken !== undefined && updateData.fcmToken !== null && updateData.fcmToken !== '') {
+      if (
+        updateData.fcmToken !== undefined &&
+        updateData.fcmToken !== null &&
+        updateData.fcmToken !== ''
+      ) {
         const currentToken = user.fcmToken || ''
         const newToken = updateData.fcmToken
 
@@ -141,7 +145,11 @@ export class BaseFunctionHelper {
 
       // Only update participantCode if it's provided AND not null/empty
       // null/empty means "not provided" - don't overwrite existing value
-      if (updateData.participantCode !== undefined && updateData.participantCode !== null && updateData.participantCode !== '') {
+      if (
+        updateData.participantCode !== undefined &&
+        updateData.participantCode !== null &&
+        updateData.participantCode !== ''
+      ) {
         updatesToApply.participantCode = updateData.participantCode
       } else if (updateData.participantCode !== undefined) {
         console.log(
@@ -150,7 +158,11 @@ export class BaseFunctionHelper {
       }
 
       // Only update platform if it's provided AND not null/empty
-      if (updateData.platform !== undefined && updateData.platform !== null && updateData.platform !== '') {
+      if (
+        updateData.platform !== undefined &&
+        updateData.platform !== null &&
+        updateData.platform !== ''
+      ) {
         updatesToApply.platform = this.normalizePlatform(updateData.platform)
       } else if (updateData.platform !== undefined) {
         console.log(
@@ -159,7 +171,11 @@ export class BaseFunctionHelper {
       }
 
       // Only update language if it's provided AND not null/empty
-      if (updateData.language !== undefined && updateData.language !== null && updateData.language !== '') {
+      if (
+        updateData.language !== undefined &&
+        updateData.language !== null &&
+        updateData.language !== ''
+      ) {
         updatesToApply.language = this.normalizeLanguage(updateData.language)
       } else if (updateData.language !== undefined) {
         console.log(
@@ -169,7 +185,11 @@ export class BaseFunctionHelper {
 
       // Only update bakongPlatform if it's provided AND not null/empty
       // If not provided or null/empty, keep the existing value
-      if (updateData.bakongPlatform !== undefined && updateData.bakongPlatform !== null && updateData.bakongPlatform !== '') {
+      if (
+        updateData.bakongPlatform !== undefined &&
+        updateData.bakongPlatform !== null &&
+        updateData.bakongPlatform !== ''
+      ) {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(
           `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${
@@ -190,8 +210,8 @@ export class BaseFunctionHelper {
                 updatesToApply.fcmToken.length
               })`
             : updatesToApply.fcmToken === ''
-              ? 'EMPTY STRING'
-              : 'NOT IN updatesToApply',
+            ? 'EMPTY STRING'
+            : 'NOT IN updatesToApply',
           participantCode: updatesToApply.participantCode || 'NOT IN updatesToApply',
           platform: updatesToApply.platform || 'NOT IN updatesToApply',
           language: updatesToApply.language || 'NOT IN updatesToApply',
@@ -242,10 +262,16 @@ export class BaseFunctionHelper {
         if (updatesToApply.language !== undefined && user.language !== updatesToApply.language) {
           dataChanged = true
         }
-        if (updatesToApply.bakongPlatform !== undefined && user.bakongPlatform !== updatesToApply.bakongPlatform) {
+        if (
+          updatesToApply.bakongPlatform !== undefined &&
+          user.bakongPlatform !== updatesToApply.bakongPlatform
+        ) {
           dataChanged = true
         }
-        if (updatesToApply.participantCode !== undefined && user.participantCode !== updatesToApply.participantCode) {
+        if (
+          updatesToApply.participantCode !== undefined &&
+          user.participantCode !== updatesToApply.participantCode
+        ) {
           dataChanged = true
         }
       }
@@ -264,9 +290,9 @@ export class BaseFunctionHelper {
           // If we're updating fields, show which fields were synced
           // Note: We always consider it an "update" when syncing fields from mobile app
           // because mobile app is sending fresh data, even if values appear the same
-          const fieldsUpdated = Object.keys(updatesToApply).filter(key => key !== 'syncStatus')
+          const fieldsUpdated = Object.keys(updatesToApply).filter((key) => key !== 'syncStatus')
           const hasRealUpdates = fieldsUpdated.length > 0
-          
+
           let syncMessage = ''
           if (hasRealUpdates) {
             if (dataChanged) {
@@ -280,14 +306,14 @@ export class BaseFunctionHelper {
           } else {
             syncMessage = 'Existing user synced: no data changes'
           }
-          
+
           const syncStatusUpdate = {
             status: 'SUCCESS' as const,
             lastSyncAt: new Date().toISOString(),
             lastSyncMessage: syncMessage,
           }
           updatesToApply.syncStatus = syncStatusUpdate
-          
+
           // Mark as changed if we're updating any real fields (mobile app sent fresh data)
           if (hasRealUpdates) {
             dataChanged = true
@@ -361,7 +387,7 @@ export class BaseFunctionHelper {
             updateError.message,
             updateError.stack,
           )
-          
+
           // Update sync status to FAILED
           try {
             await this.bkUserRepo.update(
@@ -380,7 +406,7 @@ export class BaseFunctionHelper {
               statusUpdateError,
             )
           }
-          
+
           throw updateError
         }
       } else {
@@ -388,7 +414,7 @@ export class BaseFunctionHelper {
           `⏭️ [syncUser] No updates to apply for user ${accountId} (updatesToApply is empty)`,
         )
         dataChanged = false
-        
+
         // Still update sync status even if no data changes
         try {
           await this.bkUserRepo.update(
@@ -424,7 +450,9 @@ export class BaseFunctionHelper {
         syncStatus: {
           status: 'SUCCESS',
           lastSyncAt: new Date().toISOString(),
-          lastSyncMessage: `New user created: ${updateData.bakongPlatform || 'no platform'} platform`,
+          lastSyncMessage: `New user created: ${
+            updateData.bakongPlatform || 'no platform'
+          } platform`,
         },
       })
       console.log(
@@ -445,7 +473,7 @@ export class BaseFunctionHelper {
         createError.message,
         createError.stack,
       )
-      
+
       // Try to update sync status if user was partially created (shouldn't happen, but safety)
       try {
         const existingUser = await this.findUserByAccountId(accountId)
@@ -464,7 +492,7 @@ export class BaseFunctionHelper {
       } catch (statusUpdateError) {
         // Ignore - user doesn't exist yet
       }
-      
+
       throw createError
     }
   }
@@ -483,7 +511,7 @@ export class BaseFunctionHelper {
 
     for (const user of users) {
       let userChanged = false
-      
+
       // Normalize user fields (platform, language, etc.)
       const changed = ValidationHelper.normalizeUserFields(user, stats)
       if (changed) {
@@ -497,12 +525,10 @@ export class BaseFunctionHelper {
       if (user.fcmToken?.trim()) {
         const isTooShort = user.fcmToken.length < 50
         const hasInvalidFormat = !ValidationHelper.isValidFCMTokenFormat(user.fcmToken)
-        
+
         if (isTooShort || hasInvalidFormat) {
           stats.invalidTokens++
-          const reason = isTooShort 
-            ? `too short (${user.fcmToken.length} chars)` 
-            : 'invalid format'
+          const reason = isTooShort ? `too short (${user.fcmToken.length} chars)` : 'invalid format'
           console.log(
             `🧹 [syncAllUsers] Clearing obviously invalid token for user ${user.accountId} (${reason})`,
           )

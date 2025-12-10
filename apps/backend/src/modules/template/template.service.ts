@@ -520,16 +520,17 @@ export class TemplateService implements OnModuleInit {
         } else {
           // No users received the notification - keep as draft
           console.warn('⚠️ No notifications were sent (successfulCount = 0) - keeping as draft')
-          
+
           // Check if failures are due to invalid tokens FIRST
           const failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens === true
           const failedCount = sendResult.failedCount || 0
-          
+
           // Only set savedAsDraftNoUsers if there were NO users attempted (failedCount === 0)
           // AND it's NOT due to invalid tokens
           // If failedCount > 0, it means users existed but all sends failed (not "no users available")
-          const hasNoUsers = failedCount === 0 && sendResult.successfulCount === 0 && !failedDueToInvalidTokens
-          
+          const hasNoUsers =
+            failedCount === 0 && sendResult.successfulCount === 0 && !failedDueToInvalidTokens
+
           if (hasNoUsers) {
             console.warn('⚠️ This might indicate:')
             console.warn('   1. No users have FCM tokens')
@@ -540,7 +541,9 @@ export class TemplateService implements OnModuleInit {
             ;(template as any).savedAsDraftNoUsers = true
           } else if (failedDueToInvalidTokens && failedCount > 0) {
             // Users existed but all had invalid tokens - don't set savedAsDraftNoUsers
-            console.warn(`⚠️ All ${failedCount} send attempts failed due to invalid tokens - keeping as draft`)
+            console.warn(
+              `⚠️ All ${failedCount} send attempts failed due to invalid tokens - keeping as draft`,
+            )
             if (sendResult.failedUsers && sendResult.failedUsers.length > 0) {
               console.warn('❌ Failed users (invalid tokens):', sendResult.failedUsers)
             }
@@ -553,7 +556,7 @@ export class TemplateService implements OnModuleInit {
             }
             // Don't set savedAsDraftNoUsers - this is a send failure, not "no users available"
           }
-          
+
           await this.repo.update(template.id, { isSent: false })
         }
 
@@ -1041,7 +1044,10 @@ export class TemplateService implements OnModuleInit {
           }
           // Fallback to language matching if ID not provided or not found
           if (!existingTranslation) {
-            existingTranslation = await this.translationRepo.findOneBy({ templateId: id, language: language })
+            existingTranslation = await this.translationRepo.findOneBy({
+              templateId: id,
+              language: language,
+            })
           }
 
           let imageId = null
@@ -1106,7 +1112,7 @@ export class TemplateService implements OnModuleInit {
       } else {
         // Handle non-published notifications (drafts being edited)
         const updatedTemplate = await this.findOneRaw(id)
-        
+
         if (updatedTemplate.sendType === 'SEND_SCHEDULE' && updatedTemplate.sendSchedule) {
           console.log(
             `Scheduling updated notification for template ${id} at ${updatedTemplate.sendSchedule}`,
@@ -1415,12 +1421,12 @@ export class TemplateService implements OnModuleInit {
                     : null,
                 }
               : translation.imageId
-                ? {
-                    fileId: translation.imageId,
-                    mimeType: null,
-                    originalFileName: null,
-                  }
-                : null,
+              ? {
+                  fileId: translation.imageId,
+                  mimeType: null,
+                  originalFileName: null,
+                }
+              : null,
           }))
         : [],
     }
@@ -1678,8 +1684,9 @@ export class TemplateService implements OnModuleInit {
             })
 
             if (templateWithTranslations && templateWithTranslations.translations) {
-              const sentCount =
-                await this.notificationService.sendWithTemplate(templateWithTranslations)
+              const sentCount = await this.notificationService.sendWithTemplate(
+                templateWithTranslations,
+              )
 
               if (typeof sentCount === 'number' && sentCount > 0) {
                 await this.markAsPublished(template.id)
@@ -1738,8 +1745,9 @@ export class TemplateService implements OnModuleInit {
           })
 
           if (templateWithTranslations && templateWithTranslations.translations) {
-            const sentCount =
-              await this.notificationService.sendWithTemplate(templateWithTranslations)
+            const sentCount = await this.notificationService.sendWithTemplate(
+              templateWithTranslations,
+            )
 
             if (typeof sentCount === 'number' && sentCount > 0) {
               await this.markAsPublished(template.id)
@@ -1860,16 +1868,13 @@ export class TemplateService implements OnModuleInit {
       return createdAt >= todayStart && createdAt <= todayEnd
     })
 
-    const templateViewCounts = todayNotifications.reduce(
-      (acc, notif) => {
-        const templateId = notif.templateId
-        if (templateId) {
-          acc[templateId] = (acc[templateId] || 0) + 1
-        }
-        return acc
-      },
-      {} as Record<number, number>,
-    )
+    const templateViewCounts = todayNotifications.reduce((acc, notif) => {
+      const templateId = notif.templateId
+      if (templateId) {
+        acc[templateId] = (acc[templateId] || 0) + 1
+      }
+      return acc
+    }, {} as Record<number, number>)
 
     // Calculate unique days each template was shown to this user
     const templateDaysCounts = new Map<number, Set<string>>()

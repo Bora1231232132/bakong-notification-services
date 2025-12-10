@@ -164,7 +164,7 @@ const router = createRouter({
           path: 'test',
           name: 'test',
           component: () => import('../views/TestView.vue'),
-          meta: { 
+          meta: {
             breadcrumb: { label: 'Testing Tools' },
             devOnly: true, // Only available in development environment
           },
@@ -199,8 +199,7 @@ router.beforeEach(async (to, from, next) => {
 
   // Check if route requires auth (check current route and all matched parent routes)
   const requiresAuth =
-    to.meta.requiresAuth ||
-    to.matched.some((route) => route.meta.requiresAuth === true)
+    to.meta.requiresAuth || to.matched.some((route) => route.meta.requiresAuth === true)
 
   if (requiresAuth && !isAuthenticated) {
     // Clear any stale auth state

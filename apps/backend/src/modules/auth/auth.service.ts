@@ -52,35 +52,33 @@ export class AuthService implements OnModuleInit {
         }
       }
 
-        const expireAt = moment().add(24, 'hours').valueOf()
-        const payload = {
-          username: user.username,
-          role: user.role,
-          sub: user.id,
-          exp: Math.floor(expireAt / 1000),
-        }
-       
-       // Build image path from imageId
-       const image = userWithImage?.imageId
-         ? `/api/v1/image/${userWithImage.imageId}`
-         : null
-       
-       return new BaseResponseDto({
-         responseCode: 0,
-         responseMessage: 'Login successful',
-         errorCode: 0,
-         data: {
-           accessToken: this.jwtService.sign(payload),
-           expireAt: expireAt,
-           user: {
-             id: user.id,
-             username: user.username,
-             role: user.role,
-             displayName: user.displayName,
-             image: image,
-           },
-         },
-       })
+      const expireAt = moment().add(24, 'hours').valueOf()
+      const payload = {
+        username: user.username,
+        role: user.role,
+        sub: user.id,
+        exp: Math.floor(expireAt / 1000),
+      }
+
+      // Build image path from imageId
+      const image = userWithImage?.imageId ? `/api/v1/image/${userWithImage.imageId}` : null
+
+      return new BaseResponseDto({
+        responseCode: 0,
+        responseMessage: 'Login successful',
+        errorCode: 0,
+        data: {
+          accessToken: this.jwtService.sign(payload),
+          expireAt: expireAt,
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            displayName: user.displayName,
+            image: image,
+          },
+        },
+      })
     } catch (error: any) {
       console.error('Login error:', error)
       // If it's already a BaseResponseDto, rethrow it

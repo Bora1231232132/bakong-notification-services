@@ -179,9 +179,13 @@ const handlePublishNow = async () => {
     const bakongPlatform = result?.data?.bakongPlatform || template?.bakongPlatform
     const platformName = bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform'
     const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
-    
+
     // Show appropriate message based on result
-    if (messageConfig.type === 'error' || messageConfig.type === 'warning' || messageConfig.type === 'info') {
+    if (
+      messageConfig.type === 'error' ||
+      messageConfig.type === 'warning' ||
+      messageConfig.type === 'info'
+    ) {
       // Remove HTML tags for showInfo (it doesn't support HTML)
       const plainMessage = messageConfig.message.replace(/<strong>/g, '').replace(/<\/strong>/g, '')
       showInfo(plainMessage)

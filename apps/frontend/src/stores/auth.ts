@@ -36,9 +36,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('auth_token'))
   const loading = ref(false)
   const error = ref<string | null>(null)
-  const userAvatar = ref<string | null>(
-    localStorage.getItem('user_avatar') || null,
-  )
+  const userAvatar = ref<string | null>(localStorage.getItem('user_avatar') || null)
 
   const isAuthenticated = computed(() => !!token.value && !!user.value)
 

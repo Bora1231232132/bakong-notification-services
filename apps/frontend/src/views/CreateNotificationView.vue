@@ -209,7 +209,7 @@
               </div>
             </div>
           </div>
-          <div class="schedule-options-container" style="display: none;">
+          <div class="schedule-options-container" style="display: none">
             <div class="splash-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">
@@ -886,7 +886,7 @@ const handlePublishNowInternal = async () => {
         // Calculate total size before upload
         const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
         const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
-        
+
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -909,7 +909,7 @@ const handlePublishNowInternal = async () => {
             : error?.message ||
               error?.response?.data?.responseMessage ||
               'Failed to upload images. Please ensure total size is under 18MB and try again.'
-        
+
         ElNotification({
           title: 'Upload Error',
           message: errorMessage,
@@ -1032,7 +1032,7 @@ const handlePublishNowInternal = async () => {
       const platformName = formatBakongApp(formData.platform)
       const bakongPlatform = formData.platform || result?.data?.bakongPlatform
       const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
-      
+
       // Only show notification if it's not a success (success messages are handled separately below)
       if (messageConfig.type !== 'success') {
         ElNotification({
@@ -1042,9 +1042,13 @@ const handlePublishNowInternal = async () => {
           duration: messageConfig.duration,
           dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
         })
-        
+
         // Redirect to draft tab for failures
-        if (messageConfig.type === 'error' || messageConfig.type === 'warning' || messageConfig.type === 'info') {
+        if (
+          messageConfig.type === 'error' ||
+          messageConfig.type === 'warning' ||
+          messageConfig.type === 'info'
+        ) {
           redirectTab = 'draft'
         }
       } else if (redirectTab === 'scheduled') {
@@ -1057,63 +1061,64 @@ const handlePublishNowInternal = async () => {
           duration: 2000,
         })
       } else {
-      // Get successful count from response if available
-      // Debug: log the full result to see the structure
-      console.log('📊 [CreateNotificationView] Full result:', result)
-      console.log('📊 [CreateNotificationView] result.data:', result?.data)
+        // Get successful count from response if available
+        // Debug: log the full result to see the structure
+        console.log('📊 [CreateNotificationView] Full result:', result)
+        console.log('📊 [CreateNotificationView] result.data:', result?.data)
 
-      const successfulCount = result?.data?.successfulCount
-      const failedCount = result?.data?.failedCount
-      const failedUsers = result?.data?.failedUsers || []
+        const successfulCount = result?.data?.successfulCount
+        const failedCount = result?.data?.failedCount
+        const failedUsers = result?.data?.failedUsers || []
 
-      console.log('📊 [CreateNotificationView] Send result:', {
-        successfulCount,
-        failedCount,
-        failedUsers,
-      })
+        console.log('📊 [CreateNotificationView] Send result:', {
+          successfulCount,
+          failedCount,
+          failedUsers,
+        })
 
-      // Check if this is a flash notification
-      const isFlashNotification = formData.notificationType === NotificationType.FLASH_NOTIFICATION
+        // Check if this is a flash notification
+        const isFlashNotification =
+          formData.notificationType === NotificationType.FLASH_NOTIFICATION
 
-      let message = isFlashNotification
-        ? isEditMode.value
-          ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
-          : 'Flash notification created and published successfully, and when user open bakongPlatform it will saw it!'
-        : isEditMode.value
-          ? 'Notification updated and published successfully!'
-          : 'Notification created and published successfully!'
+        let message = isFlashNotification
+          ? isEditMode.value
+            ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
+            : 'Flash notification created and published successfully, and when user open bakongPlatform it will saw it!'
+          : isEditMode.value
+            ? 'Notification updated and published successfully!'
+            : 'Notification created and published successfully!'
 
-      // Add user count if available (only for non-flash notifications)
-      if (
-        !isFlashNotification &&
-        successfulCount !== undefined &&
-        successfulCount !== null &&
-        successfulCount > 0
-      ) {
-        const userText = successfulCount === 1 ? 'user' : 'users'
-        message = isEditMode.value
-          ? `Notification updated and published to ${successfulCount} ${userText} successfully!`
-          : `Notification created and published to ${successfulCount} ${userText} successfully!`
-      }
+        // Add user count if available (only for non-flash notifications)
+        if (
+          !isFlashNotification &&
+          successfulCount !== undefined &&
+          successfulCount !== null &&
+          successfulCount > 0
+        ) {
+          const userText = successfulCount === 1 ? 'user' : 'users'
+          message = isEditMode.value
+            ? `Notification updated and published to ${successfulCount} ${userText} successfully!`
+            : `Notification created and published to ${successfulCount} ${userText} successfully!`
+        }
 
-      // For flash notifications, replace bakongPlatform with bold platform name
-      if (isFlashNotification) {
-        const platformName = formatBakongApp(formData.platform)
-        message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
-      }
+        // For flash notifications, replace bakongPlatform with bold platform name
+        if (isFlashNotification) {
+          const platformName = formatBakongApp(formData.platform)
+          message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+        }
 
-      ElNotification({
-        title: 'Success',
-        message: message,
-        type: 'success',
-        duration: 2000,
-        dangerouslyUseHTMLString: isFlashNotification,
-      })
+        ElNotification({
+          title: 'Success',
+          message: message,
+          type: 'success',
+          duration: 2000,
+          dangerouslyUseHTMLString: isFlashNotification,
+        })
 
-      // Log failed users to console if any
-      if (failedCount > 0 && failedUsers.length > 0) {
-        console.warn(`⚠️ Failed to send notification to ${failedCount} user(s):`, failedUsers)
-      }
+        // Log failed users to console if any
+        if (failedCount > 0 && failedUsers.length > 0) {
+          console.warn(`⚠️ Failed to send notification to ${failedCount} user(s):`, failedUsers)
+        }
       }
     }
     try {
@@ -1306,7 +1311,7 @@ const handleSaveDraft = async () => {
         // Calculate total size before upload
         const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
         const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
-        
+
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -1560,7 +1565,7 @@ const handleLeaveDialogConfirm = async () => {
   // Close dialog immediately to prevent it from showing again
   showLeaveDialog.value = false
   pendingNavigation = null
-  
+
   // Save as draft and then navigate
   try {
     await handleSaveDraft()
@@ -1590,7 +1595,7 @@ const handleUpdateConfirmationCancel = () => {
   // Close dialog and navigate to home without updating
   showUpdateConfirmationDialog.value = false
   isSavingOrPublishing.value = false
-  
+
   // Navigate to home screen based on tab
   const redirectTab = fromTab.value || 'published'
   if (isEditMode.value) {

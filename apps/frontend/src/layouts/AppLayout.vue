@@ -196,7 +196,7 @@ const handleImageError = (event: Event) => {
   try {
     const img = event.target as HTMLImageElement | null
     if (!img) return
-    
+
     console.warn('Avatar image failed to load:', img.src)
     // Set error flag to trigger computed property update
     avatarLoadError.value = true
@@ -211,9 +211,12 @@ const handleImageError = (event: Event) => {
 }
 
 // Reset error flag when avatar changes
-watch(() => authStore.userAvatar, () => {
-  avatarLoadError.value = false
-})
+watch(
+  () => authStore.userAvatar,
+  () => {
+    avatarLoadError.value = false
+  },
+)
 
 const pageTitle = computed(() => {
   switch (route.name) {
