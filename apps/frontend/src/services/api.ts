@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '@/stores/auth'
 // In dev mode, uses Vite proxy (configured in vite.config.ts)
 // In production, uses VITE_API_BASE_URL environment variable
 // Empty string means use relative URLs (same protocol as page)
@@ -7,6 +8,18 @@ const API_BASE_URL = import.meta.env.DEV
   : import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== null
     ? import.meta.env.VITE_API_BASE_URL
     : 'http://localhost:4004'
+
+// Helper function to clear auth state (both localStorage and store)
+const clearAuthState = () => {
+  try {
+    const authStore = useAuthStore()
+    authStore.logout()
+  } catch (e) {
+    // If store is not available, just clear localStorage
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user')
+  }
+}
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -43,27 +56,23 @@ const addAuthInterceptor = (axiosInstance: typeof api) => {
 
               // Check if token is expired
               if (payload.exp && payload.exp < now) {
-                localStorage.removeItem('auth_token')
-                localStorage.removeItem('user')
+                clearAuthState()
                 return Promise.reject(new Error('Token expired. Please login again.'))
               }
 
               config.headers.Authorization = `Bearer ${token}`
             } catch (e) {
-              localStorage.removeItem('auth_token')
-              localStorage.removeItem('user')
+              clearAuthState()
               return Promise.reject(new Error('Invalid token. Please login again.'))
             }
           } else {
             // Invalid token format
-            localStorage.removeItem('auth_token')
-            localStorage.removeItem('user')
+            clearAuthState()
             return Promise.reject(new Error('Invalid token format. Please login again.'))
           }
         } else {
-          // No token found
-          localStorage.removeItem('auth_token')
-          localStorage.removeItem('user')
+          // No token found - clear any stale state
+          clearAuthState()
           return Promise.reject(new Error('No authentication token found. Please login.'))
         }
       }
@@ -83,43 +92,76 @@ const addResponseInterceptor = (axiosInstance: typeof api) => {
       return response
     },
     async (error) => {
+      const isAuthEndpoint =
+        error.config?.url?.includes('/auth/login') ||
+        error.config?.url?.includes('/auth/register')
+      const isChangePasswordEndpoint = error.config?.url?.includes('/auth/change-password')
+      const currentToken = localStorage.getItem('auth_token')
+      const isOnAuthPage =
+        window.location.pathname.includes('/login') ||
+        window.location.pathname.includes('/register')
+
+      // Handle 401 Unauthorized errors
       if (error.response?.status === 401) {
         // Don't auto-redirect for change-password endpoint - let component handle validation errors
-        if (error.config?.url?.includes('/auth/change-password')) {
+        if (isChangePasswordEndpoint) {
           return Promise.reject(error)
         }
 
-        if (
-          error.config?.url?.includes('/auth/login') ||
-          error.config?.url?.includes('/auth/register')
-        ) {
+        if (isAuthEndpoint) {
           return Promise.reject(error)
         }
 
-        const currentToken = localStorage.getItem('auth_token')
-        if (currentToken) {
-          try {
-            const tokenParts = currentToken.split('.')
-            if (tokenParts.length === 3) {
-              const payload = JSON.parse(atob(tokenParts[1]))
-
-              if (!payload.exp || payload.exp > Math.floor(Date.now() / 1000)) {
-                return Promise.reject(error)
-              }
-            }
-          } catch (e) {
-            localStorage.removeItem('auth_token')
-          }
-        }
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('user')
-        if (
-          !window.location.pathname.includes('/login') &&
-          !window.location.pathname.includes('/register')
-        ) {
+        // 401 means unauthorized - token is invalid or expired
+        // Clear auth state and redirect to login
+        clearAuthState()
+        if (!isOnAuthPage) {
           window.location.href = '/login'
         }
+        return Promise.reject(error)
       }
+
+      // Handle 500 Internal Server Error - might be caused by invalid token
+      if (error.response?.status === 500 && currentToken && !isAuthEndpoint) {
+        // Check if token is likely invalid (expired or malformed)
+        try {
+          const tokenParts = currentToken.split('.')
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(atob(tokenParts[1]))
+            const now = Math.floor(Date.now() / 1000)
+
+            // If token is expired or about to expire, clear it and redirect
+            if (payload.exp && payload.exp < now) {
+              console.warn('Token expired, clearing and redirecting to login')
+              clearAuthState()
+              if (!isOnAuthPage) {
+                window.location.href = '/login'
+              }
+              return Promise.reject(new Error('Token expired. Please login again.'))
+            }
+            // Token appears valid but got 500 error - might be backend issue
+            // Don't clear token for non-auth-related 500 errors
+            // Let the error propagate normally
+          } else {
+            // Invalid token format - clear it
+            console.warn('Invalid token format detected, clearing token')
+            clearAuthState()
+            if (!isOnAuthPage) {
+              window.location.href = '/login'
+            }
+            return Promise.reject(new Error('Invalid token format. Please login again.'))
+          }
+        } catch (e) {
+          // Token parsing failed - clear it
+          console.warn('Token parsing failed, clearing token')
+          clearAuthState()
+          if (!isOnAuthPage) {
+            window.location.href = '/login'
+          }
+          return Promise.reject(new Error('Invalid token. Please login again.'))
+        }
+      }
+
       return Promise.reject(error)
     },
   )
@@ -144,6 +186,11 @@ export const authApi = {
     api.post('/api/v1/auth/register', userData),
   logout: () => api.post('/api/v1/auth/logout'),
   refreshToken: () => api.post('/api/v1/auth/refresh'),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData()
+    formData.append('files', file)
+    return uploadApi.post('/api/v1/auth/upload-avatar', formData)
+  },
 }
 
 export const notificationApi = {

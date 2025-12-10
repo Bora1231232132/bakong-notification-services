@@ -16,6 +16,7 @@ export interface User {
   email?: string
   displayName: string
   role: UserRole
+  image?: string | null
 }
 
 export interface LoginCredentials {
@@ -104,6 +105,23 @@ export const useAuthStore = defineStore('auth', () => {
 
         token.value = accessToken
         user.value = userData
+
+        // Use image path directly from backend response
+        if (userData.image) {
+          // In dev mode, use relative URL as-is (goes through Vite proxy)
+          // In production, prepend base URL if needed
+          const avatarUrl = import.meta.env.DEV
+            ? userData.image // Use relative URL in dev (goes through Vite proxy)
+            : import.meta.env.VITE_API_BASE_URL && !userData.image.startsWith('http')
+              ? `${import.meta.env.VITE_API_BASE_URL}${userData.image}`
+              : userData.image
+          userAvatar.value = avatarUrl
+          localStorage.setItem('user_avatar', avatarUrl)
+        } else {
+          // Clear avatar if backend doesn't provide image
+          userAvatar.value = null
+          localStorage.removeItem('user_avatar')
+        }
 
         localStorage.setItem('auth_token', accessToken)
 
@@ -239,13 +257,19 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       if (!user.value || !token.value) {
+        // Get avatar from localStorage if available
+        const storedAvatar = localStorage.getItem('user_avatar')
         user.value = {
           id: parseInt(payload.sub),
           username: payload.username,
           role: payload.role,
           displayName: payload.username,
+          image: storedAvatar || null,
         }
         token.value = storedToken
+        if (storedAvatar) {
+          userAvatar.value = storedAvatar
+        }
       }
     } catch (error) {
       localStorage.removeItem('auth_token')

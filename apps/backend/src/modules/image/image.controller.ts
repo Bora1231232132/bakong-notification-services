@@ -94,8 +94,13 @@ export class ImageController {
   ) {
     const image = await this.imageService.findByFileId(fileId)
 
+    // Set CORS headers to allow cross-origin image loading
     res.set({
       'Content-Type': image.mimeType,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     })
     res.send(image.file)
   }

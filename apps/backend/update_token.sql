@@ -1,1 +1,0 @@
-UPDATE bakong_user SET "fcmToken" = 'coJn3leJF0-RtzRrm6UkNe:APA91bFZcEMb0pWO6GrPb-EuxSOS207vvi0DhrZGFBklM8hFohotngkJbjilemimnTAP5bZXr0-2bip_6lqFgjsaN2Gp3nGfNiWH5fBu0AOW3fUupfreDVI' WHERE "accountId" = 'tny_ttny@bkrt';

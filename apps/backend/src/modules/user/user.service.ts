@@ -12,10 +12,43 @@ export class UserService {
   constructor(@InjectRepository(User) private readonly repo: Repository<User>) {}
 
   async findByUsername(username: string) {
-    return this.repo.findOne({
-      where: { username },
-      withDeleted: false, // Explicitly exclude soft-deleted users
-    })
+    try {
+      // Use QueryBuilder to explicitly select columns and avoid relationship loading
+      return await this.repo
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.displayName',
+          'user.role',
+          'user.imageId',
+          'user.failLoginAttempt',
+          'user.createdAt',
+          'user.updatedAt',
+        ])
+        .where('user.username = :username', { username })
+        .andWhere('user.deletedAt IS NULL')
+        .getOne()
+    } catch (error: any) {
+      // If imageId column doesn't exist yet, query without it
+      if (error.message?.includes('imageId') || error.message?.includes('column')) {
+        return await this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.displayName',
+            'user.role',
+            'user.failLoginAttempt',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('user.username = :username', { username })
+          .andWhere('user.deletedAt IS NULL')
+          .getOne()
+      }
+      throw error
+    }
   }
 
   async findByUsernameWithPassword(username: string) {
@@ -44,32 +77,94 @@ export class UserService {
   }
 
   async findAll() {
-    return this.repo.find({
-      select: [
-        'id',
-        'username',
-        'displayName',
-        'role',
-        'failLoginAttempt',
-        'createdAt',
-        'updatedAt',
-      ],
-    })
+    try {
+      // Use QueryBuilder to explicitly select columns and avoid relationship loading
+      return await this.repo
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.displayName',
+          'user.role',
+          'user.imageId',
+          'user.failLoginAttempt',
+          'user.createdAt',
+          'user.updatedAt',
+        ])
+        .where('user.deletedAt IS NULL')
+        .getMany()
+    } catch (error: any) {
+      // If imageId column doesn't exist yet, query without it
+      if (error.message?.includes('imageId') || error.message?.includes('column')) {
+        return await this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.displayName',
+            'user.role',
+            'user.failLoginAttempt',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('user.deletedAt IS NULL')
+          .getMany()
+      }
+      throw error
+    }
   }
 
   async findById(id: number) {
-    return this.repo.findOne({
-      where: { id },
-      select: [
-        'id',
-        'username',
-        'displayName',
-        'role',
-        'failLoginAttempt',
-        'createdAt',
-        'updatedAt',
-      ],
-    })
+    try {
+      // Use QueryBuilder to explicitly select columns and avoid relationship loading
+      const user = await this.repo
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.displayName',
+          'user.role',
+          'user.imageId',
+          'user.failLoginAttempt',
+          'user.createdAt',
+          'user.updatedAt',
+        ])
+        .where('user.id = :id', { id })
+        .andWhere('user.deletedAt IS NULL')
+        .getOne()
+      return user
+    } catch (error: any) {
+      // If imageId column doesn't exist or query fails, try without imageId
+      const errorMessage = error.message || String(error)
+      if (
+        errorMessage.includes('imageId') ||
+        errorMessage.includes('column') ||
+        errorMessage.includes('does not exist')
+      ) {
+        console.warn('imageId column issue detected, querying without it:', errorMessage)
+        return await this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.displayName',
+            'user.role',
+            'user.failLoginAttempt',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('user.id = :id', { id })
+          .andWhere('user.deletedAt IS NULL')
+          .getOne()
+      }
+      console.error('Error in findById:', error)
+      throw error
+    }
+  }
+
+  async updateImageId(id: number, imageId: string) {
+    await this.repo.update({ id }, { imageId })
+    return this.findById(id)
   }
 
   async findByIdWithPassword(id: number) {

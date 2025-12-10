@@ -291,6 +291,21 @@ BEGIN
     END IF;
 END$$;
 
+-- Add imageId column to user table (for profile picture)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' 
+        AND column_name = 'imageId'
+    ) THEN
+        ALTER TABLE "user" ADD COLUMN "imageId" VARCHAR(255) NULL;
+        RAISE NOTICE '✅ Added imageId to user table';
+    ELSE
+        RAISE NOTICE 'ℹ️  user.imageId already exists';
+    END IF;
+END$$;
+
 -- Fix sendInterval column type from INTEGER to JSON (if needed)
 DO $$
 BEGIN

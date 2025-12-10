@@ -177,30 +177,41 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
-  if (to.meta.requiresAuth) {
-    const storedToken = localStorage.getItem('auth_token')
-    if (!storedToken) {
-      // No token found
+  // Always initialize auth state if there's a token in localStorage
+  // This ensures token validation happens before any route navigation
+  const storedToken = localStorage.getItem('auth_token')
+  if (storedToken && (!authStore.token || !authStore.user)) {
+    try {
+      await authStore.initializeAuth()
+    } catch (error) {
+      console.error('Auth initialization failed:', error)
+      // If initialization fails, clear invalid token
+      authStore.logout()
     }
-
-    if (!authStore.token || !authStore.user) {
-      try {
-        await authStore.initializeAuth()
-      } catch (error) {
-        console.error('Auth initialization failed:', error)
-        next('/login')
-      }
+  } else if (!storedToken) {
+    // If no token exists, ensure auth state is cleared
+    if (authStore.token || authStore.user) {
+      authStore.logout()
     }
   }
 
   const isAuthenticated = authStore.isAuthenticated
 
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    if (authStore.token && !authStore.user) {
+  // Check if route requires auth (check current route and all matched parent routes)
+  const requiresAuth =
+    to.meta.requiresAuth ||
+    to.matched.some((route) => route.meta.requiresAuth === true)
+
+  if (requiresAuth && !isAuthenticated) {
+    // Clear any stale auth state
+    if (authStore.token || authStore.user) {
       authStore.logout()
     }
-    next('/login')
-    return
+    // Redirect to login, but avoid infinite redirect loop
+    if (to.name !== 'login' && to.name !== 'register') {
+      next('/login')
+      return
+    }
   }
 
   // Check if route is dev-only and redirect if not in development

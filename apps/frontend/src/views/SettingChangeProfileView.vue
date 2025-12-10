@@ -61,16 +61,18 @@
                     Preview
                   </h3>
                 </div>
-                <button
-                  class="flex items-center justify-center gap-2 w-full max-w-[204px] h-[56px] pt-2 pr-4 pb-2 pl-4 bg-[#0013460D] border-none rounded-[32px] text-[#001346] font-medium cursor-pointer transition-all duration-200 hover:bg-[#0013461A] backdrop-blur-[128px] text-xs sm:text-sm"
+                <el-button
+                  type="primary"
+                  class="create-notification-btn"
+                  disabled
                 >
-                  <span class="font-medium">Create Notification</span>
-                  <div
-                    class="w-4 h-4 sm:w-5 sm:h-5 bg-[#001346] text-white rounded-full flex items-center justify-center text-xs sm:text-sm font-bold"
-                  >
-                    +
+                  Create Notification
+                  <div class="plus-icon">
+                    <el-icon>
+                      <CirclePlus />
+                    </el-icon>
                   </div>
-                </button>
+                </el-button>
                 <div
                   class="w-[48px] h-[48px] sm:w-[54px] sm:h-[54px] rounded-full overflow-hidden flex items-center justify-center bg-[#f0f0f0] flex-shrink-0"
                 >
@@ -100,10 +102,11 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
-import { ArrowRight, User } from '@element-plus/icons-vue'
+import { ArrowRight, User, CirclePlus } from '@element-plus/icons-vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useAuthStore } from '@/stores/auth'
 import { notificationApi } from '@/services/notificationApi'
+import { authApi } from '@/services/api'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -156,20 +159,26 @@ const handleChangeProfile = async () => {
     isLoading.value = true
     console.log('Uploading profile picture...')
 
-    // Upload the image file
-    const fileId = await notificationApi.uploadImage(selectedFile.value)
-    console.log('Image uploaded, fileId:', fileId)
+    // Upload image and update avatar in one API call
+    const response = await authApi.uploadAvatar(selectedFile.value)
+    console.log('Avatar uploaded and updated - full response:', response)
+    console.log('Avatar uploaded and updated - response.data:', response.data)
 
-    // Build the image URL (use relative URL in dev, absolute in production)
-    const API_BASE_URL = import.meta.env.DEV
-      ? ''
-      : import.meta.env.VITE_API_BASE_URL !== undefined &&
-          import.meta.env.VITE_API_BASE_URL !== null
-        ? import.meta.env.VITE_API_BASE_URL
-        : 'http://localhost:4004'
-    const imageUrl = API_BASE_URL
-      ? `${API_BASE_URL}/api/v1/image/${fileId}`
-      : `/api/v1/image/${fileId}`
+    // Use image path directly from backend response
+    const imagePath = response.data?.data?.image
+    if (!imagePath) {
+      throw new Error('Image path not found in response')
+    }
+    
+    console.log('Image path from backend:', imagePath)
+    
+    const imageUrl = import.meta.env.DEV
+      ? imagePath // Use relative URL in dev (goes through Vite proxy)
+      : import.meta.env.VITE_API_BASE_URL && !imagePath.startsWith('http')
+        ? `${import.meta.env.VITE_API_BASE_URL}${imagePath}`
+        : imagePath
+
+    console.log('Final image URL to use:', imageUrl)
 
     // Update the user avatar in the store
     authStore.updateUserAvatar(imageUrl)
@@ -208,3 +217,57 @@ const handleChangeProfile = async () => {
   console.log('=== SETTINGS CHANGE PROFILE HANDLER END ===')
 }
 </script>
+
+<style scoped>
+.create-notification-btn {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 4px;
+  width: 234px;
+  height: 56px;
+  background: rgba(0, 19, 70, 0.05);
+  backdrop-filter: blur(64px);
+  border-radius: 32px;
+  flex: none;
+  flex-grow: 0;
+  color: #001346 !important;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 150%;
+  letter-spacing: 0;
+  border: none;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.create-notification-btn :deep(span) {
+  color: #001346 !important;
+}
+
+.create-notification-btn:hover {
+  background: rgba(0, 19, 70, 0.05);
+}
+
+.create-notification-btn:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.plus-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+}
+
+.plus-icon .el-icon {
+  font-size: 24px;
+  color: #001346;
+}
+</style>

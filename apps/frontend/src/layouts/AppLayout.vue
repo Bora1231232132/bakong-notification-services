@@ -21,10 +21,11 @@
           </el-button>
           <div class="user-avatar">
             <img
-            :src="avatarUrl"
-            alt="User Avatar"
+              :src="avatarUrl"
+              alt="User Avatar"
               class="user-image"
               @click="handleGoToSettings"
+              @error="handleImageError"
             />
           </div>
         </div>
@@ -144,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
@@ -177,13 +178,41 @@ const route = useRoute()
 const { user } = authStore
 const logoutDialogVisible = ref(false)
 const isSidebarCollapsed = ref(false)
+const avatarLoadError = ref(false)
 
 const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
 const avatarUrl = computed(() => {
+  // If there was an error loading the avatar, use default
+  if (avatarLoadError.value) {
+    return avatarImage
+  }
   return authStore.userAvatar || avatarImage
+})
+
+const handleImageError = (event: Event) => {
+  try {
+    const img = event.target as HTMLImageElement | null
+    if (!img) return
+    
+    console.warn('Avatar image failed to load:', img.src)
+    // Set error flag to trigger computed property update
+    avatarLoadError.value = true
+    // Clear the invalid URL from store
+    const currentAvatar = authStore.userAvatar
+    if (currentAvatar) {
+      authStore.updateUserAvatar(null)
+    }
+  } catch (error) {
+    console.error('Error in handleImageError:', error)
+  }
+}
+
+// Reset error flag when avatar changes
+watch(() => authStore.userAvatar, () => {
+  avatarLoadError.value = false
 })
 
 const pageTitle = computed(() => {

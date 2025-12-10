@@ -1,6 +1,7 @@
 import { ErrorCode, ResponseMessage, UserRole, ValidationUtils } from '@bakong/shared'
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { UserService } from '../user/user.service'
+import { ImageService } from '../image/image.service'
 import * as bcrypt from 'bcrypt'
 import { JwtService } from '@nestjs/jwt'
 import { User } from 'src/entities/user.entity'
@@ -15,6 +16,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
+    private readonly imageService: ImageService,
   ) {}
 
   async onModuleInit() {
@@ -29,26 +31,68 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  async login(user: User) {
-    // Reset failed login attempts on successful login
-    await this.userService.resetFailLoginAttempt(user.id)
+  async login(user: User, req?: any) {
+    try {
+      // Reset failed login attempts on successful login
+      await this.userService.resetFailLoginAttempt(user.id)
 
-    const expireAt = moment().add(24, 'hours').valueOf()
-    const payload = {
-      username: user.username,
-      role: user.role,
-      sub: user.id,
-      exp: Math.floor(expireAt / 1000),
-    }
-    return {
-      accessToken: this.jwtService.sign(payload),
-      expireAt: expireAt,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        displayName: user.displayName,
-      },
+      // Fetch user with imageId
+      let userWithImage = null
+      try {
+        userWithImage = await this.userService.findById(user.id)
+      } catch (error: any) {
+        console.warn('Failed to fetch user with imageId, using basic user data:', error.message)
+        // Continue with basic user data if fetch fails
+        userWithImage = {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          role: user.role,
+          imageId: null,
+        }
+      }
+
+        const expireAt = moment().add(24, 'hours').valueOf()
+        const payload = {
+          username: user.username,
+          role: user.role,
+          sub: user.id,
+          exp: Math.floor(expireAt / 1000),
+        }
+       
+       // Build image path from imageId
+       const image = userWithImage?.imageId
+         ? `/api/v1/image/${userWithImage.imageId}`
+         : null
+       
+       return new BaseResponseDto({
+         responseCode: 0,
+         responseMessage: 'Login successful',
+         errorCode: 0,
+         data: {
+           accessToken: this.jwtService.sign(payload),
+           expireAt: expireAt,
+           user: {
+             id: user.id,
+             username: user.username,
+             role: user.role,
+             displayName: user.displayName,
+             image: image,
+           },
+         },
+       })
+    } catch (error: any) {
+      console.error('Login error:', error)
+      // If it's already a BaseResponseDto, rethrow it
+      if (error instanceof BaseResponseDto) {
+        throw error
+      }
+      // Otherwise wrap it
+      throw new BaseResponseDto({
+        responseCode: 1,
+        responseMessage: error.message || 'Login failed',
+        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+      })
     }
   }
 
@@ -258,6 +302,35 @@ export class AuthService implements OnModuleInit {
     return {
       responseCode: 0,
       responseMessage: 'Password changed successfully',
+    }
+  }
+
+  async uploadAndUpdateAvatar(
+    userId: number,
+    imageData: { file: Buffer; mimeType: string; originalFileName?: string | null },
+    req?: any,
+  ) {
+    // Step 1: Upload/create the image
+    const imageResult = await this.imageService.create({
+      file: imageData.file,
+      mimeType: imageData.mimeType,
+      originalFileName: imageData.originalFileName,
+    })
+
+    const imageId = imageResult.fileId
+
+    // Step 2: Update user's avatar with the new imageId
+    const updatedUser = await this.userService.updateImageId(userId, imageId)
+    if (!updatedUser) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: 'User not found',
+      })
+    }
+
+    return {
+      imageId,
     }
   }
 }
