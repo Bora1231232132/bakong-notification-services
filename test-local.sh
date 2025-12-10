@@ -163,49 +163,70 @@ echo ""
 
 export PGPASSWORD="$DB_PASSWORD"
 echo "   ⏳ Running migration (this may take a minute or two)..."
+MIGRATION_OUTPUT=""
 if [ "$USE_TIMEOUT" = true ]; then
-    if timeout 300 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1; then
-        MIGRATION_SUCCESS=true
-    else
-        MIGRATION_SUCCESS=false
-    fi
+    MIGRATION_OUTPUT=$(timeout 300 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1)
+    MIGRATION_EXIT_CODE=$?
 else
-    if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1; then
-        MIGRATION_SUCCESS=true
-    else
-        MIGRATION_SUCCESS=false
-    fi
+    MIGRATION_OUTPUT=$(docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1)
+    MIGRATION_EXIT_CODE=$?
+fi
+
+# Check for critical errors
+if echo "$MIGRATION_OUTPUT" | grep -qi "ERROR\|FATAL\|syntax error" && ! echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|already NOT NULL\|already has"; then
+    MIGRATION_SUCCESS=false
+elif [ $MIGRATION_EXIT_CODE -eq 0 ] || echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|already NOT NULL\|already has"; then
+    MIGRATION_SUCCESS=true
+else
+    MIGRATION_SUCCESS=false
 fi
 
 if [ "$MIGRATION_SUCCESS" = true ]; then
     echo ""
     echo "✅ Migration test PASSED"
     
-    # Verify migration - check if categoryTypeId column exists
+    # Run comprehensive verification if available
+    VERIFY_MIGRATION_FILE="apps/backend/scripts/verify-migration.sql"
+    if [ -f "$VERIFY_MIGRATION_FILE" ]; then
+        echo ""
+        echo "   Running comprehensive verification..."
+        if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_MIGRATION_FILE" > /dev/null 2>&1; then
+            echo "   ✅ Comprehensive verification passed"
+        else
+            echo "   ⚠️  Verification had warnings (check manually)"
+        fi
+    fi
+    
+    # Quick verification - check critical columns
     echo ""
-    echo "   Verifying migration..."
+    echo "   Quick verification checks..."
     if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
         echo "   ✅ Verified: categoryTypeId column exists"
     else
         echo "   ⚠️  Warning: categoryTypeId column not found"
     fi
     
-    # Verify category_type table exists
     if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'category_type');" | grep -q t; then
         echo "   ✅ Verified: category_type table exists"
     else
         echo "   ⚠️  Warning: category_type table not found"
     fi
     
-    # Verify notification_type_enum exists
     if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM pg_type WHERE typname = 'notification_type_enum');" | grep -q t; then
         echo "   ✅ Verified: notification_type_enum exists"
     else
         echo "   ⚠️  Warning: notification_type_enum not found"
     fi
+    
+    if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'imageId');" | grep -q t; then
+        echo "   ✅ Verified: user.imageId column exists"
+    fi
 else
     echo ""
     echo "❌ Migration test FAILED"
+    echo ""
+    echo "   Migration output (last 20 lines):"
+    echo "$MIGRATION_OUTPUT" | tail -20
     echo ""
     echo "   Checking if migration was already applied..."
     if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
@@ -223,57 +244,16 @@ echo ""
 echo "📋 Step 5: Testing Cascade Delete Migration..."
 echo "----------------------------------------"
 
-# Test cascade delete migration
-CASCADE_MIGRATION_FILE="apps/backend/scripts/fix-notification-cascade-delete.sql"
-
-if [ ! -f "$CASCADE_MIGRATION_FILE" ]; then
-    echo "⚠️  Cascade delete migration file not found: $CASCADE_MIGRATION_FILE"
-    echo "   (This is optional - unified-migration.sql should handle it)"
+# Verify cascade delete constraint (unified-migration.sql handles it)
+echo "   Verifying cascade delete constraint..."
+export PGPASSWORD="$DB_PASSWORD"
+if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" 2>/dev/null | grep -q "ON DELETE CASCADE"; then
+    echo "   ✅ Verified: FK_notification_template has ON DELETE CASCADE"
 else
-    echo "✅ Found: $CASCADE_MIGRATION_FILE"
-    echo "   Testing cascade delete migration..."
-    echo "   Database: $DB_NAME"
-    echo "   User: $DB_USER"
-    echo ""
-    
-    export PGPASSWORD="$DB_PASSWORD"
-    echo "   ⏳ Running cascade delete migration..."
-    if [ "$USE_TIMEOUT" = true ]; then
-        if timeout 120 docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$CASCADE_MIGRATION_FILE" 2>&1; then
-            CASCADE_SUCCESS=true
-        else
-            CASCADE_SUCCESS=false
-        fi
-    else
-        if docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$CASCADE_MIGRATION_FILE" 2>&1; then
-            CASCADE_SUCCESS=true
-        else
-            CASCADE_SUCCESS=false
-        fi
-    fi
-    
-    if [ "$CASCADE_SUCCESS" = true ]; then
-        echo ""
-        echo "✅ Cascade delete migration test PASSED"
-        
-        # Verify cascade constraint exists
-        if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" | grep -q "ON DELETE CASCADE"; then
-            echo "   ✅ Verified: FK_notification_template has ON DELETE CASCADE"
-        else
-            echo "   ⚠️  Warning: FK_notification_template may not have CASCADE (check manually)"
-        fi
-    else
-        echo ""
-        echo "⚠️  Cascade delete migration had warnings (may be normal if already applied)"
-        # Check if constraint exists with CASCADE
-        if docker exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" | grep -q "ON DELETE CASCADE"; then
-            echo "   ✅ Migration already applied (CASCADE constraint exists)"
-        else
-            echo "   ⚠️  Migration may have failed - check manually"
-        fi
-    fi
-    unset PGPASSWORD
+    echo "   ⚠️  Warning: CASCADE constraint not found (unified-migration.sql should handle it)"
+    echo "   This is normal if migration hasn't run yet or constraint has different name"
 fi
+unset PGPASSWORD
 
 echo ""
 echo "📋 Step 6: Testing Verification Script..."
