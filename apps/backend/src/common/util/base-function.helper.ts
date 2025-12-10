@@ -157,38 +157,35 @@ export class BaseFunctionHelper {
         )
       }
 
-      // Only update platform if it's provided AND not null/empty
+      // Only update platform if it's provided AND not null
       if (
         updateData.platform !== undefined &&
-        updateData.platform !== null &&
-        updateData.platform !== ''
+        updateData.platform !== null
       ) {
         updatesToApply.platform = this.normalizePlatform(updateData.platform)
       } else if (updateData.platform !== undefined) {
         console.log(
-          `⏭️ [syncUser] Skipping platform update for user ${accountId} (null or empty - preserving existing value)`,
+          `⏭️ [syncUser] Skipping platform update for user ${accountId} (null - preserving existing value)`,
         )
       }
 
-      // Only update language if it's provided AND not null/empty
+      // Only update language if it's provided AND not null
       if (
         updateData.language !== undefined &&
-        updateData.language !== null &&
-        updateData.language !== ''
+        updateData.language !== null
       ) {
         updatesToApply.language = this.normalizeLanguage(updateData.language)
       } else if (updateData.language !== undefined) {
         console.log(
-          `⏭️ [syncUser] Skipping language update for user ${accountId} (null or empty - preserving existing value)`,
+          `⏭️ [syncUser] Skipping language update for user ${accountId} (null - preserving existing value)`,
         )
       }
 
-      // Only update bakongPlatform if it's provided AND not null/empty
-      // If not provided or null/empty, keep the existing value
+      // Only update bakongPlatform if it's provided AND not null
+      // If not provided or null, keep the existing value
       if (
         updateData.bakongPlatform !== undefined &&
-        updateData.bakongPlatform !== null &&
-        updateData.bakongPlatform !== ''
+        updateData.bakongPlatform !== null
       ) {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(

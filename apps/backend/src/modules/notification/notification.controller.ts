@@ -117,15 +117,14 @@ export class NotificationController {
         }
         if (
           dto.bakongPlatform !== undefined &&
-          dto.bakongPlatform !== null &&
-          dto.bakongPlatform !== ''
+          dto.bakongPlatform !== null
         ) {
           syncData.bakongPlatform = dto.bakongPlatform
         }
-        if (dto.language !== undefined && dto.language !== null && dto.language !== '') {
+        if (dto.language !== undefined && dto.language !== null) {
           syncData.language = dto.language
         }
-        if (dto.platform !== undefined && dto.platform !== null && dto.platform !== '') {
+        if (dto.platform !== undefined && dto.platform !== null) {
           syncData.platform = dto.platform
         }
         if (
