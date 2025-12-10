@@ -153,7 +153,7 @@
               >{{ linkError }}</span
             >
           </div>
-          <div class="schedule-options-container">
+          <div class="schedule-options-container" style="display: none;">
             <div class="schedule-options">
               <div class="schedule-options-header">
                 <div class="schedule-option-left">

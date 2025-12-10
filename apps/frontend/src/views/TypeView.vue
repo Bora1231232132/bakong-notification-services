@@ -55,7 +55,7 @@ import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
 import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
 import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import { useErrorHandler } from '@/composables/useErrorHandler'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
@@ -127,11 +127,25 @@ const handlePerPageChange = (newPerPage: number) => {
 }
 
 const addNew = () => {
-  router.push('/templates/create')
+  // Commented out: Add Category feature - coming soon
+  // router.push('/templates/create')
+  
+  // Show notification that feature is coming soon
+  ElNotification({
+    title: 'Coming Soon',
+    message: 'This feature is coming soon!',
+    type: 'info',
+    duration: 3000,
+  })
 }
 
 const filter = () => {
-  ElMessage.info('Filter functionality coming soon')
+  ElNotification({
+    title: 'Coming Soon',
+    message: 'Filter functionality coming soon',
+    type: 'info',
+    duration: 3000,
+  })
 }
 
 const handleSearch = (value: string) => {
