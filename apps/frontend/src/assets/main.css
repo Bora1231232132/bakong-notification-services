@@ -405,6 +405,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Khmer language font support - Only apply to Khmer content */
+[data-content-lang='km'],
+[data-content-lang='kh'],
+.lang-khmer,
+.font-khmer {
+  font-family: 'Battambang', 'IBM Plex Sans', sans-serif !important;
+}
+
+/* Apply Khmer font to child elements */
+[data-content-lang='km'] *,
+[data-content-lang='kh'] *,
+.lang-khmer *,
+.font-khmer * {
+  font-family: 'Battambang', 'IBM Plex Sans', sans-serif !important;
+}
+
+/* Override inline font classes for Khmer content */
+[data-content-lang='km'] [class*="font-['IBM_Plex_Sans']"],
+[data-content-lang='kh'] [class*="font-['IBM_Plex_Sans']"],
+.lang-khmer [class*="font-['IBM_Plex_Sans']"],
+.font-khmer [class*="font-['IBM_Plex_Sans']"] {
+  font-family: 'Battambang', 'IBM Plex Sans', sans-serif !important;
+}
+
 #app {
   height: 100vh;
   width: 100vw;

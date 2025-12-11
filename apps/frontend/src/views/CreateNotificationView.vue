@@ -84,6 +84,8 @@
               v-model="currentTitle"
               type="text"
               class="form-input-title"
+              :class="{ 'lang-khmer': titleHasKhmer }"
+              :data-content-lang="titleHasKhmer ? 'km' : ''"
               placeholder="Attractive title"
               @blur="validateTitle()"
             />
@@ -100,6 +102,8 @@
             <textarea
               v-model="currentDescription"
               class="form-textarea"
+              :class="{ 'lang-khmer': descriptionHasKhmer }"
+              :data-content-lang="descriptionHasKhmer ? 'km' : ''"
               placeholder="Description of the title <bold>input</bold>"
               rows="4"
               @blur="validateDescription()"
@@ -297,6 +301,8 @@
         :description="currentDescription"
         :image="currentImageUrl || ''"
         :categoryType="categoryTypes.find((ct: CategoryTypeData) => ct.id === formData.categoryTypeId)?.name || ''"
+        :title-has-khmer="titleHasKhmer"
+        :description-has-khmer="descriptionHasKhmer"
       />
     </div>
   </div>
@@ -355,6 +361,7 @@ import {
   formatCategoryType,
   getNoUsersAvailableMessage,
   getNotificationMessage,
+  containsKhmer,
 } from '@/utils/helpers'
 import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import type { CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
@@ -557,6 +564,10 @@ const currentImageUrl = computed({
     }
   },
 })
+
+// Detect Khmer content for dynamic font application
+const titleHasKhmer = computed(() => containsKhmer(currentTitle.value))
+const descriptionHasKhmer = computed(() => containsKhmer(currentDescription.value))
 
 const loadNotificationData = async () => {
   if (!isEditMode.value || !notificationId.value) return
@@ -792,14 +803,14 @@ const handlePublishNowInternal = async () => {
     if (isEditMode.value) {
       // If editing a published notification, always keep it published
       if (isEditingPublished.value) {
-        sendType = SendType.SEND_NOW
-        isSent = true
-        redirectTab = 'published'
-        // Clear schedule fields to prevent any scheduling
-        formData.scheduleEnabled = false
-        formData.scheduleDate = ''
-        formData.scheduleTime = ''
-      } else {
+      sendType = SendType.SEND_NOW
+      isSent = true
+      redirectTab = 'published'
+      // Clear schedule fields to prevent any scheduling
+      formData.scheduleEnabled = false
+      formData.scheduleDate = ''
+      formData.scheduleTime = ''
+    } else {
         // Editing draft or scheduled notification
         const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
         const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
@@ -916,7 +927,7 @@ const handlePublishNowInternal = async () => {
         // Calculate total size before upload
         const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
         const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
-
+        
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -939,7 +950,7 @@ const handlePublishNowInternal = async () => {
             : error?.message ||
               error?.response?.data?.responseMessage ||
               'Failed to upload images. Please ensure total size is under 18MB and try again.'
-
+        
         ElNotification({
           title: 'Upload Error',
           message: errorMessage,
@@ -1064,7 +1075,7 @@ const handlePublishNowInternal = async () => {
       
       if (wasActuallySent) {
         // Scheduled notification was sent immediately - redirect to published
-        redirectTab = 'published'
+      redirectTab = 'published'
       } else {
         // Scheduled notification remains scheduled - stay in scheduled tab
         redirectTab = 'scheduled'
@@ -1113,75 +1124,75 @@ const handlePublishNowInternal = async () => {
         }
       } else {
         // Handle non-scheduled notifications (published, draft, etc.)
-        const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
-
+      const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+      
         // Show notification for non-success cases (errors, warnings, info) or partial success
         if (messageConfig.type !== 'success' || isPartialSuccess) {
-          ElNotification({
-            title: messageConfig.title,
-            message: messageConfig.message,
-            type: messageConfig.type,
-            duration: messageConfig.duration,
-            dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
-          })
-
-          // Redirect to draft tab for failures
+        ElNotification({
+          title: messageConfig.title,
+          message: messageConfig.message,
+          type: messageConfig.type,
+          duration: messageConfig.duration,
+          dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+        })
+        
+        // Redirect to draft tab for failures
           if (
             messageConfig.type === 'error' ||
             messageConfig.type === 'warning' ||
             messageConfig.type === 'info'
           ) {
-            redirectTab = 'draft'
+          redirectTab = 'draft'
           } else if (isPartialSuccess) {
             // For partial success, redirect to published tab
             redirectTab = 'published'
           }
-        } else {
+      } else {
           // Handle full success cases for published notifications
-          const failedUsers = result?.data?.failedUsers || []
+      const failedUsers = result?.data?.failedUsers || []
           const isFlashNotification =
             formData.notificationType === NotificationType.FLASH_NOTIFICATION
 
-          let message = isFlashNotification
-            ? isEditMode.value
-              ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
-              : 'Flash notification created and published successfully, and when user open bakongPlatform it will saw it!'
-            : isEditMode.value
-              ? 'Notification updated and published successfully!'
-              : 'Notification created and published successfully!'
+      let message = isFlashNotification
+        ? isEditMode.value
+          ? 'Flash notification updated and published successfully, and when user open bakongPlatform it will saw it!'
+          : 'Flash notification created and published successfully, and when user open bakongPlatform it will saw it!'
+        : isEditMode.value
+          ? 'Notification updated and published successfully!'
+          : 'Notification created and published successfully!'
 
-          // Add user count if available (only for non-flash notifications)
-          if (
-            !isFlashNotification &&
+      // Add user count if available (only for non-flash notifications)
+      if (
+        !isFlashNotification &&
             successfulCountFromResult !== undefined &&
             successfulCountFromResult !== null &&
             successfulCountFromResult > 0
-          ) {
+      ) {
             const userText = successfulCountFromResult === 1 ? 'user' : 'users'
-            message = isEditMode.value
+        message = isEditMode.value
               ? `Notification updated and published to ${successfulCountFromResult} ${userText} successfully!`
               : `Notification created and published to ${successfulCountFromResult} ${userText} successfully!`
-          }
+      }
 
-          // For flash notifications, replace bakongPlatform with bold platform name
-          if (isFlashNotification) {
+      // For flash notifications, replace bakongPlatform with bold platform name
+      if (isFlashNotification) {
             const platformNameForFlash = formatBakongApp(formData.platform)
             message = message.replace('bakongPlatform', `<strong>${platformNameForFlash}</strong>`)
-          }
+      }
 
-          ElNotification({
-            title: 'Success',
-            message: message,
-            type: 'success',
-            duration: 2000,
-            dangerouslyUseHTMLString: isFlashNotification,
-          })
+      ElNotification({
+        title: 'Success',
+        message: message,
+        type: 'success',
+        duration: 2000,
+        dangerouslyUseHTMLString: isFlashNotification,
+      })
 
-          // Log failed users to console if any
+      // Log failed users to console if any
           if (failedCountFromResult > 0 && failedUsers.length > 0) {
             console.warn(`⚠️ Failed to send notification to ${failedCountFromResult} user(s):`, failedUsers)
           }
-        }
+      }
       }
     }
     try {
@@ -1390,7 +1401,7 @@ const handleSaveDraft = async () => {
         // Calculate total size before upload
         const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
         const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
-
+        
         console.log(
           'Files to upload:',
           items.map((i) => ({
@@ -1664,7 +1675,7 @@ const handleLeaveDialogConfirm = async () => {
   // Close dialog immediately to prevent it from showing again
   showLeaveDialog.value = false
   pendingNavigation = null
-
+  
   // Save as draft and then navigate
   try {
     await handleSaveDraft()
@@ -1694,7 +1705,7 @@ const handleUpdateConfirmationCancel = () => {
   // Close dialog and navigate to home without updating
   showUpdateConfirmationDialog.value = false
   isSavingOrPublishing.value = false
-
+  
   // Navigate to home screen based on tab
   const redirectTab = fromTab.value || 'published'
   if (isEditMode.value) {

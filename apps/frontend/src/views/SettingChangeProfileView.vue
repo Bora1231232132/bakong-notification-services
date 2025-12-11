@@ -25,25 +25,18 @@
             class="w-full h-[56px] opacity-100 flex flex-col sm:flex-row justify-start items-center gap-3 sm:gap-[12px] !mt-4"
           >
             <button
-              type="button"
-              class="flex justify-center items-center gap-[8px] w-full sm:w-[285px] h-[56px] pt-[8px] pr-[16px] pb-[8px] pl-[16px] border-none rounded-[32px] bg-[#0F4AEA] text-white font-['IBM_Plex_Sans'] font-semibold text-[16px] cursor-pointer transition-all hover:bg-[#0d3ec7] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(15,74,234,0.3)] active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none whitespace-nowrap"
-              @click="handleChangeProfile"
-              :disabled="isLoading || !selectedFile"
-            >
-              <span v-if="!isLoading" class="text-sm whitespace-nowrap">Update Picture</span>
-              <span v-else class="text-sm whitespace-nowrap">Updating...</span>
-              <el-icon v-if="!isLoading" class="text-sm">
-                <ArrowRight />
-              </el-icon>
+                class="w-full sm:w-[197px] h-[56px] pt-[8px] pr-[16px] pb-[8px] pl-[16px] border-none rounded-[32px] bg-[#0F4AEA] text-white font-['IBM_Plex_Sans'] font-semibold text-[16px] cursor-pointer transition-all hover:bg-[#0F4AEA]-900 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none whitespace-nowrap"
+                @click="handleChangeProfile"
+              >
+                <span>Change profile picture</span>
             </button>
             <button
-              type="button"
-              class="flex justify-center items-center gap-[8px] w-full sm:w-[164px] h-[56px] pt-[8px] pr-[16px] pb-[8px] pl-[16px] border border-[rgba(0,19,70,0.2)] rounded-[32px] bg-white text-[#001346] font-['IBM_Plex_Sans'] font-semibold text-[16px] cursor-pointer transition-all hover:bg-[rgba(0,19,70,0.05)] hover:border-[rgba(0,19,70,0.3)] disabled:opacity-60 disabled:cursor-not-allowed"
-              @click="router.push('/settings')"
-              :disabled="isLoading"
-            >
-              Cancel
-            </button>
+                class="flex justify-center items-center gap-[8px] w-full sm:w-[83px] h-[56px] pt-[8px] pr-[16px] pb-[8px] pl-[16px]  rounded-[32px] bg-[rgba(0,19,70,0.05)] text-[#001346] font-['IBM_Plex_Sans'] font-semibold text-[16px] cursor-pointer transition-all hover:bg-[#0F4AEA]-900 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none whitespace-nowrap"
+              style="height: 56px; border-radius: 32px; padding: 8px 16px; min-width: 83px"
+                @click="router.push('/settings')"
+                >
+                  <span>Cancel</span>
+              </button>
           </div>
         </div>
         <div class="lg:block flex items-center justify-center px-4 sm:px-6">
@@ -72,7 +65,7 @@
                 <div
                   class="w-[48px] h-[48px] sm:w-[54px] sm:h-[54px] rounded-full overflow-hidden flex items-center justify-center bg-[#f0f0f0] flex-shrink-0"
                 >
-                  <div v-if="selectedFile" class="w-full h-full">
+                  <div v-if="getPreviewUrl()" class="w-full h-full">
                     <img
                       :src="getPreviewUrl()"
                       alt="Profile Preview"
@@ -100,6 +93,7 @@ import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { ArrowRight, User, CirclePlus } from '@element-plus/icons-vue'
 import ImageUpload from '@/components/common/ImageUpload.vue'
+import Button from '@/components/common/Button.vue'
 import { useAuthStore } from '@/stores/auth'
 import { notificationApi } from '@/services/notificationApi'
 import { authApi } from '@/services/api'

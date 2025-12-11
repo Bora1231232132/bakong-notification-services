@@ -13,14 +13,24 @@
           v-for="notification in filteredNotifications"
           :key="notification.id"
           class="notification-card"
-          :class="{ 'no-image': !hasValidImage(notification) }"
+          :class="{ 
+            'no-image': !hasValidImage(notification)
+          }"
         >
           <div class="card-content">
             <p class="author-text">Posted by {{ notification.author }}</p>
-            <h3 class="title-text">
+            <h3 
+              class="title-text"
+              :class="{ 'lang-khmer': containsKhmer(notification.title) }"
+              :data-content-lang="containsKhmer(notification.title) ? 'km' : ''"
+            >
               {{ notification.title }}
             </h3>
-            <p class="description-text">
+            <p 
+              class="description-text"
+              :class="{ 'lang-khmer': containsKhmer(notification.description) }"
+              :data-content-lang="containsKhmer(notification.description) ? 'km' : ''"
+            >
               <span v-html="notification.description || ''"></span>
             </p>
           </div>
@@ -86,8 +96,10 @@ import { Search, Calendar, Edit2, Trash2 } from 'lucide-vue-next'
 import type { Notification } from '@/types/notification'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
-import editIcon from '@/assets/image/edit.png'
-import deleteIcon from '@/assets/image/trash-can.png'
+import { containsKhmer } from '@/utils/helpers'
+
+const editIcon = new URL('@/assets/image/edit.png', import.meta.url).href
+const deleteIcon = new URL('@/assets/image/trash-can.png', import.meta.url).href
 
 interface Props {
   activeTab?: 'published' | 'scheduled' | 'draft'

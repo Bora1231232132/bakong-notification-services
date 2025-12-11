@@ -411,6 +411,18 @@ export const mapLanguageToEnum = (language: string): Language => {
   }
 }
 
+/**
+ * Detects if text contains Khmer characters
+ * Khmer Unicode range: U+1780–U+17FF
+ */
+export const containsKhmer = (text: string | null | undefined): boolean => {
+  if (!text || typeof text !== 'string') return false
+  
+  // Khmer Unicode range: U+1780–U+17FF
+  const khmerRegex = /[\u1780-\u17FF]/
+  return khmerRegex.test(text)
+}
+
 export const processFile = async (
   file: File,
   onSuccess: (file: File, previewUrl: string, wasConverted?: boolean) => void,

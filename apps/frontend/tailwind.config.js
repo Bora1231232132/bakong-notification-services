@@ -30,7 +30,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['IBM Plex Sans', 'Inter', 'system-ui', 'sans-serif'],
+        khmer: ['Battambang', 'IBM Plex Sans', 'sans-serif'],
       },
       borderRadius: {
         '4xl': '32px',

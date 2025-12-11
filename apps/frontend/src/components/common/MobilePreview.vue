@@ -9,8 +9,47 @@
         role="dialog"
         aria-modal="true"
       >
+        <!-- Header with Create Notification button and user avatar -->
+        <div class="absolute top-[12px] left-[12px] right-[12px] flex items-center gap-2 z-20">
+          <button
+            class="create-notification-preview-btn flex items-center gap-2 px-4 py-2 bg-[#0f4aea] text-white rounded-full text-sm font-medium"
+            disabled
+            style="pointer-events: none; cursor: default;"
+          >
+            Create Notification
+            <div class="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
+              <span class="text-white text-xs leading-none">+</span>
+            </div>
+          </button>
+          <div
+            class="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[#f0f0f0] flex-shrink-0"
+          >
+            <img
+              v-if="userAvatar && !avatarLoadError"
+              :src="userAvatar"
+              alt="User Avatar"
+              class="w-full h-full object-cover rounded-full"
+              @error="handleAvatarError"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center bg-[#f0f0f0]">
+              <svg
+                class="w-6 h-6 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
         <div
-          class="image-container absolute top-0 h-[159.5px] rounded-t-[18.1129px]"
+          class="image-container absolute top-[60px] h-[159.5px] rounded-t-[18.1129px]"
           :class="props.image ? 'bg-transparent' : 'bg-[#E2E2E2]'"
           style="left: -1px; right: -1px; width: calc(100% + 5px)"
         >
@@ -30,9 +69,13 @@
           <div class="absolute bottom-0 inset-x-0 h-[1px] bg-black/10 z-10"></div>
         </div>
         <div
-          class="scrollable-content absolute left-[12.08px] top-[171.57px] bottom-[61px] w-[307.92px] flex flex-col items-start gap-[6.04px] px-[30px] pt-[30px] pb-[20px] overflow-y-auto overflow-x-hidden"
+          class="scrollable-content absolute left-[12.08px] top-[231.57px] bottom-[61px] w-[307.92px] flex flex-col items-start gap-[6.04px] px-[30px] pt-[30px] pb-[20px] overflow-y-auto overflow-x-hidden"
         >
-          <div class="title-container">
+          <div 
+            class="title-container"
+            :class="{ 'lang-khmer': props.titleHasKhmer }"
+            :data-content-lang="props.titleHasKhmer ? 'km' : ''"
+          >
             {{ displayTitle || 'No title' }}
           </div>
           <div class="flex items-center w-full gap-2 h-[18px]">
@@ -48,7 +91,12 @@
           <div class="text-[14px] leading-[18px] text-black h-[18px] flex items-center pb-2">
             {{ currentDate }}
           </div>
-          <div v-if="displayDescription" class="description-container-relative">
+          <div 
+            v-if="displayDescription" 
+            class="description-container-relative"
+            :class="{ 'lang-khmer': props.descriptionHasKhmer }"
+            :data-content-lang="props.descriptionHasKhmer ? 'km' : ''"
+          >
             <div v-html="displayDescription"></div>
           </div>
           <div v-else class="description-placeholder-relative">
@@ -78,12 +126,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import bgImage from '@/assets/image/Home-Defualt.png'
 import headerImg from '@/assets/image/empty-image.svg'
 import { formatCategoryType } from '@/utils/helpers'
+import { useAuthStore } from '@/stores/auth'
 
 const bg = bgImage
+const authStore = useAuthStore()
+
+const userAvatar = computed(() => authStore.userAvatar || authStore.user?.image || '')
+const avatarLoadError = ref(false)
+
+const handleAvatarError = () => {
+  avatarLoadError.value = true
+}
 
 interface Props {
   title?: string
@@ -91,6 +148,8 @@ interface Props {
   image?: string
   type?: string
   categoryType?: string
+  titleHasKhmer?: boolean
+  descriptionHasKhmer?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -98,6 +157,8 @@ const props = withDefaults(defineProps<Props>(), {
   description: '',
   image: '',
   categoryType: '',
+  titleHasKhmer: false,
+  descriptionHasKhmer: false,
 })
 
 const displayImage = computed(() => {
