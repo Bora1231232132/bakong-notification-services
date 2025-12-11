@@ -17,16 +17,16 @@ DO $$
 DECLARE
     expected_tables TEXT[] := ARRAY['user', 'bakong_user', 'image', 'category_type', 'template', 'template_translation', 'notification'];
     missing_tables TEXT[];
-    table_name TEXT;
+    tbl_name TEXT;
 BEGIN
-    FOREACH table_name IN ARRAY expected_tables
+    FOREACH tbl_name IN ARRAY expected_tables
     LOOP
         IF NOT EXISTS (
-            SELECT 1 FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = table_name
+            SELECT 1 FROM information_schema.tables t
+            WHERE t.table_schema = 'public' 
+            AND t.table_name = tbl_name
         ) THEN
-            missing_tables := array_append(missing_tables, table_name);
+            missing_tables := array_append(missing_tables, tbl_name);
         END IF;
     END LOOP;
     
