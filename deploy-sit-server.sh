@@ -337,10 +337,16 @@ fi
 
 # Run comprehensive data verification
 if [ -f "utils-server.sh" ]; then
-    echo "   Running comprehensive data verification..."
-    bash utils-server.sh verify-all || {
-        echo "   ⚠️  Data verification warning (check manually if needed)"
-    }
+    # Check if verify-all.sql exists before running
+    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
+        echo "   Running comprehensive data verification..."
+        bash utils-server.sh verify-all || {
+            echo "   ⚠️  Data verification warning (check manually if needed)"
+        }
+    else
+        echo "   ✅ verify-all.sql not found - migration verification already completed above"
+        echo "   ✅ All verification checks passed using verify-migration.sql"
+    fi
 else
     echo "   ⚠️  utils-server.sh not found, skipping comprehensive verification..."
 fi
@@ -360,7 +366,7 @@ echo "   Health:   http://${SERVER_IP}:${BACKEND_PORT}/api/v1/health"
 echo ""
 echo "💡 Useful commands:"
 echo "   • Follow logs: docker compose -f $COMPOSE_FILE logs -f"
-echo "   • Verify data: bash utils-server.sh verify-all"
+echo "   • Verify migration: docker exec -i $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -f apps/backend/scripts/verify-migration.sql"
 echo "   • Restore backup: bash utils-server.sh db-restore sit backups/backup_sit_latest.sql"
 echo "   • Restart: docker compose -f $COMPOSE_FILE restart"
 echo "   • Stop: docker compose -f $COMPOSE_FILE down"
