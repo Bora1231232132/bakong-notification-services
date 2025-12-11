@@ -218,6 +218,143 @@ fi
 echo ""
 
 # ============================================================================
+# Step 4.6: Fix NULL categoryTypeId in templates
+# ============================================================================
+echo "🔧 Step 4.6: Fixing NULL categoryTypeId in templates..."
+
+if [ "$DB_RUNNING" = true ]; then
+    DB_PASSWORD="${POSTGRES_PASSWORD:-0101bkns_sit}"
+    export PGPASSWORD="$DB_PASSWORD"
+    
+    # Check if there are any NULL categoryTypeId templates
+    NULL_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+    
+    if [ "$NULL_COUNT" -gt 0 ]; then
+        echo "   Found $NULL_COUNT template(s) with NULL categoryTypeId - fixing..."
+        
+        # Run the fix script inline (idempotent - safe to run multiple times)
+        docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
+DO $$
+DECLARE
+    news_category_id INTEGER;
+    null_count INTEGER;
+    updated_count INTEGER;
+BEGIN
+    -- Find the NEWS category type ID (usually id=1, but we'll query to be safe)
+    SELECT id INTO news_category_id
+    FROM category_type
+    WHERE name = 'NEWS'
+    AND "deletedAt" IS NULL
+    LIMIT 1;
+    
+    -- If NEWS doesn't exist, try to find any available category type
+    IF news_category_id IS NULL THEN
+        SELECT id INTO news_category_id
+        FROM category_type
+        WHERE "deletedAt" IS NULL
+        ORDER BY id ASC
+        LIMIT 1;
+    END IF;
+    
+    -- Check how many templates have NULL categoryTypeId
+    SELECT COUNT(*) INTO null_count
+    FROM template
+    WHERE "categoryTypeId" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    IF news_category_id IS NULL THEN
+        RAISE WARNING 'No category types found - skipping fix';
+        RETURN;
+    END IF;
+    
+    -- Update templates with NULL categoryTypeId
+    IF null_count > 0 THEN
+        UPDATE template
+        SET "categoryTypeId" = news_category_id,
+            "updatedAt" = NOW()
+        WHERE "categoryTypeId" IS NULL
+        AND "deletedAt" IS NULL;
+        
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+    END IF;
+END$$;
+EOF
+        
+        # Verify the fix
+        NULL_COUNT_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+        
+        if [ "$NULL_COUNT_AFTER" -eq 0 ]; then
+            echo "   ✅ Successfully fixed NULL categoryTypeId for all templates"
+        else
+            echo "   ⚠️  Warning: $NULL_COUNT_AFTER template(s) still have NULL categoryTypeId"
+        fi
+    else
+        echo "   ✅ All templates already have categoryTypeId set"
+    fi
+    
+    unset PGPASSWORD
+else
+    echo "   ⚠️  Database not running - fix skipped"
+fi
+
+echo ""
+
+# ============================================================================
+# Step 4.7: Fix NULL fields in template table (for old records)
+# ============================================================================
+echo "🔧 Step 4.7: Fixing NULL fields in template table for old records..."
+
+if [ "$DB_RUNNING" = true ]; then
+    DB_PASSWORD="${POSTGRES_PASSWORD:-0101bkns_sit}"
+    export PGPASSWORD="$DB_PASSWORD"
+    
+    # Run the fix script inline (idempotent - safe to run multiple times)
+    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
+DO $$
+DECLARE
+    updated_count INTEGER;
+BEGIN
+    -- Fix: Set default 'createdBy' if NULL (use 'System' as fallback)
+    UPDATE template
+    SET "createdBy" = COALESCE("createdBy", 'System'),
+        "updatedAt" = NOW()
+    WHERE "createdBy" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    IF updated_count > 0 THEN
+        RAISE NOTICE 'Updated % template(s) with default createdBy', updated_count;
+    END IF;
+    
+    -- Fix: Set default 'updatedBy' if NULL (use createdBy or 'System')
+    UPDATE template
+    SET "updatedBy" = COALESCE("updatedBy", "createdBy", 'System'),
+        "updatedAt" = NOW()
+    WHERE "updatedBy" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    IF updated_count > 0 THEN
+        RAISE NOTICE 'Updated % template(s) with default updatedBy', updated_count;
+    END IF;
+    
+    -- Note: bakongPlatform and publishedBy can remain NULL (they're optional)
+    -- bakongPlatform NULL means "all platforms"
+    -- publishedBy NULL means "draft" (not yet published)
+END$$;
+EOF
+    
+    echo "   ✅ Template NULL fields fix completed"
+    echo "   💡 Note: bakongPlatform and publishedBy can be NULL (this is valid)"
+    
+    unset PGPASSWORD
+else
+    echo "   ⚠️  Database not running - fix skipped"
+fi
+
+echo ""
+
+# ============================================================================
 # Step 5: Stop and Clean
 # ============================================================================
 echo "🛑 Step 5: Stopping containers..."
@@ -277,23 +414,23 @@ echo ""
 # ============================================================================
 # Step 7: Wait and Verify
 # ============================================================================
-echo "⏳ Step 8: Waiting for services to initialize (15 seconds)..."
+echo "⏳ Step 7: Waiting for services to initialize (15 seconds)..."
 sleep 15
 
 echo ""
-echo "📊 Step 9: Container Status:"
+echo "📊 Step 8: Container Status:"
 docker compose -f "$COMPOSE_FILE" ps
 
 echo ""
-echo "📋 Step 10: Backend Logs (last 30 lines):"
+echo "📋 Step 9: Backend Logs (last 30 lines):"
 docker compose -f "$COMPOSE_FILE" logs --tail=30 backend
 
 echo ""
 
 # ============================================================================
-# Step 8: Health Checks
+# Step 10: Health Checks
 # ============================================================================
-echo "🧪 Step 11: Health Checks..."
+echo "🧪 Step 10: Health Checks..."
 
 # Check backend
 if curl -s --connect-timeout 5 "http://${SERVER_IP}:${BACKEND_PORT}/api/v1/health" > /dev/null 2>&1; then
@@ -313,9 +450,9 @@ fi
 echo ""
 
 # ============================================================================
-# Step 8: Verify Data Integrity (Post-deployment)
+# Step 11: Verify Data Integrity (Post-deployment)
 # ============================================================================
-echo "🔍 Step 8: Verifying data integrity after deployment..."
+echo "🔍 Step 11: Verifying data integrity after deployment..."
 
 # Run migration verification if available
 VERIFY_MIGRATION_FILE="apps/backend/scripts/verify-migration.sql"

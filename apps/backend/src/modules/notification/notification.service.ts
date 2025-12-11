@@ -6,6 +6,7 @@ import { Repository, Between } from 'typeorm'
 import { Messaging } from 'firebase-admin/messaging'
 import { Template } from 'src/entities/template.entity'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
+import { CategoryType } from 'src/entities/category-type.entity'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { FirebaseManager } from 'src/common/services/firebase-manager.service'
@@ -1276,12 +1277,33 @@ export class NotificationService {
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
 
+      // Ensure categoryType is always a string, never null or undefined
+      // Android mobile app requires this field to be a string value
+      // Use the same robust check as buildBaseNotificationData
+      const categoryTypeName = template.categoryTypeEntity?.name
+      const safeCategoryType =
+        categoryTypeName &&
+        typeof categoryTypeName === 'string' &&
+        categoryTypeName.trim() !== ''
+          ? categoryTypeName
+          : 'NEWS'
+
+      console.log('📱 [sendFCMPayloadToPlatform] Android categoryType check:', {
+        templateId: template.id,
+        categoryTypeEntityExists: !!template.categoryTypeEntity,
+        categoryTypeName: categoryTypeName,
+        categoryTypeNameType: typeof categoryTypeName,
+        safeCategoryType: safeCategoryType,
+        finalCategoryType: String(safeCategoryType),
+      })
+
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
         // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
         // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
-        categoryType: String(template.categoryTypeEntity?.name || 'NEWS'),
+        // CRITICAL: Use robust null/empty/type check to ensure it's always a valid string
+        categoryType: String(safeCategoryType),
         language: String(translation.language),
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),
@@ -1880,37 +1902,69 @@ export class NotificationService {
       // NOTIFICATION CENTER FLOW: Return paginated notifications (existing behavior)
       const { skip, take } = PaginationUtils.normalizePagination(page || 1, size || 10)
 
-      const [notifications, totalCount] = await this.notiRepo.findAndCount({
-        where: { accountId: accountId.trim() },
-        order: { createdAt: 'DESC' },
-        skip,
-        take,
-      })
+      // Use query builder with proper LEFT JOINs to ensure categoryTypeEntity is always loaded
+      // This prevents null categoryType issues on Android
+      const queryBuilder = this.notiRepo
+        .createQueryBuilder('notification')
+        .leftJoinAndSelect('notification.template', 'template')
+        .leftJoinAndSelect('template.translations', 'translations')
+        .leftJoinAndSelect('template.categoryTypeEntity', 'categoryTypeEntity')
+        .where('notification.accountId = :accountId', { accountId: accountId.trim() })
+        .orderBy('notification.createdAt', 'DESC')
+        .skip(skip)
+        .take(take)
+
+      const [notifications, totalCount] = await queryBuilder.getManyAndCount()
 
       // Filter notifications by user's bakongPlatform
       const filteredNotifications = []
       for (const notification of notifications) {
-        if (notification.templateId) {
-          notification.template = await this.templateRepo.findOne({
-            where: { id: notification.templateId },
-            relations: ['translations', 'categoryTypeEntity'],
-          })
-
-          if (notification.template && !notification.template.translations) {
+        if (notification.templateId && notification.template) {
+          // Ensure translations array exists
+          if (!notification.template.translations) {
             notification.template.translations = []
           }
 
-          // Filter: only include if template.bakongPlatform matches user's platform
+          // Log if categoryTypeEntity is missing for debugging
+          if (!notification.template.categoryTypeEntity && notification.template.categoryTypeId) {
+            console.warn(
+              `⚠️ [getNotificationCenter] Template ${notification.templateId} has categoryTypeId ${notification.template.categoryTypeId} but categoryTypeEntity is null`,
+            )
+            // Try to reload the categoryTypeEntity if it's missing
+            if (notification.template.categoryTypeId) {
+              const categoryType = await this.templateRepo.manager.findOne(CategoryType, {
+                where: { id: notification.template.categoryTypeId },
+              })
+              if (categoryType) {
+                notification.template.categoryTypeEntity = categoryType
+              } else {
+                console.error(
+                  `❌ [getNotificationCenter] CategoryType with id ${notification.template.categoryTypeId} not found in database`,
+                )
+              }
+            }
+          }
+
+          // Filter: only include if template exists and bakongPlatform matches user's platform
           // OR if template has no bakongPlatform (backward compatibility)
           if (
-            !notification.template.bakongPlatform ||
-            notification.template.bakongPlatform === userPlatform
+            notification.template &&
+            (!notification.template.bakongPlatform ||
+              notification.template.bakongPlatform === userPlatform)
           ) {
             filteredNotifications.push(notification)
           }
-        } else {
-          // If no template, include notification
+        } else if (!notification.templateId) {
+          // If no templateId, include notification (backward compatibility)
+          // But ensure it has a valid categoryType
           filteredNotifications.push(notification)
+        } else {
+          // Template ID exists but template not found - this is a data integrity issue
+          // Log error and skip this notification to prevent null categoryType issues
+          console.error(
+            `❌ [getNotificationCenter] Notification ${notification.id} has templateId ${notification.templateId} but template not found in database. Skipping to prevent null categoryType.`,
+          )
+          // Skip this notification to prevent Android from receiving null categoryType
         }
       }
 
