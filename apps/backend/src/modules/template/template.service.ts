@@ -368,7 +368,7 @@ export class TemplateService implements OnModuleInit {
 
     const templateWithRelations = await this.repo.findOne({
       where: { id: template.id },
-      relations: ['translations', 'translations.image'],
+      relations: ['translations', 'translations.image', 'categoryTypeEntity'],
     })
 
     if (templateWithRelations) {
@@ -908,7 +908,7 @@ export class TemplateService implements OnModuleInit {
         // Try to send the notification
         const templateWithTranslations = await this.repo.findOne({
           where: { id: updatedTemplate.id },
-          relations: ['translations', 'translations.image'],
+          relations: ['translations', 'translations.image', 'categoryTypeEntity'],
         })
 
         if (templateWithTranslations && templateWithTranslations.translations) {
@@ -1693,7 +1693,7 @@ export class TemplateService implements OnModuleInit {
 
             const templateWithTranslations = await this.repo.findOne({
               where: { id: template.id },
-              relations: ['translations', 'translations.image'],
+              relations: ['translations', 'translations.image', 'categoryTypeEntity'],
             })
 
             if (templateWithTranslations && templateWithTranslations.translations) {
@@ -1754,7 +1754,7 @@ export class TemplateService implements OnModuleInit {
         try {
           const templateWithTranslations = await this.repo.findOne({
             where: { id: template.id },
-            relations: ['translations', 'translations.image'],
+            relations: ['translations', 'translations.image', 'categoryTypeEntity'],
           })
 
           if (templateWithTranslations && templateWithTranslations.translations) {

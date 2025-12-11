@@ -1276,19 +1276,33 @@ export class NotificationService {
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
 
+      // Ensure categoryType is always a string, never null or undefined
+      // Android mobile app requires this field to be a string value
+      // Use the same robust check as buildBaseNotificationData
+      const categoryTypeName = template.categoryTypeEntity?.name
+      const safeCategoryType =
+        categoryTypeName &&
+        typeof categoryTypeName === 'string' &&
+        categoryTypeName.trim() !== ''
+          ? categoryTypeName
+          : 'NEWS'
+
+      console.log('📱 [sendFCMPayloadToPlatform] Android categoryType check:', {
+        templateId: template.id,
+        categoryTypeEntityExists: !!template.categoryTypeEntity,
+        categoryTypeName: categoryTypeName,
+        categoryTypeNameType: typeof categoryTypeName,
+        safeCategoryType: safeCategoryType,
+        finalCategoryType: String(safeCategoryType),
+      })
+
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
         // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
         // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
-        // Ensure categoryType is always a string, never null or undefined (required for Android)
-        categoryType: String(
-          template.categoryTypeEntity?.name &&
-            typeof template.categoryTypeEntity.name === 'string' &&
-            template.categoryTypeEntity.name.trim() !== ''
-            ? template.categoryTypeEntity.name
-            : 'NEWS',
-        ),
+        // CRITICAL: Use robust null/empty/type check to ensure it's always a valid string
+        categoryType: String(safeCategoryType),
         language: String(translation.language),
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),

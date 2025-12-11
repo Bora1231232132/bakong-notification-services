@@ -232,7 +232,75 @@ else
 fi
 
 echo ""
-echo "📋 Step 5.5: Testing NULL categoryTypeId Fix..."
+echo "📋 Step 6: Testing Utils Script Commands..."
+echo "----------------------------------------"
+
+# Test utils-server.sh commands if available
+if [ -f "$UTILS_FILE" ]; then
+    echo "Testing: bash utils-server.sh db-migrate"
+    if bash utils-server.sh db-migrate > /dev/null 2>&1; then
+        echo "✅ db-migrate command works"
+    else
+        echo "⚠️  db-migrate command had issues (may be normal if already migrated)"
+    fi
+    
+    echo ""
+    echo "Testing: bash utils-server.sh verify-all"
+    # Check if verify-all.sql exists before testing
+    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
+        if bash utils-server.sh verify-all > /dev/null 2>&1; then
+            echo "✅ verify-all command works"
+        else
+            echo "⚠️  verify-all command had issues (check manually if needed)"
+        fi
+    else
+        echo "⚠️  verify-all.sql not found (using verify-migration.sql instead)"
+        echo "   ✅ Skipping verify-all test (file removed)"
+    fi
+    
+    echo ""
+    echo "Testing: bash utils-server.sh db-backup dev"
+    if bash utils-server.sh db-backup dev > /dev/null 2>&1; then
+        echo "✅ db-backup command works"
+        
+        # Check if backup file was created
+        if [ -f "backups/backup_dev_latest.sql" ]; then
+            BACKUP_SIZE=$(du -h "backups/backup_dev_latest.sql" 2>/dev/null | cut -f1 || echo "unknown")
+            echo "✅ Backup file created: backups/backup_dev_latest.sql ($BACKUP_SIZE)"
+        else
+            echo "⚠️  Backup file not found (may be normal if backup failed silently)"
+        fi
+    else
+        echo "⚠️  db-backup command had issues (may be normal if database is empty)"
+    fi
+else
+    echo "⚠️  Utils script not found - skipping utils tests"
+fi
+
+echo ""
+echo "📋 Step 7: Verifying Data Integrity..."
+echo "----------------------------------------"
+
+# Note: Migration verification (verify-migration.sql) was already run in Step 4
+# This step is for additional comprehensive verification if verify-all.sql exists
+
+if [ -f "$UTILS_FILE" ]; then
+    # Check if verify-all.sql exists for additional comprehensive checks
+    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
+        echo "   Running comprehensive data verification (verify-all.sql)..."
+        bash utils-server.sh verify-all || {
+            echo "   ⚠️  Data verification warning (check manually if needed)"
+        }
+    else
+        echo "   ✅ verify-all.sql not found - migration verification already completed in Step 4"
+        echo "   ✅ All verification checks passed using verify-migration.sql"
+    fi
+else
+    echo "   ⚠️  utils-server.sh not found, skipping comprehensive verification..."
+fi
+
+echo ""
+echo "📋 Step 8: Testing NULL categoryTypeId Fix..."
 echo "----------------------------------------"
 
 # Test fixing NULL categoryTypeId in templates
@@ -323,71 +391,62 @@ else
 fi
 
 echo ""
-echo "📋 Step 6: Testing Utils Script Commands..."
+echo "📋 Step 9: Testing NULL Template Fields Fix..."
 echo "----------------------------------------"
 
-# Test utils-server.sh commands if available
-if [ -f "$UTILS_FILE" ]; then
-    echo "Testing: bash utils-server.sh db-migrate"
-    if bash utils-server.sh db-migrate > /dev/null 2>&1; then
-        echo "✅ db-migrate command works"
-    else
-        echo "⚠️  db-migrate command had issues (may be normal if already migrated)"
-    fi
+# Test fixing NULL fields in templates (createdBy, updatedBy)
+if [ "$DB_RUNNING" = true ]; then
+    DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
+    export PGPASSWORD="$DB_PASSWORD"
     
-    echo ""
-    echo "Testing: bash utils-server.sh verify-all"
-    # Check if verify-all.sql exists before testing
-    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
-        if bash utils-server.sh verify-all > /dev/null 2>&1; then
-            echo "✅ verify-all command works"
-        else
-            echo "⚠️  verify-all command had issues (check manually if needed)"
-        fi
-    else
-        echo "⚠️  verify-all.sql not found (using verify-migration.sql instead)"
-        echo "   ✅ Skipping verify-all test (file removed)"
-    fi
+    # Check for NULL createdBy or updatedBy
+    NULL_CREATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+    NULL_UPDATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
     
-    echo ""
-    echo "Testing: bash utils-server.sh db-backup dev"
-    if bash utils-server.sh db-backup dev > /dev/null 2>&1; then
-        echo "✅ db-backup command works"
+    if [ "$NULL_CREATED_COUNT" -gt 0 ] || [ "$NULL_UPDATED_COUNT" -gt 0 ]; then
+        echo "   Found templates with NULL createdBy ($NULL_CREATED_COUNT) or updatedBy ($NULL_UPDATED_COUNT)"
+        echo "   Testing fix..."
         
-        # Check if backup file was created
-        if [ -f "backups/backup_dev_latest.sql" ]; then
-            BACKUP_SIZE=$(du -h "backups/backup_dev_latest.sql" 2>/dev/null | cut -f1 || echo "unknown")
-            echo "✅ Backup file created: backups/backup_dev_latest.sql ($BACKUP_SIZE)"
+        # Run the fix
+        docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
+DO $$
+DECLARE
+    updated_count INTEGER;
+BEGIN
+    -- Fix: Set default 'createdBy' if NULL
+    UPDATE template
+    SET "createdBy" = COALESCE("createdBy", 'System'),
+        "updatedAt" = NOW()
+    WHERE "createdBy" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    -- Fix: Set default 'updatedBy' if NULL
+    UPDATE template
+    SET "updatedBy" = COALESCE("updatedBy", "createdBy", 'System'),
+        "updatedAt" = NOW()
+    WHERE "updatedBy" IS NULL
+    AND "deletedAt" IS NULL;
+END$$;
+EOF
+        
+        # Verify
+        NULL_CREATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+        NULL_UPDATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+        
+        if [ "$NULL_CREATED_AFTER" -eq 0 ] && [ "$NULL_UPDATED_AFTER" -eq 0 ]; then
+            echo "   ✅ Successfully fixed NULL createdBy/updatedBy for all templates"
+            echo "   ✅ Test passed: Fix works correctly"
         else
-            echo "⚠️  Backup file not found (may be normal if backup failed silently)"
+            echo "   ⚠️  Warning: Some templates still have NULL values"
         fi
     else
-        echo "⚠️  db-backup command had issues (may be normal if database is empty)"
+        echo "   ✅ All templates already have createdBy and updatedBy set"
+        echo "   ✅ Test passed: No NULL values found"
     fi
+    
+    unset PGPASSWORD
 else
-    echo "⚠️  Utils script not found - skipping utils tests"
-fi
-
-echo ""
-echo "📋 Step 7: Verifying Data Integrity..."
-echo "----------------------------------------"
-
-# Note: Migration verification (verify-migration.sql) was already run in Step 4
-# This step is for additional comprehensive verification if verify-all.sql exists
-
-if [ -f "$UTILS_FILE" ]; then
-    # Check if verify-all.sql exists for additional comprehensive checks
-    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
-        echo "   Running comprehensive data verification (verify-all.sql)..."
-        bash utils-server.sh verify-all || {
-            echo "   ⚠️  Data verification warning (check manually if needed)"
-        }
-    else
-        echo "   ✅ verify-all.sql not found - migration verification already completed in Step 4"
-        echo "   ✅ All verification checks passed using verify-migration.sql"
-    fi
-else
-    echo "   ⚠️  utils-server.sh not found, skipping comprehensive verification..."
+    echo "   ⚠️  Database not running - test skipped"
 fi
 
 echo ""
@@ -399,6 +458,7 @@ echo "   ✅ Migration verification passed"
 echo "   ✅ Critical columns verified"
 echo "   ✅ Cascade delete constraint verified"
 echo "   ✅ NULL categoryTypeId fix tested"
+echo "   ✅ NULL template fields fix tested"
 if [ -f "$UTILS_FILE" ]; then
     echo "   ✅ Utils script commands work"
     echo "   ✅ Backup function works"

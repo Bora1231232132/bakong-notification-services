@@ -286,7 +286,13 @@ export class InboxResponseDto implements NotificationData {
 
     const stringDataPayload: Record<string, string> = {}
     Object.entries(dataPayload).forEach(([key, value]) => {
-      stringDataPayload[key] = String(value || '')
+      // CRITICAL: Ensure categoryType is never empty string (mobile app treats empty as null)
+      // If value is null/undefined/empty, use 'NEWS' as fallback for categoryType
+      if (key === 'categoryType' && (!value || String(value).trim() === '')) {
+        stringDataPayload[key] = 'NEWS'
+      } else {
+        stringDataPayload[key] = String(value || '')
+      }
     })
 
     const payload = {
