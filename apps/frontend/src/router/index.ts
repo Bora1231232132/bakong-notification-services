@@ -122,6 +122,15 @@ const router = createRouter({
           },
         },
         {
+          path: 'user-management',
+          name: 'user-management',
+          component: () => import('../views/UserManagementView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: { label: 'User Management' },
+          },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingView.vue'),
