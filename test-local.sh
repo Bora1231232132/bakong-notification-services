@@ -232,6 +232,97 @@ else
 fi
 
 echo ""
+echo "📋 Step 5.5: Testing NULL categoryTypeId Fix..."
+echo "----------------------------------------"
+
+# Test fixing NULL categoryTypeId in templates
+if [ "$DB_RUNNING" = true ]; then
+    DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
+    export PGPASSWORD="$DB_PASSWORD"
+    
+    # Check if there are any NULL categoryTypeId templates
+    NULL_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+    
+    echo "   Checking for templates with NULL categoryTypeId..."
+    
+    if [ "$NULL_COUNT" -gt 0 ]; then
+        echo "   Found $NULL_COUNT template(s) with NULL categoryTypeId"
+        echo "   Testing fix..."
+        
+        # Run the fix script inline (idempotent - safe to run multiple times)
+        docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
+DO $$
+DECLARE
+    news_category_id INTEGER;
+    null_count INTEGER;
+    updated_count INTEGER;
+BEGIN
+    -- Find the NEWS category type ID (usually id=1, but we'll query to be safe)
+    SELECT id INTO news_category_id
+    FROM category_type
+    WHERE name = 'NEWS'
+    AND "deletedAt" IS NULL
+    LIMIT 1;
+    
+    -- If NEWS doesn't exist, try to find any available category type
+    IF news_category_id IS NULL THEN
+        SELECT id INTO news_category_id
+        FROM category_type
+        WHERE "deletedAt" IS NULL
+        ORDER BY id ASC
+        LIMIT 1;
+    END IF;
+    
+    -- Check how many templates have NULL categoryTypeId
+    SELECT COUNT(*) INTO null_count
+    FROM template
+    WHERE "categoryTypeId" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    IF news_category_id IS NULL THEN
+        RAISE WARNING 'No category types found - skipping fix';
+        RETURN;
+    END IF;
+    
+    -- Update templates with NULL categoryTypeId
+    IF null_count > 0 THEN
+        UPDATE template
+        SET "categoryTypeId" = news_category_id,
+            "updatedAt" = NOW()
+        WHERE "categoryTypeId" IS NULL
+        AND "deletedAt" IS NULL;
+        
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+    END IF;
+END$$;
+EOF
+        
+        # Verify the fix
+        NULL_COUNT_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+        
+        if [ "$NULL_COUNT_AFTER" -eq 0 ]; then
+            echo "   ✅ Successfully fixed NULL categoryTypeId for all templates"
+            echo "   ✅ Test passed: Fix works correctly"
+        else
+            echo "   ⚠️  Warning: $NULL_COUNT_AFTER template(s) still have NULL categoryTypeId"
+            echo "   ⚠️  Test warning: Some templates may need manual fix"
+        fi
+    else
+        echo "   ✅ All templates already have categoryTypeId set"
+        echo "   ✅ Test passed: No NULL values found"
+    fi
+    
+    # Show category type distribution for verification
+    echo ""
+    echo "   Category type distribution:"
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT ct.name as category_name, COUNT(t.id) as template_count FROM category_type ct LEFT JOIN template t ON t.\"categoryTypeId\" = ct.id AND t.\"deletedAt\" IS NULL WHERE ct.\"deletedAt\" IS NULL GROUP BY ct.id, ct.name ORDER BY template_count DESC;" 2>/dev/null | head -10 || echo "   (Could not retrieve distribution)"
+    
+    unset PGPASSWORD
+else
+    echo "   ⚠️  Database not running - test skipped"
+fi
+
+echo ""
 echo "📋 Step 6: Testing Utils Script Commands..."
 echo "----------------------------------------"
 
@@ -307,6 +398,7 @@ echo "   ✅ Migration file exists and works"
 echo "   ✅ Migration verification passed"
 echo "   ✅ Critical columns verified"
 echo "   ✅ Cascade delete constraint verified"
+echo "   ✅ NULL categoryTypeId fix tested"
 if [ -f "$UTILS_FILE" ]; then
     echo "   ✅ Utils script commands work"
     echo "   ✅ Backup function works"

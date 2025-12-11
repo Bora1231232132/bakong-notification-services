@@ -1281,7 +1281,14 @@ export class NotificationService {
         notificationType: String(template.notificationType),
         // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
         // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
-        categoryType: String(template.categoryTypeEntity?.name || 'NEWS'),
+        // Ensure categoryType is always a string, never null or undefined (required for Android)
+        categoryType: String(
+          template.categoryTypeEntity?.name &&
+            typeof template.categoryTypeEntity.name === 'string' &&
+            template.categoryTypeEntity.name.trim() !== ''
+            ? template.categoryTypeEntity.name
+            : 'NEWS',
+        ),
         language: String(translation.language),
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),
@@ -1900,11 +1907,12 @@ export class NotificationService {
             notification.template.translations = []
           }
 
-          // Filter: only include if template.bakongPlatform matches user's platform
+          // Filter: only include if template exists and bakongPlatform matches user's platform
           // OR if template has no bakongPlatform (backward compatibility)
           if (
-            !notification.template.bakongPlatform ||
-            notification.template.bakongPlatform === userPlatform
+            notification.template &&
+            (!notification.template.bakongPlatform ||
+              notification.template.bakongPlatform === userPlatform)
           ) {
             filteredNotifications.push(notification)
           }

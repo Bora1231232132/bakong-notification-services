@@ -58,7 +58,13 @@ export class InboxResponseDto implements NotificationData {
     this.templateId = data.templateId || 0
     this.language = language
     this.notificationType = data.template?.notificationType || NotificationType.ANNOUNCEMENT
-    this.categoryType = data.template?.categoryTypeEntity?.name || 'NEWS'
+    // Ensure categoryType is always a string, never null or undefined
+    // Android mobile app requires this field to be a string value
+    const categoryTypeName = data.template?.categoryTypeEntity?.name
+    this.categoryType =
+      categoryTypeName && typeof categoryTypeName === 'string' && categoryTypeName.trim() !== ''
+        ? categoryTypeName
+        : 'NEWS'
     this.bakongPlatform = data.template?.bakongPlatform
 
     this.createdDate = DateFormatter.formatDateByLanguage(data.createdAt, language)
@@ -150,7 +156,13 @@ export class InboxResponseDto implements NotificationData {
       notificationType: template.notificationType,
       // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
       // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
-      categoryType: template.categoryTypeEntity?.name || 'NEWS',
+      // Ensure categoryType is always a string, never null or undefined (required for Android)
+      categoryType:
+        template.categoryTypeEntity?.name &&
+        typeof template.categoryTypeEntity.name === 'string' &&
+        template.categoryTypeEntity.name.trim() !== ''
+          ? template.categoryTypeEntity.name
+          : 'NEWS',
       bakongPlatform: template.bakongPlatform,
       createdDate: DateFormatter.formatDateByLanguage(template.createdAt, language as Language),
       timestamp: new Date().toISOString(),
