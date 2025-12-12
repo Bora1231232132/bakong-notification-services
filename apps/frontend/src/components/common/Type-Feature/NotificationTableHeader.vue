@@ -20,6 +20,21 @@
         <span>Add new</span>
         <img src="@/assets/image/add--alt.svg" alt="Add" class="w-5 h-5" />
       </button>
+      <button
+        class="flex items-center justify-center text-[#001346] transition-all duration-200 shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap"
+        style="
+          width: 40px;
+          height: 40px;
+          gap: 5.71px;
+          border-radius: 22.86px;
+          padding: 8.57px;
+          opacity: 1;
+        "
+        @click="$emit('refresh')"
+        aria-label="Refresh table"
+      >
+        <img src="@/rotate--360.svg" alt="Refresh" class="w-full h-full" />
+      </button>
     </div>
     <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
       <button
@@ -46,6 +61,7 @@ const emit = defineEmits<{
   search: [value: string]
   addNew: []
   filter: []
+  refresh: []
 }>()
 
 const searchValue = ref(props.modelValue || '')

@@ -7,6 +7,7 @@
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
+          @refresh="handleRefresh"
         />
       </div>
       <div class="flex-1 w-full" style="min-height: 434px">
@@ -119,6 +120,13 @@ const handleSearch = () => {
   page.value = 1
 }
 
+const handleRefresh = () => {
+  // Reset search and pagination, and emit refresh intent
+  searchQuery.value = ''
+  page.value = 1
+  console.log('refresh table')
+}
+
 const handleView = (user: UserItem) => {
   console.log('View user:', user)
 }
@@ -155,4 +163,24 @@ watch(
 )
 </script>
 
-<style scoped></style>
+<style scoped>
+/* Typography styles for user table data rows */
+:deep(table tbody tr td) {
+  font-family: 'IBM Plex Sans', sans-serif !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  font-size: 14px !important;
+  line-height: 150% !important;
+  letter-spacing: 0% !important;
+}
+
+/* Typography styles for ID column (span inside first td) */
+:deep(table tbody tr td:first-child span) {
+  font-family: 'IBM Plex Sans', sans-serif !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  font-size: 14px !important;
+  line-height: 150% !important;
+  letter-spacing: 0% !important;
+}
+</style>

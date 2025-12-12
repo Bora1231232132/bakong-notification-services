@@ -223,65 +223,29 @@
                     title="View"
                     @click="$emit('view', item)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
+                    <img
+                      src="@/assets/image/view_16.svg"
+                      alt="View"
                       class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="#001346"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
+                    />
                   </button>
                   <button
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
                     title="Edit"
                     @click="$emit('edit', item)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="white"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
+                    <img src="@/assets/image/edit.svg" alt="Edit" class="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   <button
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
                     title="Delete"
                     @click="$emit('delete', item)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
+                    <img
+                      src="@/assets/image/trash-can.svg"
+                      alt="Delete"
                       class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="white"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M8 4h8l1 3H7l1-3z"
-                      />
-                    </svg>
+                    />
                   </button>
                 </div>
               </td>
@@ -356,65 +320,29 @@
                     title="View"
                     @click="$emit('view', user)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
+                    <img
+                      src="@/assets/image/view_16.svg"
+                      alt="View"
                       class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="#001346"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
+                    />
                   </button>
                   <button
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
                     title="Edit"
                     @click="$emit('edit', user)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="white"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
+                    <img src="@/assets/image/edit.svg" alt="Edit" class="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   <button
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
                     title="Delete"
                     @click="$emit('delete', user)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
+                    <img
+                      src="@/assets/image/trash-can.svg"
+                      alt="Delete"
                       class="w-3 h-3 sm:w-4 sm:h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="white"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M8 4h8l1 3H7l1-3z"
-                      />
-                    </svg>
+                    />
                   </button>
                 </div>
               </td>
