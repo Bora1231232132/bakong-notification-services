@@ -38,12 +38,13 @@
 
 <script setup lang="ts">
 import NotificationTableHeader from '@/components/common/Type-Feature/NotificationTableHeader.vue'
-import TableBody, { type UserItem } from '@/components/common/TableBody.vue'
+import TableBody from '@/components/common/TableBody.vue'
 import NotificationPagination, {
   type PaginationStyle,
 } from '@/components/common/Type-Feature/NotificationPagination.vue'
 import { ref, computed, watch } from 'vue'
 import { mockUsers } from '../../Data/mockUsers'
+import type { UserItem } from '@/components/common'
 
 const paginationStyle: PaginationStyle = 'user-management'
 
@@ -60,7 +61,7 @@ const filteredUsers = computed(() => {
 
   const query = searchQuery.value.toLowerCase()
   return users.value.filter(
-    (user) =>
+    (user: UserItem) =>
       user.name?.toLowerCase().includes(query) ||
       user.email?.toLowerCase().includes(query) ||
       user.phoneNumber?.toLowerCase().includes(query) ||
@@ -133,7 +134,7 @@ const handleDelete = (user: UserItem) => {
 
 const handleStatusToggle = (user: UserItem, index: number) => {
   // Find the actual index in the full users array
-  const globalIndex = users.value.findIndex((u) => u.id === user.id)
+  const globalIndex = users.value.findIndex((u: UserItem) => u.id === user.id)
   if (globalIndex !== -1) {
     const currentUser = users.value[globalIndex]
     if (currentUser) {
