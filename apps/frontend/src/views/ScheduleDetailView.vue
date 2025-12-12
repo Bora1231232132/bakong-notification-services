@@ -65,7 +65,7 @@ import { ElDialog, ElButton } from 'element-plus'
 import { Warning, Picture } from '@element-plus/icons-vue'
 import { typeApi } from '../services/typeApi'
 import { notificationApi } from '@/services/notificationApi'
-import { SendType, Platform, getNotificationMessage } from '@/utils/helpers'
+import { SendType, Platform, getNotificationMessage, formatBakongApp } from '@/utils/helpers'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { api } from '@/services/api'
 
@@ -177,7 +177,7 @@ const handlePublishNow = async () => {
 
     // Use unified message handler
     const bakongPlatform = result?.data?.bakongPlatform || template?.bakongPlatform
-    const platformName = bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform'
+    const platformName = bakongPlatform ? formatBakongApp(bakongPlatform ) : 'this platform'
     const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
 
     // Show appropriate message based on result
