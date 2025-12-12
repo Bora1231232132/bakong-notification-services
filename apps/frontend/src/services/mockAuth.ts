@@ -10,6 +10,14 @@ const mockUsers = [
     password: 'admin123',
   },
   {
+    id: 1,
+    username: 'admin',
+    email: 'admin@bakong.com',
+    displayName: 'Administrator',
+    role: 'ADMIN_USER' as UserRole,
+    password: 'admin123',
+  },
+  {
     id: 2,
     username: 'user',
     email: 'user@bakong.com',
