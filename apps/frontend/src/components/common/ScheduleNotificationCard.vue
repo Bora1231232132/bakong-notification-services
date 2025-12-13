@@ -74,27 +74,53 @@ const cardHeight = (n: Notification) => {
   const hasImg = hasImage(n)
   const hasBtn = showButton(n)
   
-  if (hasImg && hasBtn) {
-    // Image + Button case: 275.74px (base) + 56px (button) + 12px (gap) = 343.74px
-    return '343.74px'
-  }
-  if (hasImg) {
-    // Frame 69: image, NO button
-    return '275.74px'
-  }
-  if (hasBtn) {
-    // Frame 80: no image, WITH button
-    return '244.75px'
-  }
+  // if (hasImg && hasBtn) {
+  //   // Image + Button case: 275.74px (base) + 56px (button) + 12px (gap) = 343.74px
+  //   return '343.74px'
+  // }
+  // if (hasImg) {
+  //   // Frame 69: image, NO button
+  //   return '275.74px'
+  // }
+  // if (hasBtn) {
+  //   // Frame 80: no image, WITH button
+  //   return '244.75px'
+  // }
   // Frame 78: no image, NO button
   return 'full-height'
 }
 
 const formatTime = (n: Notification) => {
-  const raw = (n as any).sendSchedule || (n as any).templateStartAt
+  // Try multiple sources for schedule time
+  const raw = (n as any).sendSchedule || (n as any).templateStartAt || (n as any).scheduledTime || (n as any).date
+  
   if (!raw) return ''
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return ''
+  
+  // Handle Date objects
+  let d: Date
+  if (raw instanceof Date) {
+    d = raw
+  } else if (typeof raw === 'string') {
+    // Parse ISO string or other date formats
+    d = new Date(raw)
+  } else {
+    return ''
+  }
+  
+  if (isNaN(d.getTime())) {
+    // Try parsing scheduledTime if it's a formatted string like "HH:MM"
+    const scheduledTime = (n as any).scheduledTime
+    if (scheduledTime && typeof scheduledTime === 'string') {
+      // Extract time from formatted string like "13 December 2025 | 16:46" or "16:46"
+      const timeMatch = scheduledTime.match(/(\d{1,2}):(\d{2})/)
+      if (timeMatch) {
+        return `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`
+      }
+    }
+    return ''
+  }
+  
+  // Format as HH:MM
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
@@ -103,7 +129,7 @@ const formatTime = (n: Notification) => {
 
 <style scoped>
 .schedule-card {    
-  margin-bottom: -55px;
+  margin-bottom: -22px;
   width: 176px;
   padding: 8px 8px 0px 8px;
   display: flex;

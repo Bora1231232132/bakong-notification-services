@@ -55,64 +55,80 @@
       <!-- Calendar container -->
       <div class="flex-1 min-h-0" style="padding-bottom: 20px;">
         <div class="h-full flex flex-col bg-white border border-[rgba(0,19,70,0.1)]">
-          <!-- day headers -->
-          <div class="grid grid-cols-7 h-16 flex-shrink-0 border-b border-[rgba(0,19,70,0.1)]">
-            <div
-              v-for="(day, idx) in weekDays"
-              :key="day.date.toISOString() + '-h'"
-              class="flex items-center justify-center text-[16px] font-normal text-black border-l border-[rgba(0,19,70,0.1)]"
-              :class="idx === 0 ? 'border-l-0' : ''"
-            >
-              {{ day.label }}
-            </div>
+          <!-- Loading indicator -->
+          <div v-if="loading" class="flex items-center justify-center h-full">
+            <div class="text-slate-500">Loading notifications...</div>
           </div>
-
-          <!-- ✅ THIS wrapper reserves 20px bottom space INSIDE the border -->
-          <div class="flex-1 min-h-0 overflow-hidden">
-            <!-- grid row (doesn't scroll) -->
-            <div class="calendar-columns grid grid-cols-7 h-full overflow-hidden">
-              <!-- each column scrolls -->
+          
+          <!-- Error message -->
+          <div v-else-if="error" class="flex items-center justify-center h-full">
+            <div class="text-red-500">Error: {{ error }}</div>
+          </div>
+          
+          <!-- Calendar content -->
+          <template v-else>
+            <!-- day headers -->
+            <div class="grid grid-cols-7 h-16 flex-shrink-0 border-b border-[rgba(0,19,70,0.1)]">
               <div
                 v-for="(day, idx) in weekDays"
-                :key="day.date.toISOString()"
-                class="calendar-column
-                      min-w-0
-                      min-h-0
-                      h-full
-                      p-2
-                      flex flex-col gap-3
-                      border-l border-[rgba(0,19,70,0.1)]
-                      overflow-y-auto overflow-x-hidden"
+                :key="day.date.toISOString() + '-h'"
+                class="flex items-center justify-center text-[16px] font-normal text-black border-l border-[rgba(0,19,70,0.1)]"
                 :class="idx === 0 ? 'border-l-0' : ''"
               >
-                <ScheduleNotificationCard
-                  :notifications-for-day="getNotificationsForDay(day.date)"
-                  @send-now="handleSendNow"
-                />
+                {{ day.label }}
+              </div>
+            </div>
 
-                <!-- guarantees last item visibility -->
-                <div style="padding-bottom: 20px;">
+            <!-- ✅ THIS wrapper reserves 20px bottom space INSIDE the border -->
+            <div class="flex-1 min-h-0 overflow-hidden">
+              <!-- grid row (doesn't scroll) -->
+              <div class="calendar-columns grid grid-cols-7 h-full overflow-hidden">
+                <!-- each column scrolls -->
+                <div
+                  v-for="(day, idx) in weekDays"
+                  :key="day.date.toISOString()"
+                  class="calendar-column
+                        min-w-0
+                        min-h-0
+                        h-full
+                        p-2
+                        flex flex-col gap-3
+                        border-l border-[rgba(0,19,70,0.1)]
+                        overflow-y-auto overflow-x-hidden"
+                  :class="idx === 0 ? 'border-l-0' : ''"
+                >
+                  <ScheduleNotificationCard
+                    :notifications-for-day="getNotificationsForDay(day.date)"
+                    @send-now="handleSendNow"
+                  />
+
+                  <!-- guarantees last item visibility -->
+                  <div style="padding-bottom: 20px;">
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { BakongApp } from '@bakong/shared'
 import ScheduleNotificationCard from '@/components/common/ScheduleNotificationCard.vue'
-import type { Notification } from '@/services/notificationApi'
+import { notificationApi, type Notification } from '@/services/notificationApi'
+import { api } from '@/services/api'
 
 const selectedPlatform = ref<BakongApp>(BakongApp.BAKONG)
 const notifications = ref<Notification[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
 
-// Set to August 2025 for demo
-const currentWeekStart = ref<Date>(new Date(2025, 7, 3)) // Aug 3, 2025
+// Set to current date or August 2025 for demo
+const currentWeekStart = ref<Date>(new Date())
 
 const weekDays = computed(() => {
   const start = new Date(currentWeekStart.value)
@@ -169,39 +185,131 @@ const getNotificationsForDay = (date: Date): Notification[] => {
   })
 }
 
-// MOCK DATA
-const buildMock = (): Notification[] => {
-  const weekStart = currentWeekStart.value
-  const sunday = new Date(weekStart)
-  sunday.setDate(weekStart.getDate() - weekStart.getDay())
-
-  const mk = (offset: number, h: number, m = 0) => {
-    const d = new Date(sunday)
-    d.setDate(sunday.getDate() + offset)
-    d.setHours(h, m, 0, 0)
-    return d.toISOString()
+// Fetch notifications from API
+const fetchNotifications = async () => {
+  loading.value = true
+  error.value = null
+  
+  try {
+    // Use the existing API endpoint with notification format
+    const notificationResponse = await notificationApi.getAllNotifications({
+      page: 1,
+      pageSize: 1000, // Get all templates for schedule view
+      language: 'KM',
+    })
+    
+    // Filter for published and scheduled templates only
+    const filteredNotifications = notificationResponse.data.filter((n) => {
+      const status = n.status?.toLowerCase()
+      return status === 'published' || status === 'scheduled'
+    })
+    
+    // Fetch raw template data to get sendSchedule for date matching
+    const rawTemplatesResponse = await api.get('/api/v1/template/all')
+    const rawTemplatesMap = new Map<number, any>()
+    
+    if (Array.isArray(rawTemplatesResponse.data)) {
+      rawTemplatesResponse.data.forEach((template: any) => {
+        const id = template.templateId || template.id
+        rawTemplatesMap.set(id, template)
+      })
+    }
+    
+    // Map and normalize the data for schedule view
+    const mappedNotifications = filteredNotifications.map((n) => {
+      // Normalize status to match component expectations
+      let normalizedStatus = n.status?.toUpperCase()
+      if (normalizedStatus === 'PUBLISHED') {
+        normalizedStatus = 'SENT' // Component expects SENT for published
+      } else if (normalizedStatus === 'SCHEDULED') {
+        normalizedStatus = 'SCHEDULED'
+      }
+      
+      // Get sendSchedule from raw template data
+      const rawTemplate = rawTemplatesMap.get(Number(n.id))
+      
+      // Convert sendSchedule to ISO string if it's a Date object
+      let sendSchedule: string | Date | undefined
+      if (rawTemplate?.sendSchedule) {
+        sendSchedule = rawTemplate.sendSchedule instanceof Date 
+          ? rawTemplate.sendSchedule.toISOString() 
+          : rawTemplate.sendSchedule
+      } else if (rawTemplate?.templateStartAt) {
+        sendSchedule = rawTemplate.templateStartAt instanceof Date
+          ? rawTemplate.templateStartAt.toISOString()
+          : rawTemplate.templateStartAt
+      } else if (n.createdAt) {
+        sendSchedule = n.createdAt instanceof Date
+          ? n.createdAt.toISOString()
+          : n.createdAt
+      }
+      
+      // Format time helper for scheduledTime display
+      const formatTimeFromDate = (date: Date | string | null | undefined): string | null => {
+        if (!date) return null
+        try {
+          const d = date instanceof Date ? date : new Date(date)
+          if (isNaN(d.getTime())) return null
+          const hh = String(d.getHours()).padStart(2, '0')
+          const mm = String(d.getMinutes()).padStart(2, '0')
+          return `${hh}:${mm}`
+        } catch {
+          return null
+        }
+      }
+      
+      return {
+        ...n,
+        status: normalizedStatus,
+        // Use sendSchedule from raw template for accurate date matching (as ISO string)
+        sendSchedule: sendSchedule as string,
+        templateStartAt: rawTemplate?.templateStartAt instanceof Date
+          ? rawTemplate.templateStartAt.toISOString()
+          : rawTemplate?.templateStartAt,
+        templateEndAt: rawTemplate?.templateEndAt instanceof Date
+          ? rawTemplate.templateEndAt.toISOString()
+          : rawTemplate?.templateEndAt,
+        // Include scheduledTime from notification API for time display, or format from sendSchedule
+        scheduledTime: (n as any).scheduledTime || formatTimeFromDate(sendSchedule),
+        // Ensure description is set (use content if description is missing)
+        description: n.description || n.content || '',
+      } as Notification
+    })
+    
+    notifications.value = mappedNotifications
+  } catch (err: any) {
+    console.error('Error fetching notifications:', err)
+    error.value = err.response?.data?.message || err.message || 'Failed to load notifications'
+    notifications.value = []
+  } finally {
+    loading.value = false
   }
-
-  return [
-    { id: 1, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', image: 'https://picsum.photos/seed/a/400/220', status: 'SCHEDULED', sendSchedule: mk(0, 9) } as any,
-    { id: 2, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', image: 'https://picsum.photos/seed/b/400/220', status: 'SENT', sendSchedule: mk(0, 11) } as any,
-    { id: 3, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', status: 'SCHEDULED', sendSchedule: mk(0, 14) } as any,
-    { id: 4, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', image: 'https://picsum.photos/seed/c/400/220', status: 'SENT', sendSchedule: mk(0, 16) } as any,
-    { id: 5, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', status: 'SENT', sendSchedule: mk(0, 18) } as any,
-
-    { id: 6, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', status: 'SENT', sendSchedule: mk(2, 15) } as any,
-    { id: 7, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', image: 'https://picsum.photos/seed/d/400/220', status: 'SENT', sendSchedule: mk(2, 16) } as any,
-
-    { id: 8, title: 'Thailand, Cambodia officials meet in Malay...', description: 'Officials from Thailand and Cambodia...', status: 'SCHEDULED', sendSchedule: mk(5, 15) } as any,
-  ]
 }
 
-const handleSendNow = (n: Notification) => {
-  alert(`Publish now: ${n.title}`)
+const handleSendNow = async (n: Notification) => {
+  try {
+    const templateId = typeof n.id === 'number' ? n.id : parseInt(String(n.id))
+    if (isNaN(templateId)) {
+      throw new Error('Invalid template ID')
+    }
+    
+    await notificationApi.sendNotificationNow(templateId)
+    // Refresh notifications after publishing
+    await fetchNotifications()
+  } catch (err: any) {
+    console.error('Error publishing notification:', err)
+    const errorMsg = err.response?.data?.message || err.message || 'Failed to publish notification'
+    alert(errorMsg)
+  }
 }
+
+// Watch for week changes to refresh data
+watch(currentWeekStart, () => {
+  fetchNotifications()
+})
 
 onMounted(() => {
-  notifications.value = buildMock()
+  fetchNotifications()
 })
 </script>
 
