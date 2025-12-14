@@ -33,7 +33,7 @@
         @click="$emit('refresh')"
         aria-label="Refresh table"
       >
-        <img src="@/rotate--360.svg" alt="Refresh" class="w-full h-full" />
+        <img src="@/assets/image/rotate--360.svg" alt="Refresh" class="w-full h-full" />
       </button>
     </div>
     <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
