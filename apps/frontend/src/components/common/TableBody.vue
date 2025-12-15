@@ -209,8 +209,18 @@
                   </div>
                 </div>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-center align-middle w-full">
-                <div class="flex items-center justify-center w-full">
+              <td class="py-3 px-2 sm:px-4 text-center align-middle w-full">
+                <div
+                  class="flex items-center justify-center w-full"
+                  style="
+                    font-family: 'IBM Plex Sans', sans-serif;
+                    font-weight: 400;
+                    font-style: normal;
+                    font-size: 14px;
+                    line-height: 150%;
+                    letter-spacing: 0%;
+                  "
+                >
                   {{ item.name }}
                 </div>
               </td>
@@ -281,8 +291,19 @@
                   }}</span>
                 </div>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-[#001346] align-middle">
-                {{ user.name || user.displayName || user.username || `Prolos ${index + 2}` }}
+              <td class="py-3 px-2 sm:px-4 text-[#001346] align-middle">
+                <span
+                  style="
+                    font-family: 'IBM Plex Sans', sans-serif;
+                    font-weight: 400;
+                    font-style: normal;
+                    font-size: 14px;
+                    line-height: 150%;
+                    letter-spacing: 0%;
+                  "
+                >
+                  {{ user.name || user.displayName || user.username || `Prolos ${index + 2}` }}
+                </span>
               </td>
               <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-[#001346] align-middle">
                 {{ user.email || `Prolos ${index + 3}` }}

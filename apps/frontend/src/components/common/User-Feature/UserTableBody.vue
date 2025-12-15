@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="w-full opacity-100 overflow-hidden" style="max-width: 1280px; max-height: 434px">
     <div class="w-full h-full overflow-y-auto overflow-x-auto">
       <table

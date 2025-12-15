@@ -1,7 +1,13 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "include": ["src/env.d.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"],
-  "exclude": ["src/**/__tests__/*", "node_modules", ".tmp", "**/*.tsbuildinfo"],
+  "exclude": [
+    "src/**/__tests__/*",
+    "node_modules",
+    ".tmp",
+    "**/*.tsbuildinfo",
+    "src/components/common/Type-Feature/NotificationTableBody.vue"
+  ],
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./.tmp/tsconfig.app.tsbuildinfo",

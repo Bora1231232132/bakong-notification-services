@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div v-if="shouldShowBreadcrumb && breadcrumbs.length > 0" class="breadcrumb">
     <template v-for="(item, index) in breadcrumbs" :key="item.path || index">
       <span
