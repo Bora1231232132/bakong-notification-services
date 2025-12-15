@@ -44,10 +44,13 @@ import NotificationPagination, {
   type PaginationStyle,
 } from '@/components/common/Type-Feature/NotificationPagination.vue'
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { mockUsers } from '../../Data/mockUsers'
 import type { UserItem } from '@/components/common'
 
 const paginationStyle: PaginationStyle = 'user-management'
+
+const router = useRouter()
 
 const searchQuery = ref('')
 const page = ref(1)
@@ -108,7 +111,7 @@ const handlePerPageChange = (newPerPage: number) => {
 }
 
 const addNew = () => {
-  console.log('addNew')
+  router.push({ name: 'create-user' })
 }
 
 const filter = () => {

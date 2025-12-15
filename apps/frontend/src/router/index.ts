@@ -122,6 +122,18 @@ const router = createRouter({
           },
         },
         {
+          path: 'users/create',
+          name: 'create-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: {
+              label: 'Create User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
           path: 'user-management',
           name: 'user-management',
           component: () => import('../views/UserManagementView.vue'),
