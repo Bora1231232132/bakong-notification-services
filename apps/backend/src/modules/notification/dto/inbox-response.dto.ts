@@ -318,52 +318,35 @@ export class InboxResponseDto implements NotificationData {
       linkPreview: extra?.linkPreview || '',
       createdDate:
         extra?.createdDate ||
-        new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        }),
       notification_title: extra?.notification_title || title,
       notification_body: extra?.notification_body || body,
     }
-
+  
     const stringDataPayload: Record<string, string> = {}
     Object.entries(dataPayload).forEach(([key, value]) => {
-      // CRITICAL: Ensure categoryType is never empty string (mobile app treats empty as null)
-      // If value is null/undefined/empty, use 'NEWS' as fallback for categoryType
+      // CRITICAL: Ensure categoryType is never empty string
       if (key === 'categoryType' && (!value || String(value).trim() === '')) {
         stringDataPayload[key] = 'NEWS'
       } else {
         stringDataPayload[key] = String(value || '')
       }
     })
-
-    const payload = {
+  
+    return {
       token,
-      notification: {
-        title,
-        body,
-        // Root notification field - cross-platform (iOS & Android)
-        // Do NOT put clickAction here - it's Android-specific
-        ...(extra?.imageUrl ? { imageUrl: extra.imageUrl } : {}),
-      },
-      data: stringDataPayload,
+      data: dataPayload,
       android: {
-        priority: 'high' as const,
-        ttl: 3600000,
-        collapseKey: `template_${extra?.templateId || 'unknown'}`,
-        notification: {
-          title,
-          body,
-          channelId: 'whatnews',
-          sound: 'default',
-          notificationCount: 1,
-          tag: `notification_${notificationId}`,
-          color: '#FF5722',
-          icon: 'ic_notification',
-          clickAction: 'OPEN_APP',
-          ...(extra?.imageUrl ? { imageUrl: extra.imageUrl } : {}),
-        },
+        priority: 'high',
       },
     }
-    return payload
   }
+  
+
   static buildAndroidDataOnlyPayload(
     token: string,
     title: string,
