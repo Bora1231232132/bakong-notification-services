@@ -1,17 +1,16 @@
 <template>
   <div class="flex w-full h-full justify-start">
-    <div class="flex flex-col w-full max-w-[639.5px] h-full py-4 px-4 sm:px-4">
+    <div class="flex flex-col w-full max-w-[639.5px] h-full py-4 px-4 sm:px-4 overflow-hidden">
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
         label-position="top"
-        class="flex flex-col gap-4 w-full h-full px-4 pb-4"
+        class="flex flex-col gap-4 w-full h-full px-4 pb-4 overflow-y-auto"
       >
         <div class="field-select w-full max-w-[603px]">
           <div class="flex items-center gap-1 mb-1!">
             <span class="text-sm leading-snug text-[#001346] label-text">User role</span>
-            <span class="text-red-500 text-sm">*</span>
           </div>
           <FormField
             v-model="form.role"
@@ -87,7 +86,7 @@
           />
         </div>
 
-        <div class="flex items-center gap-3 w-full max-w-[213px] h-14 mt-3!">
+        <div class="flex items-center gap-3 w-full max-w-[213px] h-14 mt-3! flex-shrink-0">
           <el-button
             type="primary"
             round
@@ -279,6 +278,60 @@ onMounted(async () => {
   border: 1px solid var(--surface-main-surface-secondary-bold, #0013461a) !important;
 }
 
+/* Position error message inside field-input container */
+.field-input {
+  position: relative;
+}
+
+:deep(.field-input .el-form-item) {
+  margin-bottom: 0 !important;
+  width: 100%;
+}
+
+:deep(.field-input .el-form-item__content) {
+  position: relative;
+}
+
+:deep(.field-input .el-form-item__error) {
+  position: relative !important;
+  margin-top: 4px !important;
+  margin-left: 0 !important;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  line-height: 1.2 !important;
+  font-size: 12px;
+  color: #f56c6c;
+  display: block;
+  min-height: 16px;
+}
+
+/* Same for field-select */
+.field-select {
+  position: relative;
+}
+
+:deep(.field-select .el-form-item) {
+  margin-bottom: 0 !important;
+  width: 100%;
+}
+
+:deep(.field-select .el-form-item__content) {
+  position: relative;
+}
+
+:deep(.field-select .el-form-item__error) {
+  position: relative !important;
+  margin-top: 4px !important;
+  margin-left: 0 !important;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  line-height: 1.2 !important;
+  font-size: 12px;
+  color: #f56c6c;
+  display: block;
+  min-height: 16px;
+}
+
 :deep(.el-form-item__label) {
   font-family: 'IBM Plex Sans', sans-serif;
   font-weight: 400;
@@ -296,5 +349,24 @@ onMounted(async () => {
   font-size: 14px;
   line-height: 150%;
   letter-spacing: 0%;
+}
+
+/* Ensure form is scrollable and buttons stay accessible */
+:deep(.el-form) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+:deep(.el-form)::-webkit-scrollbar {
+  width: 6px;
+}
+
+:deep(.el-form)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:deep(.el-form)::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 </style>
