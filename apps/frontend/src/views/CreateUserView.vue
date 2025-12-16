@@ -20,7 +20,6 @@
             label=""
             placeholder="Select role"
             :options="roleOptions"
-            required
             :disabled="loading"
           />
         </div>
@@ -156,7 +155,6 @@ const statusOptions: FormFieldOption[] = [
 ]
 
 const rules = reactive<FormRules>({
-  role: [{ required: true, message: 'User role is required', trigger: 'change' }],
   displayName: [{ required: true, message: 'Name is required', trigger: 'blur' }],
   username: [
     { required: true, message: 'Email is required', trigger: 'blur' },
