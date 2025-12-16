@@ -4,6 +4,7 @@
       <div class="h-auto sm:h-[56px] flex-shrink-0">
         <NotificationTableHeader
           v-model="searchQuery"
+          :show-refresh="false"
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
