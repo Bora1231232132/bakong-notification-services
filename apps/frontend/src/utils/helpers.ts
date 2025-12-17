@@ -152,6 +152,7 @@ export const getNotificationMessage = (
   result: any,
   platformName?: string,
   bakongPlatform?: string,
+  devicePlatform?: string, // Device platform: "Android", "iOS", or "ALL"
 ): NotificationMessageResult => {
   const failedDueToInvalidTokens = result?.failedDueToInvalidTokens === true
   const failedCount = result?.failedCount || 0
@@ -161,20 +162,41 @@ export const getNotificationMessage = (
   // Get formatted platform name with bakongPlatform info
   const formattedPlatform =
     platformName || (bakongPlatform ? formatBakongApp(bakongPlatform) : 'this platform')
-  const platformInfo = bakongPlatform ? ` for <strong>${formattedPlatform}</strong>` : ''
-
-  // Case 1: Invalid tokens (highest priority)
-  if (failedDueToInvalidTokens && failedCount > 0) {
-    return {
-      title: 'Invalid User Data',
-      message: `Failed to send notification${platformInfo} to ${failedCount} user(s) due to invalid tokens. Saved as draft.`,
-      type: 'error',
-      duration: 5000,
-      dangerouslyUseHTMLString: !!bakongPlatform,
+  
+  // Format device platform for display (iOS, Android, or empty for ALL)
+  const formatDevicePlatform = (platform?: string): string => {
+    if (!platform || platform === 'ALL' || platform.toUpperCase() === 'ALL') {
+      return ''
     }
+    // Normalize platform name: handle both "IOS"/"iOS" and "ANDROID"/"Android"
+    const normalized = platform.toUpperCase()
+    if (normalized === 'IOS') {
+      return 'iOS'
+    } else if (normalized === 'ANDROID') {
+      return 'Android'
+    }
+    // If already formatted (iOS/Android), return as-is
+    if (platform === 'iOS' || platform === 'Android') {
+      return platform
+    }
+    return platform
   }
+  
+  const formattedDevicePlatform = formatDevicePlatform(devicePlatform)
+  
+  // Standard format: "Notification for **Bakong** sent to **iOS** to X user(s) successfully."
+  // Format device platform text: " to **iOS**" or " to **Android**" or "" (for ALL)
+  const devicePlatformText = formattedDevicePlatform 
+    ? ` to <strong>${formattedDevicePlatform}</strong>` 
+    : ''
+  
+  const bakongPlatformText = bakongPlatform 
+    ? ` for <strong>${formattedPlatform}</strong>` 
+    : ''
 
-  // Case 2: No users available (only if no failures and savedAsDraftNoUsers is true)
+  // Case 1: No users available (only if no failures and savedAsDraftNoUsers is true)
+  // IMPORTANT: savedAsDraftNoUsers should only be true when there are literally no users,
+  // not when all users failed. Check failedCount === 0 to distinguish.
   if (savedAsDraftNoUsers && failedCount === 0 && successfulCount === 0) {
     return {
       title: 'Info',
@@ -185,52 +207,68 @@ export const getNotificationMessage = (
     }
   }
 
-  // Case 3: All sends failed (generic failure)
+  // Case 2: ALL sends failed (successfulCount === 0 && failedCount > 0)
+  // This means we attempted to send but ALL users failed
   if (successfulCount === 0 && failedCount > 0) {
-    const failedUsers = result?.failedUsers || []
-    const failedUsersList = failedUsers.length > 0 && failedUsers.length <= 3 
-      ? ` (${failedUsers.join(', ')})` 
-      : failedUsers.length > 3 
-        ? ` (${failedUsers.slice(0, 2).join(', ')}...)` 
-        : ''
+    // Provide more helpful message if failure is due to invalid tokens
+    let failureReason = ''
+    if (failedDueToInvalidTokens) {
+      failureReason = ` All ${failedCount} user(s) have invalid or expired FCM tokens. Users need to open the mobile app to refresh their tokens. You can retry publishing this draft after users update their tokens.`
+    } else {
+      failureReason = ` Failed to send to ${failedCount} user(s).`
+    }
+    
     return {
       title: 'Warning',
-      message: `Failed to send notification${platformInfo} to ${failedCount} user(s)${failedUsersList}. Saved as draft.`,
+      message: `Failed to send the${bakongPlatformText} notification${devicePlatformText}.${failureReason} The notification has been saved as a draft.`,
       type: 'warning',
-      duration: 5000,
-      dangerouslyUseHTMLString: !!bakongPlatform,
+      duration: 8000, // Longer duration for more informative message
+      dangerouslyUseHTMLString: true,
     }
   }
 
-  // Case 4: Partial success (some succeeded, some failed)
+  // Case 4: Partial success (SOME succeeded, SOME failed)
+  // This means some users received the notification successfully, but some failed
   if (successfulCount > 0 && failedCount > 0) {
+    // Standard format: "Notification for **Bakong** sent to **iOS** to X user(s) successfully."
+    // Example: "Notification for **Bakong** sent to **iOS** to 2 user(s) successfully."
+    // Format: "Notification for **Bakong** sent to X user(s) successfully." (if devicePlatform is ALL)
+    const userCountText = formattedDevicePlatform 
+      ? ` to ${successfulCount} user(s)` 
+      : ` to ${successfulCount} user(s)`
     return {
-      title: 'Partial Success',
-      message: `Notification${platformInfo} sent to ${successfulCount} user(s) successfully. Failed to send to ${failedCount} user(s).`,
+      title: 'Success',
+      message: `Notification${bakongPlatformText} sent${devicePlatformText}${userCountText} successfully.`,
       type: 'success',
-      duration: 5000,
-      dangerouslyUseHTMLString: !!bakongPlatform,
+      duration: 3000,
+      dangerouslyUseHTMLString: true,
     }
   }
 
   // Case 5: Full success (default - should be handled by caller, but included for completeness)
   if (successfulCount > 0 && failedCount === 0) {
+    // Standard format: "Notification for **Bakong** sent to **iOS** to X user(s) successfully."
+    // Example: "Notification for **Bakong** sent to **iOS** to 2 user(s) successfully."
+    // Format: "Notification for **Bakong** sent to X user(s) successfully." (if devicePlatform is ALL)
+    const userCountText = formattedDevicePlatform 
+      ? ` to ${successfulCount} user(s)` 
+      : ` to ${successfulCount} user(s)`
     return {
       title: 'Success',
-      message: `Notification${platformInfo} sent successfully to ${successfulCount} user(s).`,
+      message: `Notification${bakongPlatformText} sent${devicePlatformText}${userCountText} successfully.`,
       type: 'success',
       duration: 3000,
-      dangerouslyUseHTMLString: !!bakongPlatform,
+      dangerouslyUseHTMLString: true,
     }
   }
 
   // Default fallback
   return {
     title: 'Info',
-    message: `Notification${platformInfo} has been saved as a draft.`,
+    message: `Notification${bakongPlatformText} has been saved as a draft.`,
     type: 'info',
     duration: 3000,
-    dangerouslyUseHTMLString: !!bakongPlatform,
+    dangerouslyUseHTMLString: true,
   }
 }
 
@@ -281,8 +319,12 @@ export const getCurrentDatePlaceholder = () => {
 
 export const disabledDate = (time: Date): boolean => {
   const now = DateUtils.nowInCambodia()
-  const today = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  return time.getTime() < today.getTime()
+  // Get today's date in Cambodia timezone properly
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // Compare only the date part (ignore time)
+  const selectedDate = new Date(time.getFullYear(), time.getMonth(), time.getDate())
+  // Disable dates that are before today (allow today and future dates)
+  return selectedDate.getTime() < today.getTime()
 }
 
 export const disabledHours = (scheduleDate: string | null): number[] => {
@@ -379,10 +421,21 @@ export const mapPlatformToFormPlatform = (platforms: string | string[]): Platfor
     const hasIOS = platforms.includes(Platform.IOS) || platforms.includes('IOS')
     const hasAndroid = platforms.includes(Platform.ANDROID) || platforms.includes('ANDROID')
     if (hasIOS && hasAndroid) return Platform.ALL
-    // Return the first platform if only one is present
-    return (platforms[0] as Platform) || Platform.ALL
+    // Return the first platform if only one is present, properly convert string to enum
+    if (platforms.length > 0) {
+      const firstPlatform = platforms[0].toUpperCase()
+      if (firstPlatform === Platform.IOS) return Platform.IOS
+      if (firstPlatform === Platform.ANDROID) return Platform.ANDROID
+      if (firstPlatform === Platform.ALL) return Platform.ALL
+    }
+    return Platform.ALL
   }
-  return (platforms as Platform) || Platform.ALL
+  // Handle string input
+  const platformStr = String(platforms).toUpperCase()
+  if (platformStr === Platform.IOS) return Platform.IOS
+  if (platformStr === Platform.ANDROID) return Platform.ANDROID
+  if (platformStr === Platform.ALL) return Platform.ALL
+  return Platform.ALL
 }
 
 export const mapTypeToNotificationType = (type: string): string => {

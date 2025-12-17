@@ -281,6 +281,13 @@ export class InboxResponseDto implements NotificationData {
     const allFailedUsers = mode === 'individual' ? failedUsers : sharedFailedUsers || []
     const failedDueToInvalidTokens = checkInvalidTokens(allFailedUsers)
 
+    // Extract error codes for debugging
+    const failedUserDetails = allFailedUsers.map((u) => ({
+      accountId: u.accountId,
+      error: u.error,
+      errorCode: u.errorCode,
+    }))
+
     if (mode === 'individual') {
       return {
         notificationId: successfulNotifications.length > 0 ? successfulNotifications[0].id : null,
@@ -288,6 +295,7 @@ export class InboxResponseDto implements NotificationData {
         failedCount: failedUsers.length,
         failedUsers: failedUsers.map((u) => u.accountId),
         failedDueToInvalidTokens,
+        failedUserDetails, // Include detailed error info for debugging
       }
     } else {
       return {
@@ -296,6 +304,7 @@ export class InboxResponseDto implements NotificationData {
         failedCount: sharedFailedCount ?? 0,
         failedUsers: (sharedFailedUsers || []).map((u) => u.accountId),
         failedDueToInvalidTokens,
+        failedUserDetails, // Include detailed error info for debugging
       }
     }
   }

@@ -968,7 +968,9 @@ export class TemplateService implements OnModuleInit {
             ;(reloadedTemplate as any).savedAsDraftNoUsers = true
             return this.formatTemplateResponse(reloadedTemplate)
           } else if (sendResult.successfulCount > 0) {
-            // Successfully sent, mark as published
+            // Successfully sent to at least some users, mark as published
+            // Even if some failed, if ANY succeeded, mark as published
+            console.log(`[UPDATE] ✅ Template ${updatedTemplate.id} published successfully - sent to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`)
             await this.markAsPublished(updatedTemplate.id, currentUser)
             console.log(
               `[UPDATE] Template published successfully, sent to ${sendResult.successfulCount} users`,
@@ -980,14 +982,17 @@ export class TemplateService implements OnModuleInit {
             ;(updatedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
           } else {
             // No users received the notification - revert to draft
+            // This happens when successfulCount === 0
+            // Distinguish between: no users found (failedCount === 0) vs all users failed (failedCount > 0)
             console.warn(
               `[UPDATE] No notifications were sent (successfulCount = 0, failedCount = ${sendResult.failedCount}) - reverting to draft`,
             )
+            await this.repo.update(updatedTemplate.id, { isSent: false, updatedAt: new Date() })
             
             // Provide helpful error message based on failure reason
             if (sendResult.failedCount > 0 && sendResult.failedUsers?.length) {
               console.warn(
-                `[UPDATE] Failed users: ${sendResult.failedUsers.join(', ')}. Users may need to update their FCM tokens via mobile app.`,
+                `[UPDATE] All ${sendResult.failedCount} user(s) failed: ${sendResult.failedUsers.join(', ')}. Users may need to update their FCM tokens via mobile app.`,
               )
             } else {
               console.warn(
@@ -995,10 +1000,16 @@ export class TemplateService implements OnModuleInit {
               )
             }
             
-            await this.repo.update(updatedTemplate.id, { isSent: false, updatedAt: new Date() })
             // Reload template to get updated isSent value
             const reloadedTemplate = await this.findOneRaw(id)
-            ;(reloadedTemplate as any).savedAsDraftNoUsers = sendResult.successfulCount === 0 && sendResult.failedCount === 0
+            // CRITICAL: savedAsDraftNoUsers should ONLY be true when there are literally no users (failedCount === 0)
+            // If failedCount > 0, it means users exist but all failed - this is NOT "no users"
+            // Explicitly set to false if failedCount > 0 to prevent incorrect flag persistence
+            if (sendResult.failedCount > 0) {
+              ;(reloadedTemplate as any).savedAsDraftNoUsers = false
+            } else {
+              ;(reloadedTemplate as any).savedAsDraftNoUsers = sendResult.successfulCount === 0 && sendResult.failedCount === 0
+            }
             // Include send result in template response
             ;(reloadedTemplate as any).successfulCount = sendResult.successfulCount
             ;(reloadedTemplate as any).failedCount = sendResult.failedCount
@@ -1457,8 +1468,12 @@ export class TemplateService implements OnModuleInit {
       failedCount: (template as any).failedCount,
       failedUsers: (template as any).failedUsers,
       failedDueToInvalidTokens: (template as any).failedDueToInvalidTokens,
+      failedUserDetails: (template as any).failedUserDetails, // Include detailed error info for debugging
       // Preserve savedAsDraftNoUsers flag if it exists
-      savedAsDraftNoUsers: (template as any).savedAsDraftNoUsers,
+      // CRITICAL: Only set to true if explicitly set AND failedCount === 0 (no users attempted)
+      // If failedCount > 0, it means users exist but all failed - this is NOT "no users"
+      savedAsDraftNoUsers: (template as any).savedAsDraftNoUsers === true && 
+        ((template as any).failedCount === undefined || (template as any).failedCount === 0),
       translations: template.translations
         ? template.translations.map((translation) => ({
             id: translation.id,
@@ -1488,8 +1503,14 @@ export class TemplateService implements OnModuleInit {
     }
 
     // Add flag if saved as draft due to no users
-    if ((template as any).savedAsDraftNoUsers) {
+    // CRITICAL: Only set to true if failedCount === 0 (no users attempted)
+    // If failedCount > 0, it means users exist but all failed - this is NOT "no users"
+    if ((template as any).savedAsDraftNoUsers === true && 
+        ((template as any).failedCount === undefined || (template as any).failedCount === 0)) {
       formattedTemplate.savedAsDraftNoUsers = true
+    } else {
+      // Explicitly set to false if failedCount > 0 to prevent incorrect flag persistence
+      formattedTemplate.savedAsDraftNoUsers = false
     }
 
     // Include send result properties if they exist
@@ -1498,6 +1519,7 @@ export class TemplateService implements OnModuleInit {
       formattedTemplate.failedCount = (template as any).failedCount
       formattedTemplate.failedUsers = (template as any).failedUsers || []
       formattedTemplate.failedDueToInvalidTokens = (template as any).failedDueToInvalidTokens || false
+      formattedTemplate.failedUserDetails = (template as any).failedUserDetails || [] // Include detailed error info for debugging
     }
 
     return formattedTemplate

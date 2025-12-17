@@ -104,12 +104,25 @@ import {
   getFormattedPlatformName,
   getNoUsersAvailableMessage,
   getNotificationMessage,
+  formatPlatform,
 } from '@/utils/helpers'
 import { DateUtils } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
 import { api } from '@/services/api'
 
 const route = useRoute()
+
+// Helper function to correct notification status based on isSent flag
+const correctNotificationStatus = (notification: Notification): Notification => {
+  let status = notification.status
+  if (notification.isSent === true) {
+    status = 'published'
+  }
+  return {
+    ...notification,
+    status: status,
+  }
+}
 
 const activeTab = ref<'published' | 'scheduled' | 'draft'>('published')
 const selectedFilter = ref('ALL')
@@ -373,8 +386,9 @@ let fetchNotificationTimeout: ReturnType<typeof setTimeout> | null = null
 let isFetching = false
 let lastFetchTime = 0
 const MIN_FETCH_INTERVAL = 1000
-const DATA_CACHE_DURATION = 840000 // 14 minutes (slightly less than polling interval)
+const DATA_CACHE_DURATION = 30000 // 30 seconds (reduced for faster updates)
 const SCHEDULED_TAB_CACHE_DURATION = 270000 // 4.5 minutes (more frequent for scheduled items)
+const PUBLISHED_TAB_CACHE_DURATION = 10000 // 10 seconds (very short for published tab to show updates quickly)
 const DUE_NOTIFICATION_CHECK_INTERVAL = 60000
 const CACHE_STORAGE_KEY = 'notifications_cache'
 const CACHE_TIMESTAMP_KEY = 'notifications_cache_timestamp'
@@ -428,10 +442,12 @@ let cachedNotifications: Notification[] | null = null
 let cacheTimestamp = 0
 const initialCache = loadCacheFromStorage()
 if (initialCache.notifications && initialCache.notifications.length > 0) {
-  cachedNotifications = initialCache.notifications
+  // Apply isSent check to cached notifications
+  const correctedNotifications = initialCache.notifications.map(correctNotificationStatus)
+  cachedNotifications = correctedNotifications
   cacheTimestamp = initialCache.timestamp
-  notifications.value = initialCache.notifications
-  let tempFiltered = [...initialCache.notifications].filter(
+  notifications.value = correctedNotifications
+  let tempFiltered = [...correctedNotifications].filter(
     (notification) => notification.status === activeTab.value,
   )
   if (selectedFilter.value !== 'ALL') {
@@ -532,21 +548,30 @@ const fetchNotifications = async (forceRefresh = false) => {
     return
   }
   const now = Date.now()
+  // Use shorter cache duration for published tab to show updates faster
   const cacheDuration =
-    activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
+    activeTab.value === 'scheduled'
+      ? SCHEDULED_TAB_CACHE_DURATION
+      : activeTab.value === 'published'
+        ? PUBLISHED_TAB_CACHE_DURATION
+        : DATA_CACHE_DURATION
 
   if (!forceRefresh && cachedNotifications && now - cacheTimestamp < cacheDuration) {
     if (checkForDueScheduledNotifications()) {
       forceRefresh = true
     } else {
-      notifications.value = cachedNotifications
+      // Apply isSent check to cached notifications before using them
+      const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+      notifications.value = correctedNotifications
       applyFilters()
       return
     }
   }
   if (!forceRefresh && now - lastFetchTime < MIN_FETCH_INTERVAL) {
     if (cachedNotifications) {
-      notifications.value = cachedNotifications
+      // Apply isSent check to cached notifications before using them
+      const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+      notifications.value = correctedNotifications
       applyFilters()
     }
     return
@@ -565,16 +590,24 @@ const fetchNotifications = async (forceRefresh = false) => {
 
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      const mappedMockNotifications = mockNotifications.map((notification) => ({
-        ...notification,
-        id: Number(notification.id),
-        status: mapBackendStatusToFrontend(notification.status),
-        author: notification.author,
-        description: notification.content || notification.title,
-        image: notification.image || '',
-        date: notification.date,
-        linkPreview: notification.linkPreview,
-      }))
+      const mappedMockNotifications = mockNotifications.map((notification) => {
+        // Determine status: if isSent is true, it's always published regardless of status field
+        let status = mapBackendStatusToFrontend(notification.status)
+        if (notification.isSent === true) {
+          status = 'published'
+        }
+        
+        return {
+          ...notification,
+          id: Number(notification.id),
+          status: status,
+          author: notification.author,
+          description: notification.content || notification.title,
+          image: notification.image || '',
+          date: notification.date,
+          linkPreview: notification.linkPreview,
+        }
+      })
       notifications.value = mappedMockNotifications
       cachedNotifications = mappedMockNotifications
       cacheTimestamp = Date.now()
@@ -591,15 +624,30 @@ const fetchNotifications = async (forceRefresh = false) => {
         language: 'KM',
       })
 
-      const mappedNotifications = response.data.map((notification) => ({
-        ...notification,
-        id: Number(notification.id),
-        status: mapBackendStatusToFrontend(notification.status),
-        author: notification.author,
-        description: notification.content || notification.title,
-        image: notification.image || '',
-        date: notification.date,
-      }))
+      const mappedNotifications = response.data.map((notification) => {
+        // Determine status: if isSent is true, it's always published regardless of status field
+        let status = mapBackendStatusToFrontend(notification.status)
+        if (notification.isSent === true) {
+          status = 'published'
+        }
+        
+        const corrected = correctNotificationStatus({
+          ...notification,
+          id: Number(notification.id),
+          status: status,
+          author: notification.author,
+          description: notification.content || notification.title,
+          image: notification.image || '',
+          date: notification.date,
+        })
+        
+        // Debug logging for status correction
+        if (notification.isSent === true && corrected.status !== 'published') {
+          console.warn(`⚠️ [Status Correction] Notification ${corrected.id} has isSent=true but status=${corrected.status}`)
+        }
+        
+        return corrected
+      })
       notifications.value = mappedNotifications
       cachedNotifications = mappedNotifications
       cacheTimestamp = Date.now()
@@ -878,7 +926,22 @@ const handlePublishNotification = async (notification: Notification) => {
         })
 
         const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
-        const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+        
+        // Get device platform from result data or template
+        const platforms = result?.data?.platforms || template?.platforms || []
+        let devicePlatform = 'ALL'
+        if (Array.isArray(platforms) && platforms.length > 0) {
+          // If platforms array contains only one platform, use it; otherwise use 'ALL'
+          if (platforms.length === 1) {
+            devicePlatform = String(platforms[0])
+          } else {
+            devicePlatform = 'ALL'
+          }
+        }
+
+        const devicePlatformFormatted = formatPlatform(devicePlatform )
+        
+        const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform, devicePlatformFormatted)
         const successfulCount = result?.data?.successfulCount ?? 0
         const failedCount = result?.data?.failedCount ?? 0
         const isPartialSuccess = successfulCount > 0 && failedCount > 0
@@ -925,25 +988,31 @@ const handlePublishNotification = async (notification: Notification) => {
         if (result?.data?.successfulCount !== undefined && result?.data?.successfulCount > 0) {
           // Successfully published and sent to users
           const successfulCount = result?.data?.successfulCount ?? 0
-          const userText = successfulCount === 1 ? 'user' : 'users'
 
           // Check if this is a flash notification - check result data first, then template, then notification
           const notificationType =
             result?.data?.notificationType || template?.notificationType || notification.type
           const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
 
-          let message = isFlashNotification
-            ? 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
-            : `Notification published and sent to ${successfulCount} ${userText} successfully!`
-
-          // For flash notifications, replace bakongPlatform with bold platform name
+          let message = ''
           if (isFlashNotification) {
-            const platformName = getFormattedPlatformName({
+            // Flash notification message
+            message = 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            const platformNameForFlash = getFormattedPlatformName({
               platformName: result?.data?.platformName,
               bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
               notification: notification as any,
             })
-            message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+            message = message.replace('bakongPlatform', `<strong>${platformNameForFlash}</strong>`)
+          } else {
+            // Use standardized message format with bakongPlatform and devicePlatform bolded
+            const successMessageConfig = getNotificationMessage(
+              result?.data,
+              platformName,
+              bakongPlatform,
+              devicePlatformFormatted
+            )
+            message = successMessageConfig.message
           }
 
           ElNotification({
@@ -951,7 +1020,7 @@ const handlePublishNotification = async (notification: Notification) => {
             message: message,
             type: 'success',
             duration: 2000,
-            dangerouslyUseHTMLString: isFlashNotification,
+            dangerouslyUseHTMLString: true,
           })
           const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
           if (notificationIndex !== -1) {
@@ -1123,8 +1192,17 @@ const handlePublishNotification = async (notification: Notification) => {
   }
 }
 let pollingInterval: ReturnType<typeof setInterval> | null = null
+let pollingSetup = false // Flag to prevent duplicate polling setup
+let isMounted = false // Flag to prevent duplicate mount operations
 
 onMounted(async () => {
+  // Prevent duplicate mount operations
+  if (isMounted) {
+    console.log('⏭️ [Mount] Component already mounted, skipping duplicate mount')
+    return
+  }
+  isMounted = true
+  
   let tabChanged = false
   if (route.query?.tab && ['published', 'scheduled', 'draft'].includes(route.query.tab as string)) {
     const queryTab = route.query.tab as 'published' | 'scheduled' | 'draft'
@@ -1141,25 +1219,57 @@ onMounted(async () => {
   }
 
   await new Promise((resolve) => setTimeout(resolve, 200))
-  if (cachedNotifications && cacheTimestamp) {
+  
+  // Check if cache was recently cleared - force refresh
+  const cacheWasCleared = !localStorage.getItem('notifications_cache_timestamp')
+  const shouldForceRefresh = cacheWasCleared || tabChanged
+  
+  // Use appropriate cache duration based on active tab
+  const cacheDuration =
+    activeTab.value === 'scheduled'
+      ? SCHEDULED_TAB_CACHE_DURATION
+      : activeTab.value === 'published'
+        ? PUBLISHED_TAB_CACHE_DURATION
+        : DATA_CACHE_DURATION
+  
+  // Only fetch once on mount - avoid duplicate fetches
+  if (cachedNotifications && cacheTimestamp && !shouldForceRefresh) {
     const now = Date.now()
-    if (now - cacheTimestamp < DATA_CACHE_DURATION) {
+    if (now - cacheTimestamp < cacheDuration) {
       if (notifications.value.length === 0) {
-        notifications.value = cachedNotifications
+        // Apply status correction to cached notifications
+        const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+        notifications.value = correctedNotifications
         applyFilters()
       }
-      fetchNotifications().catch((err) => {
-        console.warn('Background refresh failed, using cache:', err)
-      })
+      // Still fetch in background for published tab to get updates quickly
+      if (activeTab.value === 'published') {
+        fetchNotifications(true).catch((err) => {
+          console.warn('Background refresh failed, using cache:', err)
+        })
+      } else {
+        // For other tabs, skip background fetch if cache is fresh to avoid duplicate calls
+        console.log('⏭️ [Mount] Skipping background fetch - cache is fresh and tab is not published')
+      }
     } else {
-      fetchNotifications()
+      // Cache expired - fetch once
+      await fetchNotifications(true)
     }
   } else {
-    fetchNotifications()
+    // Force refresh if cache was cleared or tab changed - fetch once
+    await fetchNotifications(true)
   }
   const setupPolling = () => {
+    // Prevent duplicate polling setup
+    if (pollingSetup && pollingInterval) {
+      console.log('⏭️ [Polling] Polling already set up, skipping duplicate setup')
+      return
+    }
+    
+    // Clear any existing polling interval to prevent duplicates
     if (pollingInterval) {
       clearInterval(pollingInterval)
+      pollingInterval = null
     }
     const pollingIntervalDuration = 900000 // 15 minutes
 
@@ -1167,7 +1277,11 @@ onMounted(async () => {
       const now = Date.now()
       const cacheAge = now - cacheTimestamp
       const cacheDuration =
-        activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
+        activeTab.value === 'scheduled'
+          ? SCHEDULED_TAB_CACHE_DURATION
+          : activeTab.value === 'published'
+            ? PUBLISHED_TAB_CACHE_DURATION
+            : DATA_CACHE_DURATION
 
       console.log(
         `🔄 [Polling Check] Active tab: ${activeTab.value}, Cache age: ${Math.round(cacheAge / 1000)}s, Cache duration: ${Math.round(cacheDuration / 1000)}s`,
@@ -1191,14 +1305,13 @@ onMounted(async () => {
       }
     }, pollingIntervalDuration)
 
+    pollingSetup = true
     console.log(
       `🔄 [Polling] Started with interval: ${pollingIntervalDuration / 1000}s (${pollingIntervalDuration / 60000} minutes)`,
     )
   }
+  // Setup polling once on mount - no need to restart on tab change since polling checks activeTab.value dynamically
   setupPolling()
-  watch(activeTab, () => {
-    setupPolling()
-  })
 })
 
 onUnmounted(() => {
@@ -1206,6 +1319,8 @@ onUnmounted(() => {
     clearInterval(pollingInterval)
     pollingInterval = null
   }
+  pollingSetup = false
+  isMounted = false
 })
 </script>
 

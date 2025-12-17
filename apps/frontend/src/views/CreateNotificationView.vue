@@ -191,6 +191,7 @@
                     :prefix-icon="null"
                     :clear-icon="null"
                     :disabled-date="disabledDate"
+                    @change="(val: string | null) => { formData.scheduleDate = val ?? ''; console.log('Date changed:', val) }"
                   />
                 </div>
                 <div class="schedule-form-group">
@@ -208,6 +209,7 @@
                     :disabled-minutes="
                       (hour: number) => disabledMinutes(hour, formData.scheduleDate)
                     "
+                    @change="(val: string | null) => { formData.scheduleTime = val; console.log('Time changed:', val) }"
                   />
                 </div>
               </div>
@@ -344,7 +346,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ElNotification, ElInputNumber } from 'element-plus'
+import { ElNotification, ElInputNumber, ElMessageBox } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { MobilePreview, ImageUpload, Tabs, Button } from '@/components/common'
 import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
@@ -520,9 +522,8 @@ const currentTitle = computed({
     if (languageFormData[activeLanguage.value]) {
       languageFormData[activeLanguage.value].title = value
     }
-    if (titleError.value) {
-      validateTitle()
-    }
+    // Validate on every change to show length limit errors immediately
+    validateTitle()
   },
 })
 
@@ -532,9 +533,8 @@ const currentDescription = computed({
     if (languageFormData[activeLanguage.value]) {
       languageFormData[activeLanguage.value].description = value
     }
-    if (descriptionError.value) {
-      validateDescription()
-    }
+    // Validate on every change to show length limit errors immediately
+    validateDescription()
   },
 })
 
@@ -569,6 +569,9 @@ const currentImageUrl = computed({
 const titleHasKhmer = computed(() => containsKhmer(currentTitle.value))
 const descriptionHasKhmer = computed(() => containsKhmer(currentDescription.value))
 
+// Store template creation date to check if notification is old
+const templateCreatedAt = ref<Date | null>(null)
+
 const loadNotificationData = async () => {
   if (!isEditMode.value || !notificationId.value) return
 
@@ -577,6 +580,13 @@ const loadNotificationData = async () => {
     const template = res.data?.data
 
     if (!template) return
+
+    // Store creation date to check if notification is old
+    if (template.createdAt) {
+      templateCreatedAt.value = new Date(template.createdAt)
+    } else {
+      templateCreatedAt.value = null
+    }
 
     // Check if editing a published notification (either from fromTab query or isSent status)
     isEditingPublished.value = fromTab.value === 'published' || template.isSent === true
@@ -677,14 +687,45 @@ watch(
   },
 )
 
+// Watch scheduleEnabled to auto-set date and time when enabled
+watch(
+  () => formData.scheduleEnabled,
+  (isEnabled) => {
+    if (isEnabled) {
+      // When schedule is turned ON, set date to today and time to current time
+      formData.scheduleDate = getTodayDateString()
+      formData.scheduleTime = getCurrentTimePlaceholder()
+      console.log('✅ [Schedule Toggle] Enabled - Set date:', formData.scheduleDate, 'time:', formData.scheduleTime)
+    } else {
+      // When schedule is turned OFF, clear time but keep date for next time
+      formData.scheduleTime = null
+      console.log('✅ [Schedule Toggle] Disabled - Cleared time')
+    }
+  },
+)
+
 const titleError = ref('')
 const descriptionError = ref('')
 const linkError = ref('')
+
+// Database limits (from template_translation entity)
+// Title: VARCHAR(1024) - max 1024 characters (database constraint)
+// Content: TEXT - PostgreSQL TEXT has no explicit character limit (can store up to ~1GB)
+// For practical purposes, we'll use a reasonable limit for notifications
+// Database schema limits (matching exactly):
+// - title: VARCHAR(1024) - explicit limit of 1024 characters
+// - content: TEXT - NO explicit limit (PostgreSQL TEXT can store up to ~1GB)
+// Note: iOS FCM payload has 4KB limit, so content is truncated in payload (but full content stored in DB)
+const DB_TITLE_MAX_LENGTH = 1024 // Database VARCHAR(1024) limit - matches DB exactly
+// DB_CONTENT_MAX_LENGTH removed - database TEXT has no limit, so we don't restrict it in frontend
+// PostgreSQL TEXT type can store unlimited data (up to ~1GB), so we allow unlimited in frontend validation
 
 const validateTitle = () => {
   const val = currentTitle.value?.trim()
   if (!val) {
     titleError.value = 'Please enter a title'
+  } else if (val.length > DB_TITLE_MAX_LENGTH) {
+    titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${val.length}.`
   } else {
     titleError.value = ''
   }
@@ -695,9 +736,12 @@ const validateDescription = () => {
   if (!val) {
     descriptionError.value = 'Please enter a description'
   } else {
+    // Database TEXT has no explicit limit (unlimited), so we don't restrict length
+    // PostgreSQL TEXT can store up to ~1GB, so frontend validation follows DB schema exactly
     descriptionError.value = ''
   }
 }
+
 
 const isValidUrl = (val: string): boolean => {
   try {
@@ -743,18 +787,32 @@ const handleLanguageImageRemoved = () => {
   existingImageIds[currentLang] = null
 }
 
+// Check if notification is old (created more than 1 day ago)
+const isNotificationOld = (): boolean => {
+  if (!templateCreatedAt.value) return false
+  const now = new Date()
+  const daysDiff = (now.getTime() - templateCreatedAt.value.getTime()) / (1000 * 60 * 60 * 24)
+  return daysDiff > 1 // More than 1 day old
+}
+
 const handlePublishNow = async () => {
+  // Validate all fields first
   validateTitle()
   validateDescription()
-
+  
+  // Check if there are validation errors
   if (
     !currentTitle.value ||
     !currentDescription.value ||
     titleError.value ||
     descriptionError.value
   ) {
+    // Re-validate to ensure errors are set
     if (!titleError.value) validateTitle()
     if (!descriptionError.value) validateDescription()
+    
+    // Don't show notification - errors are already visible inline below the form fields
+    // Just prevent publishing
     return
   }
 
@@ -776,6 +834,9 @@ const handlePublishNow = async () => {
     return
   }
 
+  // Note: Removed old notification warning popup - backend now handles old notifications better
+  // by attempting to send to all format-valid tokens regardless of validation results
+
   // Otherwise, proceed with publish/update
   await handlePublishNowInternal()
 }
@@ -791,6 +852,9 @@ const handlePublishNowInternal = async () => {
     type: 'warning',
     duration: 0,
   })
+
+  // Wait for Vue to update reactive values (especially from Element Plus pickers)
+  await nextTick()
 
   // Declare redirectTab outside try block so it's accessible in catch and after try-catch
   let redirectTab = 'published'
@@ -829,11 +893,51 @@ const handlePublishNowInternal = async () => {
       }
     } else {
       // Creating new notification
-      const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
-      const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
-
+      // Check if schedule is enabled and validate date/time
       if (formData.scheduleEnabled) {
+        // Debug: Log formData values before validation
+        console.log('🔍 [Schedule Validation] Form data:', {
+          scheduleEnabled: formData.scheduleEnabled,
+          scheduleDate: formData.scheduleDate,
+          scheduleTime: formData.scheduleTime,
+          dateType: typeof formData.scheduleDate,
+          timeType: typeof formData.scheduleTime,
+        })
+        
+        // Get date/time values - handle null, undefined, empty string, and string values
+        const dateValue = formData.scheduleDate
+        const timeValue = formData.scheduleTime
+        
+        // Convert to string and trim, handling all edge cases
+        // Element Plus date picker with value-format="M/D/YYYY" should return string like "12/26/2025"
+        // Element Plus time picker with value-format="HH:mm" should return string like "15:37"
+        const dateStr = dateValue != null && dateValue !== '' ? String(dateValue).trim() : ''
+        const timeStr = timeValue != null && timeValue !== '' ? String(timeValue).trim() : ''
+        
+        // Validate that both date and time are provided
+        // Check for valid format: date should be M/D/YYYY, time should be HH:mm
+        const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
+        const timePattern = /^\d{2}:\d{2}$/
+        
+        const hasValidDate = dateStr !== '' && datePattern.test(dateStr)
+        const hasValidTime = timeStr !== '' && timePattern.test(timeStr)
+        
         if (!hasValidDate || !hasValidTime) {
+          console.warn('❌ [Schedule Validation] Failed:', {
+            scheduleEnabled: formData.scheduleEnabled,
+            scheduleDate: formData.scheduleDate,
+            scheduleTime: formData.scheduleTime,
+            dateValue,
+            timeValue,
+            dateStr,
+            timeStr,
+            hasValidDate,
+            hasValidTime,
+            dateType: typeof dateValue,
+            timeType: typeof timeValue,
+            dateMatchesPattern: datePattern.test(dateStr),
+            timeMatchesPattern: timePattern.test(timeStr),
+          })
           ElNotification({
             title: 'Error',
             message: 'Please select both Date and Time for scheduling',
@@ -844,6 +948,94 @@ const handlePublishNowInternal = async () => {
           isSavingOrPublishing.value = false
           return
         }
+        
+        console.log('✅ [Schedule Validation] Date/Time validated:', { dateStr, timeStr })
+        
+        // Validate that the scheduled date/time is not in the past
+        try {
+          // parseScheduleDateTime creates a UTC Date representing Cambodia time
+          // Example: User selects 15:48 Cambodia time -> creates UTC Date for 08:48 UTC
+          const scheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+          
+          // Get current UTC time for comparison
+          // Both dates are now in UTC, so direct comparison is correct
+          const nowUTC = new Date() // Same as DateUtils.nowInUTC()
+          
+          // Calculate time difference in milliseconds
+          const diffMs = scheduleDateTime.getTime() - nowUTC.getTime()
+          const diffMinutes = Math.round(diffMs / (1000 * 60))
+          const diffSeconds = Math.round(diffMs / 1000)
+          
+          // Get Cambodia time representations for display/debugging
+          const scheduleCambodia = DateUtils.toCambodiaTime(scheduleDateTime)
+          const nowCambodia = DateUtils.toCambodiaTime(nowUTC)
+          
+          // Debug logging with both UTC and Cambodia representations
+          console.log('🔍 [Schedule Validation] Time comparison:', {
+            input: { dateStr, timeStr },
+            scheduleDateTime: {
+              utc: scheduleDateTime.toISOString(),
+              cambodia: scheduleCambodia.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+              timestamp: scheduleDateTime.getTime(),
+            },
+            now: {
+              utc: nowUTC.toISOString(),
+              cambodia: nowCambodia.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+              timestamp: nowUTC.getTime(),
+            },
+            difference: {
+              ms: diffMs,
+              seconds: diffSeconds,
+              minutes: diffMinutes,
+              isFuture: diffMs > 0,
+            },
+          })
+          
+          // Allow scheduling if time is in the future (even 1 millisecond ahead is fine)
+          // This is very lenient - allows scheduling for "now" or very near future
+          if (diffMs <= 0) {
+            const errorMsg = diffMinutes === 0 && diffSeconds <= 0
+              ? 'Scheduled time must be in the future. Please select a time at least 1 minute from now.'
+              : 'Scheduled time must be in the future. Please select a future time.'
+            
+            console.error('❌ [Schedule Validation] Validation failed:', {
+              scheduleDateTime: scheduleDateTime.toISOString(),
+              nowUTC: nowUTC.toISOString(),
+              diffMs,
+              diffMinutes,
+              diffSeconds,
+            })
+            
+            ElNotification({
+              title: 'Error',
+              message: errorMsg,
+              type: 'error',
+              duration: 3000,
+            })
+            loadingNotification.close()
+            isSavingOrPublishing.value = false
+            return
+          }
+          
+          console.log('✅ [Schedule Validation] Date/Time is in the future (', diffMinutes, 'minutes ahead)')
+        } catch (error) {
+          console.error('❌ [Schedule Validation] Error parsing schedule date/time:', error, {
+            dateStr,
+            timeStr,
+            scheduleDate: formData.scheduleDate,
+            scheduleTime: formData.scheduleTime,
+          })
+          ElNotification({
+            title: 'Error',
+            message: 'Invalid date or time format. Please check your selection.',
+            type: 'error',
+            duration: 2000,
+          })
+          loadingNotification.close()
+          isSavingOrPublishing.value = false
+          return
+        }
+        
         sendType = SendType.SEND_SCHEDULE
         isSent = false
         redirectTab = 'scheduled'
@@ -1062,9 +1254,10 @@ const handlePublishNowInternal = async () => {
       // When updating a published notification, show update success message
       ElNotification({
         title: 'Success',
-        message: `Notification for ${formatBakongApp(formData.platform)} has been updated successfully!`,
+        message: `Notification for <strong>${formatBakongApp(formData.platform)}</strong> has been updated successfully!`,
         type: 'success',
         duration: 3000,
+        dangerouslyUseHTMLString: true,
       })
       // Stay in published tab (notification was published)
       redirectTab = 'published'
@@ -1096,7 +1289,8 @@ const handlePublishNowInternal = async () => {
         if (wasActuallySent) {
           // Notification was scheduled but sent immediately (scheduled time was in past or very soon)
           const userText = successfulCountFromResult === 1 ? 'user' : 'users'
-          let message = `Notification sent to ${successfulCountFromResult} ${userText} on time`
+          const platformNameForScheduled = formatBakongApp(formData.platform)
+          let message = `Notification for <strong>${platformNameForScheduled}</strong> sent to ${successfulCountFromResult} ${userText} on time`
           
           if (failedCountFromResult > 0) {
             message += `. Failed to send to ${failedCountFromResult} user(s)`
@@ -1107,45 +1301,96 @@ const handlePublishNowInternal = async () => {
             message: message,
             type: 'success',
             duration: 3000,
+            dangerouslyUseHTMLString: true,
           })
           // Redirect to published since it was actually sent
           redirectTab = 'published'
         } else {
           // Scheduled notification created successfully (not sent yet)
+          const platformNameForScheduled = formatBakongApp(formData.platform)
           ElNotification({
             title: 'Success',
             message: isEditMode.value
-              ? 'Notification updated and scheduled successfully!'
-              : 'Notification created and scheduled successfully!',
+              ? `Notification for <strong>${platformNameForScheduled}</strong> updated and scheduled successfully!`
+              : `Notification for <strong>${platformNameForScheduled}</strong> created and scheduled successfully!`,
             type: 'success',
             duration: 2000,
+            dangerouslyUseHTMLString: true,
           })
           // Keep in scheduled tab
         }
       } else {
         // Handle non-scheduled notifications (published, draft, etc.)
-      const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
+        // Get device platform for message (Android, iOS, or ALL)
+        const devicePlatform = formatPlatform(String(formData.pushToPlatforms))
+        
+      const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform, devicePlatform)
       
+        // Check if all sends failed due to invalid tokens (old notification issue)
+        const failedDueToInvalidTokens = result?.data?.failedDueToInvalidTokens === true
+        const allFailed = successfulCount === 0 && failedCount > 0
+        
         // Show notification for non-success cases (errors, warnings, info) or partial success
         if (messageConfig.type !== 'success' || isPartialSuccess) {
-        ElNotification({
-          title: messageConfig.title,
-          message: messageConfig.message,
-          type: messageConfig.type,
-          duration: messageConfig.duration,
-          dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
-        })
-        
-        // Redirect to draft tab for failures
-          if (
-            messageConfig.type === 'error' ||
-            messageConfig.type === 'warning' ||
-            messageConfig.type === 'info'
-          ) {
-          redirectTab = 'draft'
-          } else if (isPartialSuccess) {
+          if (isPartialSuccess) {
+            // Handle partial success - use standardized message format from getNotificationMessage
+            // This ensures consistent formatting with bakongPlatform and devicePlatform bolded
+            const failedUsers = result?.data?.failedUsers || []
+            
+            // Show success notification using standardized format
+            ElNotification({
+              title: messageConfig.title,
+              message: messageConfig.message,
+              type: messageConfig.type,
+              duration: messageConfig.duration,
+              dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+            })
+            
+            // Show detailed failure information
+            if (failedUsers.length > 0) {
+              const failedUsersList = failedUsers.length <= 5 
+                ? failedUsers.join(', ') 
+                : `${failedUsers.slice(0, 5).join(', ')} and ${failedUsers.length - 5} more`
+              
+              const failureReason = result?.data?.failedDueToInvalidTokens 
+                ? 'invalid or expired FCM tokens. These users need to update their tokens by opening the mobile app.'
+                : 'unknown reasons'
+              
+              // Use standardized message format with bakongPlatform and devicePlatform bolded
+              const detailedMessageConfig = getNotificationMessage(
+                result?.data,
+                undefined,
+                bakongPlatform,
+                devicePlatform
+              )
+              ElNotification({
+                title: detailedMessageConfig.title,
+                message: detailedMessageConfig.message,
+                type: detailedMessageConfig.type,
+                duration: detailedMessageConfig.duration,
+                dangerouslyUseHTMLString: detailedMessageConfig.dangerouslyUseHTMLString,
+              })
+            }
+            
             // For partial success, redirect to published tab
             redirectTab = 'published'
+          } else {
+            ElNotification({
+              title: messageConfig.title,
+              message: messageConfig.message,
+              type: messageConfig.type,
+              duration: messageConfig.duration,
+              dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+            })
+            
+            // Redirect to draft tab for failures
+            if (
+              messageConfig.type === 'error' ||
+              messageConfig.type === 'warning' ||
+              messageConfig.type === 'info'
+            ) {
+              redirectTab = 'draft'
+            }
           }
       } else {
           // Handle full success cases for published notifications
@@ -1162,16 +1407,21 @@ const handlePublishNowInternal = async () => {
           : 'Notification created and published successfully!'
 
       // Add user count if available (only for non-flash notifications)
+      // Use standardized message format with bakongPlatform and devicePlatform bolded
       if (
         !isFlashNotification &&
             successfulCountFromResult !== undefined &&
             successfulCountFromResult !== null &&
             successfulCountFromResult > 0
       ) {
-            const userText = successfulCountFromResult === 1 ? 'user' : 'users'
-        message = isEditMode.value
-              ? `Notification updated and published to ${successfulCountFromResult} ${userText} successfully!`
-              : `Notification created and published to ${successfulCountFromResult} ${userText} successfully!`
+        // Use standardized message format from getNotificationMessage
+        const messageConfig = getNotificationMessage(
+          result?.data,
+          undefined,
+          bakongPlatform,
+          devicePlatform
+        )
+        message = messageConfig.message
       }
 
       // For flash notifications, replace bakongPlatform with bold platform name
@@ -1180,18 +1430,14 @@ const handlePublishNowInternal = async () => {
             message = message.replace('bakongPlatform', `<strong>${platformNameForFlash}</strong>`)
       }
 
+      // Show success notification (full success - no failures)
       ElNotification({
         title: 'Success',
         message: message,
         type: 'success',
         duration: 2000,
-        dangerouslyUseHTMLString: isFlashNotification,
+        dangerouslyUseHTMLString: true,
       })
-
-      // Log failed users to console if any
-          if (failedCountFromResult > 0 && failedUsers.length > 0) {
-            console.warn(`⚠️ Failed to send notification to ${failedCountFromResult} user(s):`, failedUsers)
-          }
       }
       }
     }
@@ -1295,8 +1541,78 @@ const handleFinishLater = () => {
 const handleSaveDraft = async () => {
   isSavingOrPublishing.value = true
 
-  titleError.value = ''
-  descriptionError.value = ''
+  // Validate all fields first (same validation as publish)
+  validateTitle()
+  validateDescription()
+  
+  // Check if there are validation errors
+  if (titleError.value || descriptionError.value) {
+    // Re-validate to ensure errors are set
+    if (!titleError.value) validateTitle()
+    if (!descriptionError.value) validateDescription()
+    
+    // Don't show notification - errors are already visible inline below the form fields
+    // Just prevent saving
+    isSavingOrPublishing.value = false
+    return
+  }
+
+  // Validate all language translations for length limits
+  let hasValidationError = false
+  const validationErrors: string[] = []
+  
+  for (const [langKey, langData] of Object.entries(languageFormData)) {
+    const title = langData.title?.trim() || (langKey === activeLanguage.value ? currentTitle.value?.trim() : null) || ''
+    const content = langData.description?.trim() || (langKey === activeLanguage.value ? currentDescription.value?.trim() : null) || ''
+    
+    if (title && title.length > DB_TITLE_MAX_LENGTH) {
+      hasValidationError = true
+      validationErrors.push(`${langKey.toUpperCase()}: Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${title.length}.`)
+    }
+    
+    // Database TEXT has no limit, so we don't validate content length
+    // PostgreSQL TEXT can store unlimited data (up to ~1GB)
+  }
+  
+  // Also check fallback title/description if no translations exist
+  if (Object.keys(languageFormData).length === 0 || 
+      !Object.values(languageFormData).some(lang => lang.title?.trim() || lang.description?.trim())) {
+    const fallbackTitle = currentTitle.value?.trim() || ''
+    const fallbackContent = currentDescription.value?.trim() || ''
+    
+    if (fallbackTitle && fallbackTitle.length > DB_TITLE_MAX_LENGTH) {
+      hasValidationError = true
+      validationErrors.push(`Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${fallbackTitle.length}.`)
+    }
+    
+    // Database TEXT has no limit, so we don't validate content length
+    // PostgreSQL TEXT can store unlimited data (up to ~1GB)
+  }
+  
+  if (hasValidationError) {
+    // Set errors for active language if they exist
+    if (validationErrors.some(err => err.includes('Title'))) {
+      const activeTitle = currentTitle.value?.trim() || ''
+      if (activeTitle && activeTitle.length > DB_TITLE_MAX_LENGTH) {
+        titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${activeTitle.length}.`
+      }
+    }
+    if (validationErrors.some(err => err.includes('Description'))) {
+      // Database TEXT has no limit, so we don't validate content length
+      // PostgreSQL TEXT can store unlimited data (up to ~1GB)
+    }
+    
+    // Show notification with all validation errors
+    ElNotification({
+      title: 'Validation Error',
+      message: validationErrors.join('<br/>'),
+      type: 'error',
+      duration: 5000,
+      dangerouslyUseHTMLString: true,
+    })
+    isSavingOrPublishing.value = false
+    return
+  }
 
   const token = localStorage.getItem('auth_token')
   if (!token || token.trim() === '') {
@@ -1567,6 +1883,25 @@ const handleSaveDraft = async () => {
       error.response?.data?.message ||
       error.message ||
       'An unexpected error occurred while saving the draft'
+
+    // Check for database constraint errors (like "value too long for type character varying(1024)")
+    const errorString = String(errorMessage).toLowerCase()
+    if (errorString.includes('value too long') || errorString.includes('character varying')) {
+      // Extract which field is too long
+      if (errorString.includes('1024') || errorString.includes('title')) {
+        // Title field is too long
+        const currentTitleLength = currentTitle.value?.trim()?.length || 0
+        titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${currentTitleLength}.`
+        errorMessage = `Title is too long (max ${DB_TITLE_MAX_LENGTH} characters). Please shorten the title and try again.`
+      } else if (errorString.includes('content') || errorString.includes('text')) {
+        // Content field error - database TEXT has no limit, so this shouldn't happen
+        // But if it does, it might be a database constraint issue
+        errorMessage = 'Content exceeds database limits. Please check the content and try again.'
+      } else {
+        // Generic length error
+        errorMessage = 'Content exceeds database limits. Please shorten the title or description and try again.'
+      }
+    }
 
     // If we still don't have a message, provide a status-based message
     if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {

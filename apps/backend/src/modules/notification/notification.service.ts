@@ -176,8 +176,21 @@ export class NotificationService {
     failedUsers?: string[]
     failedDueToInvalidTokens?: boolean
   }> {
-    console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
-    console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
+    console.log('📤 [sendWithTemplate] ========== STARTING SEND PROCESS ==========')
+    console.log('📤 [sendWithTemplate] Template ID:', template.id)
+    console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform, `(type: ${typeof template.bakongPlatform})`)
+    console.log('📤 [sendWithTemplate] Template created at:', template.createdAt)
+    console.log('📤 [sendWithTemplate] Template has translations:', template.translations?.length || 0)
+    if (template.translations && template.translations.length > 0) {
+      template.translations.forEach((t, idx) => {
+        console.log(`📤 [sendWithTemplate] Translation ${idx + 1}:`, {
+          language: t.language,
+          titleLength: t.title?.length || 0,
+          contentLength: t.content?.length || 0,
+          titlePreview: t.title ? `${t.title.substring(0, 50)}...` : 'NO TITLE',
+        })
+      })
+    }
 
     if (!template.translations?.length) {
       console.warn('⚠️ [sendWithTemplate] No translations found for template:', template.id)
@@ -220,18 +233,114 @@ export class NotificationService {
       totalUsers: syncResult.totalCount,
       updatedUsers: syncResult.updatedCount,
       invalidTokensCleaned: syncResult.invalidTokens,
+      updatedUserIds: syncResult.updatedIds?.slice(0, 10), // Log first 10 for debugging
     })
 
-    let users = await this.bkUserRepo.find()
-    console.log('📤 [sendWithTemplate] Total users in database:', users.length)
+    // Query users from database again AFTER sync to ensure we have latest data
+    // Use QueryBuilder to ensure fresh data (no caching)
+    console.log('📤 [sendWithTemplate] Querying users from database again after sync (fresh query)...')
+    let users = await this.bkUserRepo
+      .createQueryBuilder('user')
+      .getMany()
+    console.log('📤 [sendWithTemplate] Total users fetched from database:', users.length)
+    
+    // DEBUG: Log bakongPlatform values from database to check for NULL or mismatches
+    const bakongPlatformDebug: Record<string, number> = {}
+    const usersWithNullPlatform: string[] = []
+    users.forEach((user) => {
+      const platform = user.bakongPlatform || 'NULL'
+      bakongPlatformDebug[platform] = (bakongPlatformDebug[platform] || 0) + 1
+      if (!user.bakongPlatform) {
+        usersWithNullPlatform.push(user.accountId)
+      }
+    })
+    console.log('📤 [sendWithTemplate] DEBUG - BakongPlatform values from database:', bakongPlatformDebug)
+    if (usersWithNullPlatform.length > 0) {
+      console.warn('⚠️ [sendWithTemplate] DEBUG - Users with NULL bakongPlatform:', usersWithNullPlatform.slice(0, 10))
+    }
+    
+    // Log specific users that were updated during sync for debugging
+    if (syncResult.updatedIds && syncResult.updatedIds.length > 0) {
+      const updatedUsers = users.filter((u) => syncResult.updatedIds.includes(u.accountId))
+      console.log('📤 [sendWithTemplate] Users that were updated during sync:', {
+        count: updatedUsers.length,
+        accountIds: updatedUsers.map((u) => u.accountId).slice(0, 10),
+        // Log token status for updated users
+        tokenStatus: updatedUsers.slice(0, 5).map((u) => ({
+          accountId: u.accountId,
+          hasToken: !!u.fcmToken?.trim(),
+          tokenLength: u.fcmToken?.length || 0,
+        })),
+      })
+    }
 
     // Filter by bakongPlatform if template has it
     if (template.bakongPlatform) {
       const beforeCount = users.length
-      users = users.filter((user) => user.bakongPlatform === template.bakongPlatform)
+      
+      // Log bakongPlatform distribution BEFORE filtering for debugging
+      const bakongPlatformBreakdown: Record<string, number> = {}
+      const allUsersBeforeFilter = [...users] // Save copy before filtering
+      const usersWithTokensBeforeFilter: Array<{ accountId: string; bakongPlatform: string | null; fcmToken: string }> = []
+      
+      users.forEach((user) => {
+        const platform = user.bakongPlatform || 'NULL'
+        bakongPlatformBreakdown[platform] = (bakongPlatformBreakdown[platform] || 0) + 1
+        if (user.fcmToken?.trim()) {
+          usersWithTokensBeforeFilter.push({
+            accountId: user.accountId,
+            bakongPlatform: user.bakongPlatform || null,
+            fcmToken: user.fcmToken.substring(0, 30) + '...',
+          })
+        }
+      })
+      
+      console.log('📤 [sendWithTemplate] ========== BAKONGPLATFORM FILTERING DEBUG ==========')
+      console.log('📤 [sendWithTemplate] BakongPlatform distribution BEFORE filtering:', bakongPlatformBreakdown)
+      console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform, `(type: ${typeof template.bakongPlatform})`)
+      console.log('📤 [sendWithTemplate] Users with tokens BEFORE filtering:', usersWithTokensBeforeFilter.length)
+      if (usersWithTokensBeforeFilter.length > 0) {
+        console.log('📤 [sendWithTemplate] Sample users with tokens:', usersWithTokensBeforeFilter.slice(0, 5))
+      }
+      
+      // Filter users by bakongPlatform (exact match)
+      // Normalize both values to ensure consistent comparison (handle string vs enum)
+      const templateBakongPlatform = String(template.bakongPlatform).toUpperCase()
+      const filteredOutUsers: Array<{ accountId: string; userPlatform: string | null; templatePlatform: string; hasToken: boolean }> = []
+      
+      const filteredUsers = users.filter((user) => {
+        // Normalize user bakongPlatform for comparison
+        const userBakongPlatform = user.bakongPlatform ? String(user.bakongPlatform).toUpperCase() : null
+        const matches = userBakongPlatform === templateBakongPlatform
+        
+        if (!matches) {
+          filteredOutUsers.push({
+            accountId: user.accountId,
+            userPlatform: user.bakongPlatform || null,
+            templatePlatform: template.bakongPlatform,
+            hasToken: !!user.fcmToken?.trim(),
+          })
+        }
+        return matches
+      })
+      users = filteredUsers
+      
       console.log(
         `📤 [sendWithTemplate] Filtered by bakongPlatform (${template.bakongPlatform}): ${beforeCount} → ${users.length} users`,
       )
+      
+      // Log users that were filtered out
+      if (filteredOutUsers.length > 0) {
+        console.log('📤 [sendWithTemplate] Users filtered out due to bakongPlatform mismatch:', filteredOutUsers.length)
+        const filteredOutWithTokens = filteredOutUsers.filter((u) => u.hasToken)
+        if (filteredOutWithTokens.length > 0) {
+          console.warn(
+            `⚠️ [sendWithTemplate] ${filteredOutWithTokens.length} user(s) with tokens were filtered out due to bakongPlatform mismatch:`,
+            filteredOutWithTokens.slice(0, 10),
+          )
+        }
+      }
+      console.log('📤 [sendWithTemplate] ====================================================')
 
       // Check if no users found for this bakongPlatform
       if (users.length === 0) {
@@ -348,6 +457,18 @@ export class NotificationService {
 
     const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
     console.log('📤 [sendWithTemplate] Users with FCM tokens:', usersWithTokens.length)
+    
+    // Log specific users for debugging inconsistent sends
+    if (usersWithTokens.length > 0) {
+      const userDetails = usersWithTokens.map((u) => ({
+        accountId: u.accountId,
+        platform: u.platform,
+        tokenLength: u.fcmToken?.length || 0,
+        tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+        bakongPlatform: u.bakongPlatform,
+      }))
+      console.log('📤 [sendWithTemplate] Users with tokens (for debugging):', userDetails.slice(0, 10))
+    }
 
     // Get FCM instance for template's bakongPlatform
     const fcm = this.getFCM(template.bakongPlatform)
@@ -364,18 +485,28 @@ export class NotificationService {
       }
     }
 
-    console.log('📤 [sendWithTemplate] Validating FCM tokens...')
-    console.log('📤 [sendWithTemplate] Token validation info:', {
-      totalUsers: usersWithTokens.length,
-      note: 'Only format validation performed - actual validity checked on send',
-      note2: 'Invalid tokens will be caught and logged when sending',
-    })
-    const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, fcm)
-    console.log('📤 [sendWithTemplate] Valid users after token validation:', validUsers.length)
+    console.log('📤 [sendWithTemplate] Preparing to send notifications...')
+    console.log('📤 [sendWithTemplate] Strategy: Try all format-valid tokens - Firebase will validate during actual send')
+    
+    // Skip pre-validation - it's unreliable and slows things down
+    // Firebase will reject invalid tokens during actual send, which is more reliable
+    // This ensures both old and new templates get the same treatment
+    
+    // Filter users with valid token format only
+    // CRITICAL: Always try sending to ALL format-valid tokens
+    // This ensures old notifications and new notifications both get attempted
+    const formatValidUsers = usersWithTokens.filter(
+      (user) => user.fcmToken && 
+                user.fcmToken.length > 50 && 
+                ValidationHelper.isValidFCMTokenFormat(user.fcmToken)
+    )
+    
+    console.log('📤 [sendWithTemplate] Users with valid token format:', formatValidUsers.length)
+    console.log('📤 [sendWithTemplate] Will attempt to send to ALL format-valid tokens (skipping pre-validation for better reliability)')
 
-    // Track users filtered out due to invalid format
+    // Track users filtered out due to invalid format (too short or wrong format)
     const usersWithInvalidFormat = usersWithTokens.filter(
-      (user) => !validUsers.some((vu) => vu.accountId === user.accountId),
+      (user) => !formatValidUsers.some((vu) => vu.accountId === user.accountId),
     )
     const invalidFormatUsers = usersWithInvalidFormat.map((user) => ({
       accountId: user.accountId,
@@ -394,20 +525,31 @@ export class NotificationService {
       )
     }
 
+    // ALWAYS try all format-valid tokens - no pre-validation filtering
+    // This ensures both old and new templates get the same treatment
+    // Firebase will reject invalid tokens during actual send, which is more reliable than pre-validation
+    const usersToSend = formatValidUsers
+    
+    console.log('📤 [sendWithTemplate] Sending strategy:', {
+      formatValid: formatValidUsers.length,
+      willSendTo: usersToSend.length,
+      note: 'Trying all format-valid tokens - Firebase will reject invalid ones during actual send',
+    })
+
     // Log token prefixes for debugging
-    if (validUsers.length > 0) {
+    if (usersToSend.length > 0) {
       console.log(
-        '📤 [sendWithTemplate] Valid user tokens:',
-        validUsers.map((u) => ({
+        '📤 [sendWithTemplate] Users that will receive notification:',
+        usersToSend.map((u) => ({
           accountId: u.accountId,
           tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           platform: u.platform,
         })),
       )
     }
-
-    if (!validUsers.length) {
-      console.warn('⚠️ [sendWithTemplate] No users have valid FCM tokens after validation')
+    
+    if (!usersToSend.length) {
+      console.warn('⚠️ [sendWithTemplate] No users available to send to')
       // Return all users with invalid tokens as failed
       const allInvalidUsers = [...usersWithEmptyTokens, ...invalidFormatUsers]
       return {
@@ -418,11 +560,11 @@ export class NotificationService {
       }
     }
 
-    console.log('📤 [sendWithTemplate] Sending FCM notifications to', validUsers.length, 'users...')
+    console.log(`📤 [sendWithTemplate] Attempting to send FCM notifications to ${usersToSend.length} users (all format-valid tokens)...`)
     const result = (await this.sendFCM(
       template,
       defaultTranslation,
-      validUsers,
+      usersToSend,
       undefined,
       'individual',
     )) as {
@@ -430,6 +572,7 @@ export class NotificationService {
       successfulCount: number
       failedCount: number
       failedUsers?: string[]
+      failedDueToInvalidTokens?: boolean
     }
 
     // Combine users filtered out BEFORE sending (empty/invalid format) with users that failed DURING sending
@@ -443,10 +586,15 @@ export class NotificationService {
       usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount
 
     // Check if failures are due to invalid tokens (empty, invalid format, or FCM errors)
+    // A failure is due to invalid tokens if:
+    // 1. Users have empty tokens (filtered before sending) - these are invalid tokens
+    // 2. Users have invalid token format (filtered before sending) - these are invalid tokens  
+    // 3. FCM send failed due to invalid token errors (during actual send) - check result flag from buildFCMResult
+    // Note: buildFCMResult checks error codes to determine if failures are due to invalid tokens
     const hasInvalidTokens =
       usersWithoutTokens.length > 0 ||
       invalidFormatUsers.length > 0 ||
-      (result as any).failedDueToInvalidTokens === true
+      (result.failedDueToInvalidTokens === true)
 
     console.log('✅ [sendWithTemplate] Notification send complete:', {
       successfulCount: result.successfulCount,
@@ -455,8 +603,11 @@ export class NotificationService {
       failedDueToEmptyTokens: usersWithoutTokens.length,
       failedDueToInvalidFormat: invalidFormatUsers.length,
       failedDuringSend: result.failedCount,
+      failedDueToInvalidTokensFromResult: result.failedDueToInvalidTokens,
+      hasInvalidTokens: hasInvalidTokens,
       totalUsers: matchingUsers.length,
-      validUsersAttempted: validUsers.length,
+      formatValidUsersAttempted: formatValidUsers.length,
+      note: 'Attempted to send to ALL format-valid tokens (no pre-validation filtering)',
     })
 
     return {
@@ -916,6 +1067,10 @@ export class NotificationService {
             hasResponse: !!response,
             responseType: typeof response,
             responseValue: response ? `${String(response).substring(0, 50)}...` : 'NULL',
+            userPlatform: user.platform,
+            userBakongPlatform: user.bakongPlatform,
+            templatePlatforms: template.platforms,
+            templateBakongPlatform: template.bakongPlatform,
           })
 
           if (response) {
@@ -966,19 +1121,37 @@ export class NotificationService {
             }
           }
         } catch (error: any) {
-          console.error(
-            '❌ [sendFCM] Failed to send to user:',
-            user.accountId,
-            'Error:',
-            error.message,
-          )
+          // Extract Firebase error code from wrapped error or original error
+          // Check multiple possible locations for the error code
+          const errorCode = 
+            error?.firebaseErrorCode || // Explicit Firebase code property we set
+            error?.code || // Direct code property
+            error?.originalError?.code || // From original Firebase error
+            error?.originalError?.errorInfo?.code || // From Firebase errorInfo structure
+            (error?.message?.match(/\(code: ([^)]+)\)/)?.[1]) || // Extract from message like "(code: messaging/invalid-argument)"
+            'UNKNOWN_ERROR'
+          const errorMessage = error?.message || 'Unknown error'
+          
+          console.error('❌ [sendFCM] Failed to send to user:', {
+            accountId: user.accountId,
+            errorMessage: errorMessage,
+            errorCode: errorCode,
+            errorDetails: error?.details || error?.originalError?.details || 'N/A',
+            userPlatform: user.platform,
+            userBakongPlatform: user.bakongPlatform,
+            templatePlatforms: template.platforms,
+            templateBakongPlatform: template.bakongPlatform,
+            tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+            tokenLength: user.fcmToken?.length || 0,
+            fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
+          })
 
           // Delete notification record if it was created but FCM send failed
           if (mode === 'individual' && notificationId) {
             try {
               await this.notiRepo.delete({ id: notificationId })
               console.log(
-                `🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${error.message}`,
+                `🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${errorMessage} (code: ${errorCode})`,
               )
             } catch (deleteError) {
               console.error(
@@ -991,17 +1164,18 @@ export class NotificationService {
           if (mode === 'individual') {
             failedUsers.push({
               accountId: user.accountId,
-              error: error.message,
-              errorCode: error.code,
+              error: errorMessage,
+              errorCode: errorCode,
             })
           } else if (mode === 'shared') {
             sharedFailedCount++
             sharedFailedUsers.push({
               accountId: user.accountId,
-              error: error.message,
-              errorCode: error.code,
+              error: errorMessage,
+              errorCode: errorCode,
             })
           }
+          
           // Check if error is due to invalid token
           // STRATEGY: Keep token that fails FCM sends (don't clear immediately)
           // Reasons:
@@ -1011,22 +1185,63 @@ export class NotificationService {
           // 4. Users with invalid tokens are already filtered out before sending (line 321: filter by fcmToken?.trim())
           // 5. Prevents data loss - mobile app will sync new token when they call API
           const isInvalidTokenError =
-            error.code === 'messaging/registration-token-not-registered' ||
-            error.code === 'messaging/invalid-registration-token' ||
-            error.code === 'messaging/invalid-argument'
+            errorCode === 'messaging/registration-token-not-registered' ||
+            errorCode === 'messaging/invalid-registration-token' ||
+            errorCode === 'messaging/invalid-argument' ||
+            errorCode === 'messaging/authentication-error' ||
+            errorCode === 'messaging/server-unavailable'
 
           if (isInvalidTokenError) {
             console.log(
-              `⚠️ [sendFCM] Invalid token detected for user ${user.accountId} (error: ${error.code})`,
+              `⚠️ [sendFCM] Invalid token detected for user ${user.accountId} (error: ${errorCode})`,
             )
             console.log(
-              `📝 [sendFCM] Notification record NOT created - user will be skipped in future sends until mobile app updates token via API`,
+              `📝 [sendFCM] Token format was valid but Firebase rejected it. Possible reasons:`,
+            )
+            console.log(
+              `   1. Token expired or invalidated by Firebase`,
+            )
+            console.log(
+              `   2. Token belongs to different Firebase project`,
+            )
+            console.log(
+              `   3. APNs certificate not configured (for iOS tokens)`,
+            )
+            console.log(
+              `   4. Device uninstalled app or token revoked`,
+            )
+            console.log(
+              `📝 [sendFCM] User will be skipped in future sends until mobile app updates token via API`,
             )
             // NOTE: We keep the token because:
             // - Users are filtered by fcmToken?.trim() before sending, so invalid tokens won't cause repeated failures
             // - Mobile app can update token when they call /send or /inbox
             // - Preserves data for debugging and tracking
             // - Only obviously invalid tokens (too short/wrong format) are cleared in syncAllUsers()
+          } else {
+            // Check if error code is actually an invalid token error but wasn't caught above
+            // This can happen if error code extraction failed
+            const mightBeInvalidToken = 
+              errorCode.includes('registration-token') ||
+              errorCode.includes('invalid-registration') ||
+              errorCode.includes('invalid-argument') ||
+              errorCode.includes('invalid-token')
+            
+            if (mightBeInvalidToken) {
+              console.warn(
+                `⚠️ [sendFCM] FCM send failed for user ${user.accountId} - error code suggests invalid token but wasn't recognized (code: ${errorCode})`,
+              )
+              console.warn(
+                `   This might indicate: Token expired, invalidated, or belongs to different Firebase project`,
+              )
+            } else {
+              console.warn(
+                `⚠️ [sendFCM] FCM send failed for user ${user.accountId} but error is NOT invalid token (code: ${errorCode})`,
+              )
+              console.warn(
+                `   This might indicate: Firebase configuration issue, network problem, or other FCM error`,
+              )
+            }
           }
 
           // Continue to next user instead of throwing - don't stop sending to other users
@@ -1149,6 +1364,32 @@ export class NotificationService {
     if (platform.ios) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing iOS notification...')
 
+      // CRITICAL: iOS APNs has strict size limits:
+      // - Alert title: ~40 characters (recommended, can be up to 50 but may be truncated by iOS)
+      // - Alert body: ~100 characters (recommended, can be up to 200 but may be truncated by iOS)
+      // - Total payload: 4KB maximum
+      // For Unicode/Khmer characters, we need to be more conservative
+      // Truncate title and body specifically for iOS to prevent "invalid-argument" errors
+      const iosTitleMaxLength = 40 // Conservative limit for APNs alert title
+      const iosBodyMaxLength = 100 // Conservative limit for APNs alert body
+      
+      const iosTitle = title && title.length > iosTitleMaxLength 
+        ? title.substring(0, iosTitleMaxLength - 3) + '...' 
+        : title || ''
+      const iosBody = body && body.length > iosBodyMaxLength 
+        ? body.substring(0, iosBodyMaxLength - 3) + '...' 
+        : body || ''
+      
+      console.log('📱 [sendFCMPayloadToPlatform] iOS text truncation:', {
+        originalTitleLength: title?.length || 0,
+        truncatedTitleLength: iosTitle.length,
+        originalBodyLength: body?.length || 0,
+        truncatedBodyLength: iosBody.length,
+        note: 'Full text still available in data payload for app to display',
+      })
+
+      // Build notification data - truncate content in data payload if too long to prevent FCM payload size issues
+      // FCM has a 4KB limit for the entire payload, so we need to be careful with long content
       const whatNews = InboxResponseDto.buildBaseNotificationData(
         template,
         translation,
@@ -1156,38 +1397,95 @@ export class NotificationService {
         imageUrlString,
         parseInt(notificationIdStr),
       )
+      
+      // CRITICAL FIX: Truncate content to ensure iOS payload stays under 4KB limit
+      // FCM rejects iOS payloads over 4KB with "messaging/invalid-argument" error
+      // The payload includes: token, notification (title/body), apns.payload.aps.notification (full data), and data payload
+      // Content is duplicated in BOTH aps.payload.aps.notification.content AND data.content
+      // Base payload overhead: ~800-1000 bytes (token ~142, headers ~100, other fields ~600-800)
+      // Available for content: ~3000 bytes, but content appears TWICE, so max ~1500 bytes per instance
+      // For Unicode/Khmer text: ~3-4 bytes per char in UTF-8, so we need to be VERY conservative
+      if (whatNews && typeof whatNews === 'object') {
+        // VERY AGGRESSIVE truncation: Start with 500 chars for Khmer text (3-4 bytes per char)
+        // 500 chars × 3.5 bytes × 2 (duplication) = ~3500 bytes, leaving ~500 bytes for other fields
+        // We'll iteratively truncate further if needed after building the payload
+        const MAX_CONTENT_LENGTH_FOR_IOS = 500 // Very conservative limit for Khmer/Unicode text
+        const MAX_TITLE_LENGTH_FOR_IOS = 100 // Title also appears multiple times
+        
+        const originalContent = String((whatNews as any).content || '')
+        const originalTitle = String((whatNews as any).title || '')
+        
+        if (originalContent.length > MAX_CONTENT_LENGTH_FOR_IOS) {
+          console.warn('⚠️ [sendFCMPayloadToPlatform] CRITICAL: Content exceeds iOS 4KB payload limit, truncating:', {
+            originalContentLength: originalContent.length,
+            truncatedLength: MAX_CONTENT_LENGTH_FOR_IOS,
+            accountId: user.accountId,
+            note: 'Full content available via API - mobile app can fetch separately if needed',
+          })
+          ;(whatNews as any).content = originalContent.substring(0, MAX_CONTENT_LENGTH_FOR_IOS - 3) + '...'
+        }
+        
+        // Also truncate title more aggressively (though alert title is already truncated to 40 chars)
+        // Title appears in multiple places (aps.notification.title, data.title), so keep it reasonable
+        if (originalTitle.length > MAX_TITLE_LENGTH_FOR_IOS) {
+          console.warn('⚠️ [sendFCMPayloadToPlatform] Title in data payload is very long, truncating:', {
+            originalTitleLength: originalTitle.length,
+            truncatedLength: MAX_TITLE_LENGTH_FOR_IOS,
+            accountId: user.accountId,
+          })
+          ;(whatNews as any).title = originalTitle.substring(0, MAX_TITLE_LENGTH_FOR_IOS - 3) + '...'
+        }
+      }
 
       // Note: Mobile app will determine redirect screen based on notificationType:
       // - FLASH_NOTIFICATION → Home screen
       // - ANNOUNCEMENT → Notification Center screen
 
-      const iosPayloadResponse =
+      let iosPayloadResponse =
         mode === 'individual'
           ? InboxResponseDto.buildIOSAlertPayload(
               user.fcmToken,
-              title,
-              body,
+              iosTitle,
+              iosBody,
               notificationIdStr,
               whatNews as unknown as Record<string, string | number>,
             )
           : InboxResponseDto.buildIOSPayload(
               user.fcmToken,
               template.notificationType,
-              title,
-              body,
+              iosTitle,
+              iosBody,
               notificationIdStr,
               whatNews as unknown as Record<string, string | number>,
             )
 
       try {
         // Get FCM instance for user's bakongPlatform
+        // CRITICAL: Use user's bakongPlatform to get correct Firebase instance
+        // If user's bakongPlatform doesn't match template's bakongPlatform, this could cause failures
         const fcm = this.getFCM(user.bakongPlatform)
         if (!fcm) {
-          console.warn('⚠️  FCM not available - skipping iOS notification send')
+          console.error('❌ [sendFCMPayloadToPlatform] FCM not available for iOS notification:', {
+            accountId: user.accountId,
+            userBakongPlatform: user.bakongPlatform,
+            templateBakongPlatform: template.bakongPlatform,
+            error: 'Firebase Cloud Messaging is not initialized for this bakongPlatform',
+          })
           throw new Error(
-            'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
+            `Firebase Cloud Messaging is not initialized for bakongPlatform: ${user.bakongPlatform || 'DEFAULT'}. Please check Firebase configuration.`,
           )
         }
+        
+        // Log Firebase instance info for debugging
+        console.log('📱 [sendFCMPayloadToPlatform] Using FCM instance:', {
+          accountId: user.accountId,
+          userBakongPlatform: user.bakongPlatform,
+          templateBakongPlatform: template.bakongPlatform,
+          fcmAvailable: !!fcm,
+          note: user.bakongPlatform !== template.bakongPlatform 
+            ? '⚠️ WARNING: User bakongPlatform differs from template bakongPlatform - this might cause issues'
+            : '✅ User and template bakongPlatform match',
+        })
         // Log iOS payload structure for debugging
         console.log('📱 [sendFCMPayloadToPlatform] iOS payload structure:', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
@@ -1213,11 +1511,104 @@ export class NotificationService {
           JSON.stringify(sanitizedIOSPayload, null, 2),
         )
 
+        // Check payload size before sending (FCM has 4KB limit for iOS)
+        // CRITICAL: Use Buffer.byteLength to get UTF-8 byte size, not character count
+        // JSON.stringify().length counts UTF-16 characters, but FCM counts UTF-8 bytes
+        // For Unicode/Khmer text, each character can be 2-4 bytes in UTF-8
+        // Iteratively truncate content until payload is under 4KB
+        let payloadJsonString = JSON.stringify(iosPayloadResponse)
+        let payloadSizeBytes = Buffer.byteLength(payloadJsonString, 'utf8')
+        let payloadSizeChars = payloadJsonString.length
+        let currentContentLength = (whatNews as any)?.content?.length || 0
+        let currentTitleLength = (whatNews as any)?.title?.length || 0
+        let truncationAttempts = 0
+        const MAX_TRUNCATION_ATTEMPTS = 10
+        
+        // Iteratively truncate content if payload exceeds 4KB
+        while (payloadSizeBytes >= 4096 && truncationAttempts < MAX_TRUNCATION_ATTEMPTS) {
+          truncationAttempts++
+          console.warn(`⚠️ [sendFCMPayloadToPlatform] Payload exceeds 4KB (${(payloadSizeBytes / 1024).toFixed(2)}KB), truncating further (attempt ${truncationAttempts})...`, {
+            sizeBytes: payloadSizeBytes,
+            sizeKB: (payloadSizeBytes / 1024).toFixed(2),
+            currentContentLength,
+            currentTitleLength,
+            accountId: user.accountId,
+          })
+          
+          // Reduce content length by 20% each iteration
+          if (whatNews && typeof whatNews === 'object' && (whatNews as any).content) {
+            const newContentLength = Math.floor(currentContentLength * 0.8)
+            const originalContent = String((whatNews as any).content || '')
+            if (originalContent.length > newContentLength && newContentLength > 50) {
+              ;(whatNews as any).content = originalContent.substring(0, newContentLength - 3) + '...'
+              currentContentLength = newContentLength
+              
+              // Rebuild payload with truncated content
+              iosPayloadResponse =
+                mode === 'individual'
+                  ? InboxResponseDto.buildIOSAlertPayload(
+                      user.fcmToken,
+                      iosTitle,
+                      iosBody,
+                      notificationIdStr,
+                      whatNews as unknown as Record<string, string | number>,
+                    )
+                  : InboxResponseDto.buildIOSPayload(
+                      user.fcmToken,
+                      template.notificationType,
+                      iosTitle,
+                      iosBody,
+                      notificationIdStr,
+                      whatNews as unknown as Record<string, string | number>,
+                    )
+              
+              // Recalculate size
+              payloadJsonString = JSON.stringify(iosPayloadResponse)
+              payloadSizeBytes = Buffer.byteLength(payloadJsonString, 'utf8')
+              payloadSizeChars = payloadJsonString.length
+            } else {
+              // Can't truncate further, break
+              break
+            }
+          } else {
+            break
+          }
+        }
+        
+        const payloadSizeKB = (payloadSizeBytes / 1024).toFixed(2)
+        console.log('📱 [sendFCMPayloadToPlatform] iOS payload size check:', {
+          sizeBytes: payloadSizeBytes,
+          sizeChars: payloadSizeChars,
+          sizeKB: payloadSizeKB,
+          isWithinLimit: payloadSizeBytes < 4096,
+          accountId: user.accountId,
+          contentLength: currentContentLength,
+          titleLength: currentTitleLength,
+          truncationAttempts,
+          note: 'FCM checks UTF-8 byte size, not character count',
+        })
+        
+        if (payloadSizeBytes >= 4096) {
+          console.error('❌ [sendFCMPayloadToPlatform] iOS payload STILL exceeds 4KB limit after truncation!', {
+            sizeBytes: payloadSizeBytes,
+            sizeChars: payloadSizeChars,
+            sizeKB: payloadSizeKB,
+            accountId: user.accountId,
+            contentLength: currentContentLength,
+            titleLength: currentTitleLength,
+            truncationAttempts,
+            warning: 'Payload will be rejected by FCM - content too large even after truncation',
+          })
+          // CRITICAL: Throw error to prevent sending oversized payload
+          throw new Error(`iOS payload exceeds 4KB limit (${payloadSizeKB}KB, ${payloadSizeBytes} bytes) for user ${user.accountId}. Content truncated ${truncationAttempts} times but still too large.`)
+        }
+        
         console.log('📱 [sendFCMPayloadToPlatform] Sending iOS FCM message...', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
           bakongPlatform: user.bakongPlatform || 'NULL',
+          payloadSizeKB: payloadSizeKB,
         })
         const sendResponse = await fcm.send(iosPayloadResponse)
         console.log('✅ [sendFCMPayloadToPlatform] iOS FCM send successful:', {
@@ -1263,7 +1654,8 @@ export class NotificationService {
         return sendResponse
       } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error'
-        const errorCode = error?.code || 'N/A'
+        // Extract Firebase error code from multiple possible locations
+        const errorCode = error?.code || error?.errorInfo?.code || 'N/A'
         console.error('❌ [sendFCMPayloadToPlatform] iOS FCM send failed:', {
           accountId: user.accountId,
           errorMessage: errorMessage,
@@ -1271,7 +1663,12 @@ export class NotificationService {
           errorDetails: error?.details || 'N/A',
           fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
         })
-        throw new Error(`iOS FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        // Preserve the original Firebase error code by attaching it to the Error object
+        const wrappedError: any = new Error(`iOS FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        wrappedError.code = errorCode !== 'N/A' ? errorCode : undefined // Only set if we have a valid code
+        wrappedError.originalError = error // Keep reference to original error for deeper extraction
+        wrappedError.firebaseErrorCode = errorCode !== 'N/A' ? errorCode : undefined // Explicit Firebase code property
+        throw wrappedError
       }
     }
     if (platform.android) {
@@ -1297,6 +1694,37 @@ export class NotificationService {
         finalCategoryType: String(safeCategoryType),
       })
 
+      // CRITICAL FIX: Truncate content to ensure Android payload stays under 4KB limit
+      // FCM rejects Android payloads over 4KB with "Android message is too big" error
+      // Base payload overhead: ~800-1000 bytes (token ~142, headers ~100, other fields ~600-800)
+      // Available for content: ~3000 bytes
+      // For Unicode/Khmer text: ~3-4 bytes per char in UTF-8, so we need to be conservative
+      const MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL = 800 // Initial conservative limit for Android
+      const MAX_TITLE_LENGTH_FOR_ANDROID = 200 // Title limit for Android
+      
+      let androidContent = String(translation.content || '')
+      let androidTitle = String(title || '')
+      
+      // Initial truncation before building payload
+      if (androidContent.length > MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL) {
+        console.warn('⚠️ [sendFCMPayloadToPlatform] CRITICAL: Content exceeds Android 4KB payload limit, truncating:', {
+          originalContentLength: androidContent.length,
+          truncatedLength: MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL,
+          accountId: user.accountId,
+          note: 'Full content available via API - mobile app can fetch separately if needed',
+        })
+        androidContent = androidContent.substring(0, MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL - 3) + '...'
+      }
+      
+      if (androidTitle.length > MAX_TITLE_LENGTH_FOR_ANDROID) {
+        console.warn('⚠️ [sendFCMPayloadToPlatform] Title exceeds Android limit, truncating:', {
+          originalTitleLength: androidTitle.length,
+          truncatedLength: MAX_TITLE_LENGTH_FOR_ANDROID,
+          accountId: user.accountId,
+        })
+        androidTitle = androidTitle.substring(0, MAX_TITLE_LENGTH_FOR_ANDROID - 3) + '...'
+      }
+
       const extraData = {
         templateId: String(template.id),
         notificationType: String(template.notificationType),
@@ -1308,12 +1736,12 @@ export class NotificationService {
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),
         imageUrl: imageUrlString || '',
-        content: translation.content || '',
+        content: androidContent, // Use truncated content
         linkPreview: translation.linkPreview || '',
         createdDate: template.createdAt
           ? DateFormatter.formatDateByLanguage(template.createdAt, translation.language)
           : DateFormatter.formatDateByLanguage(new Date(), translation.language),
-        notification_title: title,
+        notification_title: androidTitle, // Use truncated title
         notification_body: body,
       }
 
@@ -1324,13 +1752,93 @@ export class NotificationService {
       // Use buildAndroidPayload instead of buildAndroidDataOnlyPayload
       // This includes the 'notification' field which makes notifications display automatically
       // (like Firebase Console does)
-      const msg = InboxResponseDto.buildAndroidPayload(
+      let androidPayload = InboxResponseDto.buildAndroidPayload(
         user.fcmToken,
-        title,
+        androidTitle, // Use truncated title
         body,
         notificationIdStr,
         extraData as Record<string, string>,
       )
+
+      // Check payload size before sending (FCM has 4KB limit for Android too)
+      // CRITICAL: Use Buffer.byteLength to get UTF-8 byte size, not character count
+      // JSON.stringify().length counts UTF-16 characters, but FCM counts UTF-8 bytes
+      // For Unicode/Khmer text, each character can be 2-4 bytes in UTF-8
+      let androidPayloadJsonString = JSON.stringify(androidPayload)
+      let androidPayloadSizeBytes = Buffer.byteLength(androidPayloadJsonString, 'utf8')
+      let androidPayloadSizeChars = androidPayloadJsonString.length
+      let androidContentLength = String(extraData.content || '').length
+      let androidTitleLength = String(title || '').length
+      let androidTruncationAttempts = 0
+      const MAX_ANDROID_TRUNCATION_ATTEMPTS = 10
+      const MAX_ANDROID_PAYLOAD_BYTES = 4096 // FCM 4KB limit
+      
+      // Iteratively truncate content if payload exceeds 4KB
+      while (androidPayloadSizeBytes >= MAX_ANDROID_PAYLOAD_BYTES && androidTruncationAttempts < MAX_ANDROID_TRUNCATION_ATTEMPTS) {
+        androidTruncationAttempts++
+        console.warn(`⚠️ [sendFCMPayloadToPlatform] Android payload exceeds 4KB (${(androidPayloadSizeBytes / 1024).toFixed(2)}KB), truncating content (attempt ${androidTruncationAttempts})...`, {
+          sizeBytes: androidPayloadSizeBytes,
+          sizeKB: (androidPayloadSizeBytes / 1024).toFixed(2),
+          currentContentLength: androidContentLength,
+          currentTitleLength: androidTitleLength,
+          accountId: user.accountId,
+        })
+        
+        // Reduce content length by 20% each iteration
+        const newContentLength = Math.floor(androidContentLength * 0.8)
+        if (newContentLength > 50 && androidContentLength > newContentLength) {
+          const originalContent = String(extraData.content || '')
+          extraData.content = originalContent.substring(0, newContentLength - 3) + '...'
+          androidContentLength = newContentLength
+          
+          // Rebuild payload with truncated content
+          androidPayload = InboxResponseDto.buildAndroidPayload(
+            user.fcmToken,
+            title,
+            body,
+            notificationIdStr,
+            extraData as Record<string, string>,
+          )
+          
+          // Recalculate size
+          androidPayloadJsonString = JSON.stringify(androidPayload)
+          androidPayloadSizeBytes = Buffer.byteLength(androidPayloadJsonString, 'utf8')
+          androidPayloadSizeChars = androidPayloadJsonString.length
+        } else {
+          // Can't truncate further, break
+          break
+        }
+      }
+      
+      const androidPayloadSizeKB = (androidPayloadSizeBytes / 1024).toFixed(2)
+      console.log('📱 [sendFCMPayloadToPlatform] Android payload size check:', {
+        sizeBytes: androidPayloadSizeBytes,
+        sizeChars: androidPayloadSizeChars,
+        sizeKB: androidPayloadSizeKB,
+        isWithinLimit: androidPayloadSizeBytes < MAX_ANDROID_PAYLOAD_BYTES,
+        accountId: user.accountId,
+        contentLength: androidContentLength,
+        titleLength: androidTitleLength,
+        truncationAttempts: androidTruncationAttempts,
+        note: 'FCM checks UTF-8 byte size, not character count',
+      })
+      
+      if (androidPayloadSizeBytes >= MAX_ANDROID_PAYLOAD_BYTES) {
+        console.error('❌ [sendFCMPayloadToPlatform] Android payload STILL exceeds 4KB limit after truncation!', {
+          sizeBytes: androidPayloadSizeBytes,
+          sizeChars: androidPayloadSizeChars,
+          sizeKB: androidPayloadSizeKB,
+          accountId: user.accountId,
+          contentLength: androidContentLength,
+          titleLength: androidTitleLength,
+          truncationAttempts: androidTruncationAttempts,
+          warning: 'Payload will be rejected by FCM - need to truncate content further',
+        })
+        // CRITICAL: Throw error to prevent sending oversized payload
+        throw new Error(`Android payload exceeds 4KB limit (${androidPayloadSizeKB}KB) for user ${user.accountId}. Content truncated ${androidTruncationAttempts} times but still too large.`)
+      }
+
+      const msg = androidPayload
 
       // Log the full payload structure for debugging
       console.log('📱 [sendFCMPayloadToPlatform] Android payload structure:', {
@@ -1361,13 +1869,31 @@ export class NotificationService {
 
       try {
         // Get FCM instance for user's bakongPlatform
+        // CRITICAL: Use user's bakongPlatform to get correct Firebase instance
+        // If user's bakongPlatform doesn't match template's bakongPlatform, this could cause failures
         const fcm = this.getFCM(user.bakongPlatform)
         if (!fcm) {
-          console.warn('⚠️  FCM not available - skipping Android notification send')
+          console.error('❌ [sendFCMPayloadToPlatform] FCM not available for Android notification:', {
+            accountId: user.accountId,
+            userBakongPlatform: user.bakongPlatform,
+            templateBakongPlatform: template.bakongPlatform,
+            error: 'Firebase Cloud Messaging is not initialized for this bakongPlatform',
+          })
           throw new Error(
-            'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
+            `Firebase Cloud Messaging is not initialized for bakongPlatform: ${user.bakongPlatform || 'DEFAULT'}. Please check Firebase configuration.`,
           )
         }
+        
+        // Log Firebase instance info for debugging
+        console.log('📱 [sendFCMPayloadToPlatform] Using FCM instance:', {
+          accountId: user.accountId,
+          userBakongPlatform: user.bakongPlatform,
+          templateBakongPlatform: template.bakongPlatform,
+          fcmAvailable: !!fcm,
+          note: user.bakongPlatform !== template.bakongPlatform 
+            ? '⚠️ WARNING: User bakongPlatform differs from template bakongPlatform - this might cause issues'
+            : '✅ User and template bakongPlatform match',
+        })
         console.log('📱 [sendFCMPayloadToPlatform] Sending Android FCM message...', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
@@ -1413,7 +1939,8 @@ export class NotificationService {
         return sendResponse
       } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error'
-        const errorCode = error?.code || 'N/A'
+        // Extract Firebase error code from multiple possible locations
+        const errorCode = error?.code || error?.errorInfo?.code || 'N/A'
         console.error('❌ [sendFCMPayloadToPlatform] Android FCM send failed:', {
           accountId: user.accountId,
           errorMessage: errorMessage,
@@ -1422,7 +1949,12 @@ export class NotificationService {
           fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
         })
         console.error('❌ Error code:', errorCode)
-        throw new Error(`Android FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        // Preserve the original Firebase error code by attaching it to the Error object
+        const wrappedError: any = new Error(`Android FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        wrappedError.code = errorCode !== 'N/A' ? errorCode : undefined // Only set if we have a valid code
+        wrappedError.originalError = error // Keep reference to original error for deeper extraction
+        wrappedError.firebaseErrorCode = errorCode !== 'N/A' ? errorCode : undefined // Explicit Firebase code property
+        throw wrappedError
       }
     }
 

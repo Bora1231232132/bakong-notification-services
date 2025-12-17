@@ -242,6 +242,14 @@ const handleSendNow = async (notification: Notification) => {
 
     // Refresh notifications after publishing
     await fetchNotifications()
+    
+    // Clear HomeView cache to ensure fresh data when navigating to Home
+    try {
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+    } catch (error) {
+      console.warn('Failed to clear HomeView cache:', error)
+    }
   } catch (err: any) {
     console.error('Error publishing notification:', err)
     const errorMsg =
