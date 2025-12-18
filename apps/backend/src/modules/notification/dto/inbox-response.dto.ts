@@ -93,8 +93,10 @@ export class InboxResponseDto implements NotificationData {
     
     this.bakongPlatform = data.template?.bakongPlatform
 
-    this.createdDate = DateFormatter.formatDateByLanguage(data.createdAt, language)
-    this.timestamp = data.createdAt.toISOString()
+    // Ensure createdAt is a Date object before formatting
+    const createdAtDate = data.createdAt instanceof Date ? data.createdAt : new Date(data.createdAt)
+    this.createdDate = DateFormatter.formatDateByLanguage(createdAtDate, language)
+    this.timestamp = createdAtDate.toISOString()
     this.title = userTranslation?.title || ''
     this.content = userTranslation?.content || ''
     this.imageUrl =
@@ -188,10 +190,13 @@ export class InboxResponseDto implements NotificationData {
     notificationId?: number,
     sendCount?: number,
   ): NotificationData {
+    // Use translation.language if available, otherwise fall back to requested language
+    const responseLanguage = translation?.language || language
+    
     const baseData: NotificationData = {
       id: Number(notificationId),
       templateId: Number(template.id),
-      language: translation.language,
+      language: responseLanguage,
       notificationType: template.notificationType,
       // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
       // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
@@ -203,8 +208,11 @@ export class InboxResponseDto implements NotificationData {
           ? template.categoryTypeEntity.name
           : 'NEWS',
       bakongPlatform: template.bakongPlatform,
-      createdDate: DateFormatter.formatDateByLanguage(template.createdAt, language as Language),
-      timestamp: new Date().toISOString(),
+      createdDate: DateFormatter.formatDateByLanguage(
+        template.createdAt instanceof Date ? template.createdAt : new Date(template.createdAt),
+        responseLanguage as Language,
+      ),
+      timestamp: (template.createdAt instanceof Date ? template.createdAt : new Date(template.createdAt)).toISOString(),
       title: translation.title,
       content: translation.content,
       imageUrl: imageUrl || '',
@@ -327,11 +335,7 @@ export class InboxResponseDto implements NotificationData {
       linkPreview: extra?.linkPreview || '',
       createdDate:
         extra?.createdDate ||
-        new Date().toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        }),
+        DateFormatter.formatDateByLanguage(new Date(), Language.EN),
       notification_title: extra?.notification_title || title,
       notification_body: extra?.notification_body || body,
     }

@@ -1739,7 +1739,10 @@ export class NotificationService {
         content: androidContent, // Use truncated content
         linkPreview: translation.linkPreview || '',
         createdDate: template.createdAt
-          ? DateFormatter.formatDateByLanguage(template.createdAt, translation.language)
+          ? DateFormatter.formatDateByLanguage(
+              template.createdAt instanceof Date ? template.createdAt : new Date(template.createdAt),
+              translation.language,
+            )
           : DateFormatter.formatDateByLanguage(new Date(), translation.language),
         notification_title: androidTitle, // Use truncated title
         notification_body: body,
