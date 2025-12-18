@@ -7,6 +7,7 @@
         :rules="rules"
         label-position="top"
         class="flex flex-col gap-4 w-full h-full px-4 pb-4 overflow-y-auto"
+        :validate-on-rule-change="mode !== 'view'"
       >
         <div class="field-select w-full max-w-[603px]">
           <div class="flex items-center gap-1 mb-1!">
@@ -19,7 +20,7 @@
             label=""
             placeholder="Select role"
             :options="roleOptions"
-            :disabled="loading"
+            :disabled="loading || mode === 'view'"
           />
         </div>
 
@@ -53,6 +54,7 @@
             placeholder="Full name"
             required
             :disabled="loading"
+            :readonly="mode === 'view'"
           />
         </div>
 
@@ -68,6 +70,7 @@
             placeholder="firstname.lastname.nbc.gov.kh"
             required
             :disabled="loading"
+            :readonly="mode === 'view'"
           />
         </div>
 
@@ -83,11 +86,13 @@
             placeholder="Attractive title"
             required
             :disabled="loading"
+            :readonly="mode === 'view'"
           />
         </div>
 
         <div class="flex items-center gap-3 w-full max-w-[213px] h-14 mt-3! flex-shrink-0">
           <el-button
+            v-if="mode !== 'view'"
             type="primary"
             round
             :loading="loading"
@@ -102,7 +107,7 @@
             @click="handleCancel"
             :disabled="loading"
           >
-            Cancel
+            {{ mode === 'view' ? 'Back' : 'Cancel' }}
           </el-button>
         </div>
       </el-form>
@@ -117,16 +122,23 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { FormField, type FormFieldOption } from '@/components/common'
 import { userApi } from '@/services/userApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
+import { mockUsers } from '../../Data/mockUsers'
+import type { UserItem } from '@/components/common'
 
 const router = useRouter()
 const route = useRoute()
 
 // Detect mode from route
-const mode = computed(() => (route.params.id ? 'edit' : 'create'))
+const mode = computed(() => {
+  if (route.path.includes('/view/')) return 'view'
+  if (route.params.id) return 'edit'
+  return 'create'
+})
 const userId = computed(() => (route.params.id ? Number(route.params.id) : null))
 
 const { handleApiError, showSuccess, showWarning, clearError } = useErrorHandler({
-  operation: mode.value === 'edit' ? 'updateUser' : 'createUser',
+  operation:
+    mode.value === 'edit' ? 'updateUser' : mode.value === 'view' ? 'viewUser' : 'createUser',
 })
 
 const formRef = ref<FormInstance>()
@@ -153,13 +165,19 @@ const statusOptions: FormFieldOption[] = [
   { label: 'Deactivate', value: 'Deactivate' },
 ]
 
-const rules = reactive<FormRules>({
-  displayName: [{ required: true, message: 'Name is required', trigger: 'blur' }],
-  username: [
-    { required: true, message: 'Email is required', trigger: 'blur' },
-    { type: 'email', message: 'Invalid email', trigger: ['blur', 'change'] },
-  ],
-  phoneNumber: [{ required: true, message: 'Phone number is required', trigger: 'blur' }],
+// Only apply validation rules in create/edit modes, not in view mode
+const rules = computed<FormRules>(() => {
+  if (mode.value === 'view') {
+    return {}
+  }
+  return {
+    displayName: [{ required: true, message: 'Name is required', trigger: 'blur' }],
+    username: [
+      { required: true, message: 'Email is required', trigger: 'blur' },
+      { type: 'email', message: 'Invalid email', trigger: ['blur', 'change'] },
+    ],
+    phoneNumber: [{ required: true, message: 'Phone number is required', trigger: 'blur' }],
+  }
 })
 
 const resetForm = () => {
@@ -224,23 +242,71 @@ const handleCancel = () => {
   router.back()
 }
 
-// Fetch user data for edit mode
+// Helper function to convert mock user to API user format
+const convertMockUserToApiUser = (mockUser: UserItem) => {
+  // Map role from display format to API format
+  let role: 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER' = 'NORMAL_USER'
+  if (mockUser.role === 'Editor' || mockUser.role === 'ADMIN_USER') {
+    role = 'ADMIN_USER'
+  } else if (mockUser.role === 'View only' || mockUser.role === 'NORMAL_USER') {
+    role = 'NORMAL_USER'
+  } else if (mockUser.role === 'Approval' || mockUser.role === 'API_USER') {
+    role = 'API_USER'
+  }
+
+  return {
+    id: typeof mockUser.id === 'string' ? parseInt(mockUser.id) : mockUser.id,
+    username: mockUser.email || mockUser.username || '',
+    displayName: mockUser.name || mockUser.displayName || '',
+    phoneNumber: mockUser.phoneNumber || '',
+    role,
+    deletedAt: mockUser.status === 'Deactivate' ? new Date().toISOString() : undefined,
+    failLoginAttempt: 0,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+// Fetch user data for edit and view modes
 onMounted(async () => {
-  if (mode.value === 'edit' && userId.value) {
+  if ((mode.value === 'edit' || mode.value === 'view') && userId.value) {
     loading.value = true
     try {
-      const user = await userApi.getUserById(userId.value)
+      // Try to fetch from API first
+      let user: any = null
+      try {
+        user = await userApi.getUserById(userId.value)
+        // If API returns null, fall back to mock data
+        if (!user) {
+          throw new Error('User not found in API')
+        }
+      } catch (apiError) {
+        // If API fails, use mock data for testing
+        console.log('API call failed or returned null, using mock data for testing')
+        const mockUser = mockUsers.find((u) => {
+          const mockId = typeof u.id === 'string' ? parseInt(u.id) : u.id
+          const targetId = typeof userId.value === 'string' ? parseInt(userId.value) : userId.value
+          return mockId === targetId
+        }) as UserItem | undefined
+
+        if (mockUser) {
+          user = convertMockUserToApiUser(mockUser)
+        }
+      }
+
       if (user) {
         form.role = user.role
         form.displayName = user.displayName
         form.username = user.username
-        form.phoneNumber = ''
-        // Compute status from deletedAt field
+        form.phoneNumber = user.phoneNumber || ''
+        // Compute status from deletedAt field (only used in edit mode)
         form.status = user.deletedAt ? 'Deactivate' : 'Active'
 
         // Clear validation after data is loaded to prevent false errors
         await nextTick()
         formRef.value?.clearValidate()
+      } else {
+        // If no user found in API or mock data, show error
+        handleApiError(new Error('User not found'), { operation: 'fetchUser' })
       }
     } catch (error) {
       handleApiError(error, { operation: 'fetchUser' })

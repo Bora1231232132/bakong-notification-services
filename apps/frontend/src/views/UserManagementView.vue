@@ -36,6 +36,17 @@
       </div>
     </div>
   </div>
+  <ConfirmationDialog
+    v-model="showDeleteDialog"
+    title="You want to delete?"
+    message="This action cannot be undone. This will permanently delete user and remove data from our servers."
+    confirm-text="Continue"
+    cancel-text="Cancel"
+    type="warning"
+    confirm-button-type="primary"
+    @confirm="handleDeleteConfirm"
+    @cancel="handleDeleteCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -44,20 +55,27 @@ import TableBody from '@/components/common/TableBody.vue'
 import NotificationPagination, {
   type PaginationStyle,
 } from '@/components/common/Type-Feature/NotificationPagination.vue'
+import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { mockUsers } from '../../Data/mockUsers'
 import type { UserItem } from '@/components/common'
+import { useErrorHandler } from '@/composables/useErrorHandler'
 
 const paginationStyle: PaginationStyle = 'user-management'
 
 const router = useRouter()
+const { showSuccess, handleApiError } = useErrorHandler({
+  operation: 'user',
+})
 
 const searchQuery = ref('')
 const page = ref(1)
 const perPage = ref(10)
 
 const users = ref<UserItem[]>(mockUsers)
+const showDeleteDialog = ref(false)
+const userToDelete = ref<UserItem | null>(null)
 
 const filteredUsers = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -133,7 +151,9 @@ const handleRefresh = () => {
 }
 
 const handleView = (user: UserItem) => {
-  console.log('View user:', user)
+  if (user.id) {
+    router.push({ name: 'view-user', params: { id: user.id } })
+  }
 }
 
 const handleEdit = (user: UserItem) => {
@@ -143,7 +163,41 @@ const handleEdit = (user: UserItem) => {
 }
 
 const handleDelete = (user: UserItem) => {
-  console.log('Delete user:', user)
+  if (!user) return
+
+  userToDelete.value = user
+  showDeleteDialog.value = true
+}
+
+const handleDeleteConfirm = async () => {
+  if (!userToDelete.value) return
+
+  try {
+    // Simulate API call with mock data
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    // Remove from local mock data
+    const index = users.value.findIndex((u) => u.id === userToDelete.value!.id)
+    if (index > -1) {
+      const userName =
+        userToDelete.value.name ||
+        userToDelete.value.displayName ||
+        userToDelete.value.username ||
+        'User'
+      users.value.splice(index, 1)
+      showSuccess(`User "${userName}" deleted successfully`)
+    }
+  } catch (error) {
+    handleApiError(error, { operation: 'deleteUser' })
+  } finally {
+    userToDelete.value = null
+    showDeleteDialog.value = false
+  }
+}
+
+const handleDeleteCancel = () => {
+  userToDelete.value = null
+  showDeleteDialog.value = false
 }
 
 const handleStatusToggle = (user: UserItem, index: number) => {
