@@ -586,7 +586,7 @@ export const notificationApi = {
       }
 
       // Use longer timeout for template updates (60 seconds)
-      const response = await api.post(`/api/v1/template/${id}/update`, sanitizedData, {
+      const response = await api.post(`/api/v1/template/${id}/update-publish`, sanitizedData, {
         timeout: 60000,
       })
       return response.data

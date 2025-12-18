@@ -282,6 +282,7 @@
               size="medium"
               width="123px"
               height="56px"
+              :disabled="isSavingOrPublishing"
               @click="handlePublishNow"
             />
             <Button
@@ -841,6 +842,12 @@ const isNotificationOld = (): boolean => {
 }
 
 const handlePublishNow = async () => {
+  // Prevent duplicate calls
+  if (isSavingOrPublishing.value) {
+    console.warn('⚠️ [handlePublishNow] Already saving/publishing, ignoring duplicate call')
+    return
+  }
+  
   // Check if current language tab has existing data
   const currentLangHasExistingData = isEditMode.value && existingTranslationIds[activeLanguage.value] !== null
   
@@ -1002,6 +1009,12 @@ const handlePublishNow = async () => {
 }
 
 const handlePublishNowInternal = async () => {
+  // Prevent duplicate calls
+  if (isSavingOrPublishing.value) {
+    console.warn('⚠️ [handlePublishNowInternal] Already saving/publishing, ignoring duplicate call')
+    return
+  }
+  
   isSavingOrPublishing.value = true
 
   const loadingNotification = ElNotification({
@@ -2187,6 +2200,13 @@ const handleLeaveDialogCancel = () => {
 }
 
 const handleUpdateConfirmationConfirm = async () => {
+  // Prevent duplicate calls
+  if (isSavingOrPublishing.value) {
+    console.warn('⚠️ [handleUpdateConfirmationConfirm] Already saving/publishing, ignoring duplicate call')
+    showUpdateConfirmationDialog.value = false
+    return
+  }
+  
   // Close dialog and proceed with update
   showUpdateConfirmationDialog.value = false
   await handlePublishNowInternal()

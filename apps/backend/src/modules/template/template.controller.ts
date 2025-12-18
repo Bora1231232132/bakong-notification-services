@@ -52,9 +52,9 @@ export class TemplateController {
   }
 
   @Roles(UserRole.ADMIN_USER)
-  @Post(':id/update')
+  @Post(':id/update-publish')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateTemplateDto, @Req() req: any) {
-    console.log('🎯 [CONTROLLER] /template/:id/update endpoint called for template:', id)
+    console.log('🎯 [CONTROLLER] /template/:id/update-publish endpoint called for template:', id)
     // Use safe logging to prevent logging large image buffers or content
     const safeDto = BaseFunctionHelper.safeLogObject({
       platforms: updateUserDto.platforms,
