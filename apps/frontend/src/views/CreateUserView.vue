@@ -83,10 +83,11 @@
             v-model="form.phoneNumber"
             prop="phoneNumber"
             label=""
-            placeholder="Attractive title"
+            placeholder="+855 00 000 000"
             required
             :disabled="loading"
             :readonly="mode === 'view'"
+            @input="handlePhoneNumberInput"
           />
         </div>
 
@@ -176,7 +177,14 @@ const rules = computed<FormRules>(() => {
       { required: true, message: 'Email is required', trigger: 'blur' },
       { type: 'email', message: 'Invalid email', trigger: ['blur', 'change'] },
     ],
-    phoneNumber: [{ required: true, message: 'Phone number is required', trigger: 'blur' }],
+    phoneNumber: [
+      { required: true, message: 'Phone number is required', trigger: 'blur' },
+      {
+        pattern: /^\+?[0-9]+$/,
+        message: 'Phone number can only contain numbers and + sign',
+        trigger: ['blur', 'change'],
+      },
+    ],
   }
 })
 
@@ -240,6 +248,17 @@ const handleSubmit = () => {
 
 const handleCancel = () => {
   router.back()
+}
+
+const handlePhoneNumberInput = (value: string) => {
+  // Only allow numbers and + sign
+  const filtered = value.replace(/[^0-9+]/g, '')
+  // Ensure + is only at the start
+  if (filtered.includes('+') && filtered.indexOf('+') !== 0) {
+    form.phoneNumber = '+' + filtered.replace(/\+/g, '')
+  } else {
+    form.phoneNumber = filtered
+  }
 }
 
 // Helper function to convert mock user to API user format

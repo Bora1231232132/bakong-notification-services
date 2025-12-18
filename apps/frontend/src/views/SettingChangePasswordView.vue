@@ -135,8 +135,7 @@
             </div>
           </form>
           <div
-            class="w-full max-w-[259px] h-[56px] lg:absolute lg:w-[259px] lg:top-[355px] lg:left-0 opacity-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-[12px]"
-            style="margin-top: -55px"
+            class="w-full max-w-[259px] h-[56px] lg:absolute lg:w-[259px] lg:top-[260px] lg:left-0 opacity-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-[12px] mt-8!"
           >
             <button
               type="button"

@@ -18,7 +18,6 @@
           @view="handleView"
           @edit="handleEdit"
           @delete="handleDelete"
-          @status-toggle="handleStatusToggle"
         />
       </div>
       <div class="h-2"></div>
@@ -198,18 +197,6 @@ const handleDeleteConfirm = async () => {
 const handleDeleteCancel = () => {
   userToDelete.value = null
   showDeleteDialog.value = false
-}
-
-const handleStatusToggle = (user: UserItem, index: number) => {
-  // Find the actual index in the full users array
-  const globalIndex = users.value.findIndex((u: UserItem) => u.id === user.id)
-  if (globalIndex !== -1) {
-    const currentUser = users.value[globalIndex]
-    if (currentUser) {
-      currentUser.status = currentUser.status === 'Active' ? 'Deactivate' : 'Active'
-      console.log('Status toggled for user:', currentUser)
-    }
-  }
 }
 
 // Watch filteredUsers to reset page when data changes (search/filter/delete)

@@ -282,10 +282,8 @@
               <td class="py-3 px-2 sm:px-4 align-middle">
                 <button
                   :class="[
-                    'text-white text-[14px] font-medium transition-all duration-200 flex items-center justify-center',
-                    user.status === 'Active' || !user.status
-                      ? 'bg-[#0D1C50] hover:bg-[#12236d]'
-                      : 'bg-[#F59E0B] hover:bg-[#D97706]',
+                    'text-white text-[14px] font-medium flex items-center justify-center cursor-default',
+                    user.status === 'Active' || !user.status ? 'bg-[#0D1C50]' : 'bg-[#F59E0B]',
                   ]"
                   :style="{
                     width: user.status === 'Deactivate' ? '102px' : '72px',
@@ -293,8 +291,9 @@
                     padding: '8px 16px',
                     borderRadius: '32px',
                     opacity: 1,
+                    pointerEvents: 'none',
                   }"
-                  @click="handleStatusToggle(user, index)"
+                  disabled
                 >
                   {{ user.status === 'Deactivate' ? 'Deactivate' : 'Active' }}
                 </button>
@@ -345,7 +344,7 @@
 
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue'
-import { useTableSelection } from '@/composables/useTableSelection'
+import { useTableSelection } from '../../composables/useTableSelection'
 
 // Type Definitions
 export interface NotificationItem {
@@ -396,7 +395,6 @@ const emit = defineEmits<{
   view: [item: TableItem]
   edit: [item: TableItem]
   delete: [item: TableItem]
-  statusToggle: [item: UserItem, index: number]
 }>()
 
 // Use composable for selection logic
@@ -543,10 +541,6 @@ const formatRole = (role?: string): string => {
   }
 
   return roleMap[role] || role
-}
-
-const handleStatusToggle = (user: UserItem, index: number) => {
-  emit('statusToggle', user, index)
 }
 </script>
 
