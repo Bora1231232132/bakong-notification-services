@@ -182,11 +182,11 @@ const handleEditClick = (notification: Notification) => {
 
 <style scoped>
 .notification-container {
-  min-height: 100vh;
+  width: 100%;
 }
 
 .notification-wrapper {
-  max-width: 80rem;
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -299,11 +299,10 @@ const handleEditClick = (notification: Notification) => {
 
 .grid-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 20px;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 .notification-card {
@@ -438,12 +437,13 @@ const handleEditClick = (notification: Notification) => {
 .button-container {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   width: 100%;
-  height: 56px;
+  min-height: 56px;
   min-width: 0;
   overflow: visible;
+  flex-wrap: wrap;
 }
 
 .publish-button {
@@ -548,59 +548,47 @@ const handleEditClick = (notification: Notification) => {
   margin: 0;
 }
 
+@media (max-width: 1400px) {
+  .grid-container {
+    gap: 20px;
+  }
+}
+
 @media (max-width: 1200px) {
   .grid-container {
-    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   }
 
   .button-container {
     gap: 6px;
   }
 
-  .publish-button {
-    min-width: 123px;
-    padding: 8px 10px;
-  }
-
-  .edit-button {
-    min-width: 93px;
-    padding: 8px 10px;
-  }
-
+  .publish-button,
+  .edit-button,
   .delete-button {
-    min-width: 113px;
-    padding: 8px 10px;
+    min-width: 0;
+    flex: 1;
+    padding: 8px 4px;
+    font-size: 14px;
   }
 }
 
 @media (max-width: 768px) {
   .grid-container {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .button-container {
-    gap: 4px;
-    flex-wrap: wrap;
-    height: auto;
-    min-height: 56px;
+    flex-wrap: nowrap;
   }
 
   .publish-button,
   .edit-button,
   .delete-button {
-    min-width: 123px;
-    padding: 6px 8px;
-    height: 48px;
-    font-size: 16px;
-  }
-}
-
-@media (max-width: 480px) {
-  .grid-container {
-    grid-template-columns: 1fr;
-    gap: 16px;
+    flex: 1;
+    min-width: 0;
   }
 }
 

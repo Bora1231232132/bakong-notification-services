@@ -1579,9 +1579,7 @@ onUnmounted(() => {
 }
 
 .notifications-grid .notification-cards-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+  width: 100%;
   margin-top: 20px;
 }
 

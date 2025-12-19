@@ -1738,8 +1738,17 @@ const handleFinishLater = () => {
   showConfirmationDialog.value = true
 }
 
-const handleSaveDraft = async () => {
+const handleSaveDraft = async (forceDraft: boolean = false) => {
+  if (isSavingOrPublishing.value) return
   isSavingOrPublishing.value = true
+
+  // Sync current language data before saving
+  const currentLang = activeLanguage.value
+  if (languageFormData[currentLang]) {
+    languageFormData[currentLang].title = currentTitle.value
+    languageFormData[currentLang].description = currentDescription.value
+    languageFormData[currentLang].linkToSeeMore = currentLinkToSeeMore.value
+  }
 
   // Drafts can be saved with empty title and content - clear any validation errors
   // Validation is only needed for publishing, not for saving drafts
@@ -1751,44 +1760,20 @@ const handleSaveDraft = async () => {
   const validationErrors: string[] = []
   
   for (const [langKey, langData] of Object.entries(languageFormData)) {
-    const title = langData.title?.trim() || (langKey === activeLanguage.value ? currentTitle.value?.trim() : null) || ''
-    const content = langData.description?.trim() || (langKey === activeLanguage.value ? currentDescription.value?.trim() : null) || ''
+    const lang = langKey as Language
+    const title = (lang === activeLanguage.value ? currentTitle.value : langData.title)?.trim() || ''
     
     if (title && title.length > DB_TITLE_MAX_LENGTH) {
       hasValidationError = true
       validationErrors.push(`${langKey.toUpperCase()}: Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${title.length}.`)
     }
-    
-    // Database TEXT has no limit, so we don't validate content length
-    // PostgreSQL TEXT can store unlimited data (up to ~1GB)
-  }
-  
-  // Also check fallback title/description if no translations exist
-  if (Object.keys(languageFormData).length === 0 || 
-      !Object.values(languageFormData).some(lang => lang.title?.trim() || lang.description?.trim())) {
-    const fallbackTitle = currentTitle.value?.trim() || ''
-    const fallbackContent = currentDescription.value?.trim() || ''
-    
-    if (fallbackTitle && fallbackTitle.length > DB_TITLE_MAX_LENGTH) {
-      hasValidationError = true
-      validationErrors.push(`Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${fallbackTitle.length}.`)
-    }
-    
-    // Database TEXT has no limit, so we don't validate content length
-    // PostgreSQL TEXT can store unlimited data (up to ~1GB)
   }
   
   if (hasValidationError) {
     // Set errors for active language if they exist
-    if (validationErrors.some(err => err.includes('Title'))) {
-      const activeTitle = currentTitle.value?.trim() || ''
-      if (activeTitle && activeTitle.length > DB_TITLE_MAX_LENGTH) {
-        titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${activeTitle.length}.`
-      }
-    }
-    if (validationErrors.some(err => err.includes('Description'))) {
-      // Database TEXT has no limit, so we don't validate content length
-      // PostgreSQL TEXT can store unlimited data (up to ~1GB)
+    const activeTitle = currentTitle.value?.trim() || ''
+    if (activeTitle && activeTitle.length > DB_TITLE_MAX_LENGTH) {
+      titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${activeTitle.length}.`
     }
     
     // Show notification with all validation errors
@@ -1827,176 +1812,136 @@ const handleSaveDraft = async () => {
 
   try {
     const imagesToUpload: { file: File; language: string }[] = []
-    const translations = []
+    const translations: any[] = []
 
+    // 1. Collect all translation data and identify images to upload
     for (const [langKey, langData] of Object.entries(languageFormData)) {
-      const title =
-        langData.title?.trim() ||
-        (langKey === activeLanguage.value ? currentTitle.value?.trim() : null) ||
-        ''
+      const lang = langKey as Language
+      // Prioritize current reactive state for the active tab, otherwise use stored tab data
+      const title = (lang === activeLanguage.value ? currentTitle.value : langData.title)?.trim() || ''
       const content =
-        langData.description?.trim() ||
-        (langKey === activeLanguage.value ? currentDescription.value?.trim() : null) ||
+        (lang === activeLanguage.value ? currentDescription.value : langData.description)?.trim() ||
         ''
+      const linkPreview =
+        (lang === activeLanguage.value
+          ? currentLinkToSeeMore.value
+          : langData.linkToSeeMore
+        )?.trim() || ''
 
-      let imageId: string | undefined = undefined
-      if (langData.imageFile) {
+      // Handle image: check if there's a new file to upload
+      const imageFile = lang === activeLanguage.value ? currentImageFile.value : langData.imageFile
+
+      if (imageFile) {
         try {
-          const { file: compressed, dataUrl } = await compressImage(langData.imageFile, {
+          const { file: compressed, dataUrl } = await compressImage(imageFile, {
             maxBytes: 10 * 1024 * 1024,
             maxWidth: 2000,
-            targetAspectRatio: 2 / 1, // 2:1 aspect ratio as shown in UI
-            correctAspectRatio: true, // Automatically correct aspect ratio
+            targetAspectRatio: 2 / 1,
+            correctAspectRatio: true,
           })
           imagesToUpload.push({ file: compressed, language: langKey })
           if (languageFormData[langKey]) {
             languageFormData[langKey].imageUrl = dataUrl
+            if (lang === activeLanguage.value) {
+              currentImageUrl.value = dataUrl
+            }
           }
         } catch (e) {
           console.error('Compression failed for', langKey, e)
-          ElNotification({
-            title: 'Error',
-            message: `Failed to prepare image for ${langKey}`,
-            type: 'error',
-            duration: 2000,
-          })
-          loadingNotification.close()
-          isSavingOrPublishing.value = false
-          return
+          throw new Error(`Failed to prepare image for ${langKey.toUpperCase()}`)
         }
-      } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
-        imageId = existingImageIds[langKey] || undefined
       }
 
-      // For drafts: include translation even if all fields are empty
-      // This allows saving drafts with empty title/content/image (user can fill later)
       const translationData: any = {
         language: mapLanguageToEnum(langKey),
-        title: title || '',
-        content: content || '',
-        linkPreview: langData.linkToSeeMore || undefined,
-        image: imageId || '',
+        title: title,
+        content: content,
+        linkPreview: linkPreview || undefined,
+        image: existingImageIds[langKey] || '',
       }
-      // Include translation ID when updating to preserve the same record
-      if (isEditMode.value && existingTranslationIds[langKey]) {
+
+      // Preserve existing translation ID if editing
+      if (existingTranslationIds[langKey]) {
         translationData.id = existingTranslationIds[langKey]
       }
+
       translations.push(translationData)
     }
+
+    // 2. Upload images if needed
     let uploadedImages: {
       language?: string
       fileId: string
       mimeType: string
       originalFileName: string
     }[] = []
+
     if (imagesToUpload.length > 0) {
       try {
-        const items = imagesToUpload.map((item) => ({
+        const uploadItems = imagesToUpload.map((item) => ({
           file: item.file,
           language: String(item.language),
         }))
-        // Calculate total size before upload
-        const totalSize = items.reduce((sum, item) => sum + item.file.size, 0)
-        const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2)
         
-        console.log(
-          'Files to upload:',
-          items.map((i) => ({
-            name: i.file.name,
-            size: i.file.size,
-            sizeMB: (i.file.size / 1024 / 1024).toFixed(2) + 'MB',
-            type: i.file.type,
-            language: i.language,
-          })),
-        )
-        console.log(`Total upload size: ${totalSizeMB}MB (limit: 18MB)`)
+        uploadedImages = await notificationApi.uploadImages(uploadItems)
+        
+        // Update state and translations with new file IDs
+        uploadedImages.forEach((u) => {
+          if (u.language && u.fileId) {
+            const langKey = String(u.language)
+            existingImageIds[langKey] = u.fileId
+            
+            const transIndex = translations.findIndex(t => t.language === mapLanguageToEnum(langKey))
+            if (transIndex !== -1) {
+              translations[transIndex].image = u.fileId
+            }
 
-        uploadedImages = await notificationApi.uploadImages(items)
-        console.log('Batch uploaded images:', uploadedImages)
-      } catch (error) {
-        console.error('Error uploading images:', error)
-        ElNotification({
-          title: 'Error',
-          message: 'Failed to upload images. Please try again.',
-          type: 'error',
-          duration: 2000,
+            if (languageFormData[langKey]) {
+              languageFormData[langKey].imageFile = null
+              languageFormData[langKey].imageUrl = `/api/v1/image/${u.fileId}`
+              if (langKey === activeLanguage.value) {
+                currentImageFile.value = null
+                currentImageUrl.value = `/api/v1/image/${u.fileId}`
+              }
+            }
+          }
         })
-        loadingNotification.close()
-        isSavingOrPublishing.value = false
-        return
-      }
-    }
-    const langToFileId = new Map<string, string>()
-    uploadedImages.forEach((u) => {
-      if (u.language && u.fileId) {
-        langToFileId.set(String(u.language), u.fileId)
-        const langKey = String(u.language)
-        existingImageIds[langKey] = u.fileId
-        if (languageFormData[langKey]) {
-          languageFormData[langKey].imageFile = null
-          languageFormData[langKey].imageUrl = `/api/v1/image/${u.fileId}`
-        }
-      }
-    })
-    for (const [index, trans] of translations.entries()) {
-      const fid = langToFileId.get(String(trans.language))
-      if (fid) {
-        translations[index].image = fid
+      } catch (error) {
+        console.error('Error uploading images during draft save:', error)
+        throw new Error('Failed to upload images. Please try again.')
       }
     }
 
-    if (translations.length === 0) {
-      let fallbackImageId: string | undefined
-      if (currentImageFile.value) {
-        try {
-          fallbackImageId = await notificationApi.uploadImage(currentImageFile.value)
-        } catch (error) {
-          console.error('Error uploading fallback image:', error)
-          ElNotification({
-            title: 'Error',
-            message: 'Failed to upload image. Please try again.',
-            type: 'error',
-            duration: 2000,
-          })
-          loadingNotification.close()
-          return
-        }
-      }
+    // 3. Determine sendType and schedule
+    // If forceDraft is true, we set sendType to SEND_NOW to make it a draft, 
+    // but we still preserve the sendSchedule if the user has it enabled.
+    // This satisfies "keep all data" while still being in the Draft tab.
+    const useSchedule = formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime
+    const finalSendType = (forceDraft || !useSchedule) ? SendType.SEND_NOW : SendType.SEND_SCHEDULE
 
-      const draftTitle = currentTitle.value?.trim() || ''
-      const draftDescription = currentDescription.value?.trim() || ''
-
-      const draftTranslationData: any = {
-        language: mapLanguageToEnum(activeLanguage.value),
-        title: draftTitle || '',
-        content: draftDescription || '',
-        linkPreview: currentLinkToSeeMore.value || undefined,
-        image: fallbackImageId || '',
-      }
-      // Include translation ID when updating to preserve the same record
-      if (isEditMode.value && existingTranslationIds[activeLanguage.value]) {
-        draftTranslationData.id = existingTranslationIds[activeLanguage.value]
-      }
-      translations.push(draftTranslationData)
-    }
     const templateData: CreateTemplateRequest = {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],
       bakongPlatform: formData.platform,
-      sendType: SendType.SEND_NOW,
+      sendType: finalSendType,
       isSent: false,
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
       categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
-    if (formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime) {
+
+    // Always preserve the schedule in the payload if it's enabled in the form
+    if (useSchedule) {
       const scheduleDateTime = DateUtils.parseScheduleDateTime(
         String(formData.scheduleDate),
         String(formData.scheduleTime),
       )
       ;(templateData as any).sendSchedule = scheduleDateTime.toISOString()
+    } else {
+      ;(templateData as any).sendSchedule = null
     }
 
+    // 4. Create or Update Template
     let result
     if (isEditMode.value) {
       result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
@@ -2008,107 +1953,43 @@ const handleSaveDraft = async () => {
 
     ElNotification({
       title: 'Success',
-      message: isEditMode.value
-        ? 'Notification updated as draft successfully!'
-        : 'Notification saved as draft successfully!',
+      message: `Notification saved as draft successfully!`,
       type: 'success',
       duration: 2000,
     })
-    const draftRedirectTab = 'draft'
+
+    // 5. Clear cache and redirect
     try {
       localStorage.removeItem('notifications_cache')
       localStorage.removeItem('notifications_cache_timestamp')
-    } catch (error) {
-      console.warn('Failed to clear cache:', error)
+    } catch (e) {
+      console.warn('Failed to clear cache:', e)
     }
 
-    // Close any open dialogs before navigation
-    showLeaveDialog.value = false
-    showConfirmationDialog.value = false
-    pendingNavigation = null
-
-    // Keep isSavingOrPublishing true until navigation completes
-    // This prevents the navigation guard from blocking the navigation
+    // Determine redirect tab based on our finalized status
+    // If it's forced as draft or schedule is disabled, go to draft
+    const redirectTab = (forceDraft || !useSchedule) ? 'draft' : 'scheduled'
+    
     if (isEditMode.value) {
       setTimeout(() => {
-        window.location.href = `/?tab=${draftRedirectTab}`
-        // Reset flag after navigation starts (full page reload)
+        window.location.href = `/?tab=${redirectTab}`
         isSavingOrPublishing.value = false
       }, 500)
     } else {
-      // For router.push, reset flag after navigation
-      router
-        .push(`/?tab=${draftRedirectTab}`)
-        .then(() => {
-          isSavingOrPublishing.value = false
-        })
-        .catch(() => {
-          isSavingOrPublishing.value = false
-        })
+      router.push(`/?tab=${redirectTab}`).then(() => {
+        isSavingOrPublishing.value = false
+      })
     }
   } catch (error: any) {
     isSavingOrPublishing.value = false
-    console.error('Error saving draft:', error)
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response,
-      responseData: error.response?.data,
-      status: error.response?.status,
-    })
-
     loadingNotification.close()
-
-    // Extract error message with better fallbacks
-    let errorMessage =
-      error.response?.data?.responseMessage ||
-      error.response?.data?.message ||
-      error.message ||
-      'An unexpected error occurred while saving the draft'
-
-    // Check for database constraint errors (like "value too long for type character varying(1024)")
-    const errorString = String(errorMessage).toLowerCase()
-    if (errorString.includes('value too long') || errorString.includes('character varying')) {
-      // Extract which field is too long
-      if (errorString.includes('1024') || errorString.includes('title')) {
-        // Title field is too long
-        const currentTitleLength = currentTitle.value?.trim()?.length || 0
-        titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${currentTitleLength}.`
-        errorMessage = `Title is too long (max ${DB_TITLE_MAX_LENGTH} characters). Please shorten the title and try again.`
-      } else if (errorString.includes('content') || errorString.includes('text')) {
-        // Content field error - database TEXT has no limit, so this shouldn't happen
-        // But if it does, it might be a database constraint issue
-        errorMessage = 'Content exceeds database limits. Please check the content and try again.'
-      } else {
-        // Generic length error
-        errorMessage = 'Content exceeds database limits. Please shorten the title or description and try again.'
-      }
-    }
-
-    // If we still don't have a message, provide a status-based message
-    if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
-      const status = error.response?.status
-      if (status === 500) {
-        errorMessage =
-          'Internal server error. Please try again or contact support if the problem persists.'
-      } else if (status === 400) {
-        errorMessage = 'Invalid request. Please check your input and try again.'
-      } else if (status === 401) {
-        errorMessage = 'Authentication failed. Please log in again.'
-      } else if (status === 403) {
-        errorMessage = 'You do not have permission to perform this action.'
-      } else if (status === 404) {
-        errorMessage = 'The requested resource was not found.'
-      } else {
-        errorMessage = `Request failed with status ${status || 'unknown'}. Please try again.`
-      }
-    }
-
+    console.error('Error saving draft:', error)
+    
     ElNotification({
       title: 'Error',
-      message: errorMessage,
+      message: error.message || 'An unexpected error occurred while saving the draft',
       type: 'error',
-      duration: 5000, // Increased from 2000ms to 5000ms for better visibility
-      showClose: true, // Allow user to manually close
+      duration: 5000,
     })
   }
 }
@@ -2118,8 +1999,11 @@ const handleDiscard = () => {
   isDiscarding.value = true
   // Clear any pending navigation
   pendingNavigation = null
-  // Navigate to home
-  router.push('/').finally(() => {
+  
+  // Navigate back to where the user came from, or default to the appropriate tab
+  const redirectTab = fromTab.value || (isEditMode.value ? (isEditingPublished.value ? 'published' : 'draft') : 'draft')
+  
+  router.push(`/?tab=${redirectTab}`).finally(() => {
     // Reset flag after navigation completes
     setTimeout(() => {
       isDiscarding.value = false
@@ -2129,7 +2013,7 @@ const handleDiscard = () => {
 
 const handleConfirmationDialogConfirm = () => {
   showConfirmationDialog.value = false
-  handleSaveDraft()
+  handleSaveDraft(true)
 }
 
 const handleConfirmationDialogCancel = () => {
@@ -2221,32 +2105,10 @@ const handleLeaveDialogConfirm = async () => {
   showLeaveDialog.value = false
   pendingNavigation = null
   
-  // When clicking "Update and leave" from sidebar, always save as draft (don't publish/send to users)
-  // This applies to both edit mode and create mode
-  // Clear validation errors - drafts can have empty fields
-  titleError.value = ''
-  descriptionError.value = ''
-  
-  const token = localStorage.getItem('auth_token')
-  if (!token || token.trim() === '') {
-    ElNotification({
-      title: 'Error',
-      message: 'Please login first',
-      type: 'error',
-      duration: 2000,
-    })
-    router.push('/login')
-    return
-  }
-  
-  // Always save as draft when leaving via sidebar (no validation, allows empty fields)
-  try {
-    await handleSaveDraft()
-    // Navigation will happen in handleSaveDraft
-  } catch (error) {
-    console.error('Failed to save draft:', error)
-    isSavingOrPublishing.value = false
-  }
+  // Use the robust handleSaveDraft logic with forceDraft = true
+  // This ensures all data (images, translations, global fields) is saved as a draft
+  // which satisfies the user's requirement to "save in draft but keep all data"
+  await handleSaveDraft(true)
 }
 
 const handleLeaveDialogCancel = () => {
