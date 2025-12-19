@@ -304,11 +304,16 @@ const currentWeekStart = ref<Date>(new Date())
 
 const weekDays = computed(() => {
   const start = new Date(currentWeekStart.value)
-  const sunday = new Date(start)
-  sunday.setDate(start.getDate() - start.getDay())
+  const monday = new Date(start)
+  // Calculate days to subtract to get to Monday: (day + 6) % 7
+  // Sun(0) -> 6, Mon(1) -> 0, Tue(2) -> 1, ..., Sat(6) -> 5
+  const day = start.getDay()
+  const diff = (day + 6) % 7
+  monday.setDate(start.getDate() - diff)
+
   return Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(sunday)
-    date.setDate(sunday.getDate() + i)
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + i)
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })
     return { date, label: `${dayName} ${date.getDate()}` }
   })
@@ -426,7 +431,7 @@ const fetchNotifications = async () => {
       
       if (normalizedStatus === 'SENT' || n.isSent) {
         // Use updatedAt for sent notifications, fallback to createdAt
-        displayDate = n.updatedAt || n.createdAt
+        displayDate = (n as any).updatedAt || n.createdAt
       } else if (rawTemplate?.sendSchedule) {
         displayDate = rawTemplate.sendSchedule
       } else if (rawTemplate?.templateStartAt) {
