@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="users-page">
     <PageHeader title="Users Management" />
     <DataTable
@@ -67,6 +67,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElDialog, ElButton } from 'element-plus'
 import { Warning } from '@element-plus/icons-vue'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -75,6 +76,7 @@ import { usePagination } from '@/composables/usePagination'
 import { userApi, type User } from '../services/userApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 
+const router = useRouter()
 const { handleApiError, showSuccess, showInfo } = useErrorHandler()
 
 const tableColumns = ref([
@@ -159,7 +161,7 @@ const handleCreateUser = () => {
 }
 
 const handleEdit = (user: User) => {
-  showInfo(`Editing user: ${user.username}`)
+  router.push({ name: 'edit-user', params: { id: user.id } })
 }
 
 const handleDelete = (user: User) => {

@@ -48,7 +48,7 @@
     "body-parser": "^2.2.0",
     "braces": "^3.0.3",
     "class-transformer": "^0.5.1",
-    "class-validator": "^0.13.2",
+    "class-validator": "^0.14.3",
     "dotenv": "^16.0.3",
     "express": "^5.1.0",
     "extend-shallow": "^3.0.2",

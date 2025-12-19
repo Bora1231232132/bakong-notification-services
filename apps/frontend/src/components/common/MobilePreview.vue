@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="relative w-[332.07px] max-w-full">
     <div
       class="relative h-[651.49px] w-[322.07px] rounded-[34px] overflow-hidden p-[30px] bg-white-100"

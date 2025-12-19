@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="notification-container">
     <div class="notification-wrapper">
       <div class="grid-container">

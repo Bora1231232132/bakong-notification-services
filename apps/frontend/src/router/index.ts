@@ -122,6 +122,51 @@ const router = createRouter({
           },
         },
         {
+          path: 'users/create',
+          name: 'create-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: {
+              label: 'Create User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'users/view/:id',
+          name: 'view-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: {
+              label: 'View User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'users/edit/:id',
+          name: 'edit-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: {
+              label: 'Edit User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'user-management',
+          name: 'user-management',
+          component: () => import('../views/UserManagementView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMIN_USER,
+            breadcrumb: { label: 'User Management' },
+          },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingView.vue'),

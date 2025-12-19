@@ -1,9 +1,12 @@
-﻿<template>
+<template>
   <div v-if="shouldShowBreadcrumb && breadcrumbs.length > 0" class="breadcrumb">
     <template v-for="(item, index) in breadcrumbs" :key="item.path || index">
       <span
         class="breadcrumb-item"
-        :class="{ active: index === breadcrumbs.length - 1 }"
+        :class="{
+          active: index === breadcrumbs.length - 1,
+          clickable: isClickable(item, index),
+        }"
         @click="handleClick(item, index)"
       >
         {{ item.label }}
@@ -109,6 +112,11 @@ const breadcrumbs = computed(() => {
   return generateBreadcrumbs.value
 })
 
+const isClickable = (item: BreadcrumbItem, index: number): boolean => {
+  const isLast = index === breadcrumbs.value.length - 1
+  return !isLast && item.clickable === true && (!!item.name || !!item.path)
+}
+
 const handleClick = (item: BreadcrumbItem, index: number) => {
   if (index === breadcrumbs.value.length - 1 || !item.clickable || !item.name) {
     return
@@ -134,11 +142,15 @@ const handleClick = (item: BreadcrumbItem, index: number) => {
 
 .breadcrumb-item {
   color: #666;
-  cursor: pointer;
+  cursor: default;
   transition: color 0.2s ease;
 }
 
-.breadcrumb-item:not(.active):hover {
+.breadcrumb-item.clickable {
+  cursor: pointer;
+}
+
+.breadcrumb-item.clickable:not(.active):hover {
   color: #001346;
 }
 

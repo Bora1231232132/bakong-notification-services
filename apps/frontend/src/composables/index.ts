@@ -7,6 +7,7 @@ export { useFileUpload } from './useFileUpload'
 export { useStatusManager } from './useStatusManager'
 export { useErrorHandler } from './useErrorHandler'
 export { useLanguage } from './useLanguage'
+export { useTableSelection } from './useTableSelection'
 
 export type { FormField, FormConfig } from './useForm'
 export type { TableColumn, TableConfig } from './useDataTable'

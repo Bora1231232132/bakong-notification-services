@@ -59,6 +59,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "class-validator": "0.14.3",
     "element-plus": "^2.11.4",
     "lucide-vue-next": "^0.545.0",
     "nestjs": "^0.0.1",

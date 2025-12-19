@@ -84,6 +84,15 @@
               <img :src="chartIcon" alt="Insight" class="nav-icon" />
               <span>Insight</span>
             </div>
+            <div
+              v-if="isDevelopment"
+              class="nav-item"
+              :class="{ active: $route.name === 'user-management' }"
+              @click="$router.push('/user-management')"
+            >
+            <img :src="userIcon" alt="User Management" class="nav-icon" />
+            <span>User Management</span>
+            </div>
             <!-- Test page - only visible in development environment -->
             <div
               v-if="isDevelopment"
@@ -149,7 +158,7 @@ import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
-import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus, Tools } from '@element-plus/icons-vue'
+import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus, Tools, User } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
@@ -161,6 +170,8 @@ import typeIconImg from '@/assets/image/type-pattern.svg'
 import chartIconImg from '@/assets/image/chart--bar-target.svg'
 import settingsIconImg from '@/assets/image/settings_16.svg'
 import avatarImageImg from '@/assets/image/avatar.svg'
+import userIconImg from '@/assets/image/user--multiple.svg'
+
 
 // Explicitly declare const variables for TypeScript
 const nbcLogo = nbcLogoImg
@@ -170,7 +181,7 @@ const typeIcon = typeIconImg
 const chartIcon = chartIconImg
 const settingsIcon = settingsIconImg
 const avatarImage = avatarImageImg
-
+const userIcon = userIconImg
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()

@@ -4,6 +4,7 @@
       <div class="h-auto sm:h-[56px] flex-shrink-0">
         <NotificationTableHeader
           v-model="searchQuery"
+          :show-refresh="false"
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
@@ -11,8 +12,9 @@
       </div>
       <div class="h-2"></div>
       <div class="flex-1 min-h-0 overflow-hidden">
-        <NotificationTableBody
-          :notifications="displayItems"
+        <TableBody
+          mode="notification"
+          :items="displayItems"
           @view="viewItem"
           @edit="editItem"
           @delete="deleteItem"
@@ -49,21 +51,20 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import NotificationTableHeader from '@/components/common/Type-Feature/NotificationTableHeader.vue'
-import NotificationTableBody from '@/components/common/Type-Feature/NotificationTableBody.vue'
+import TableBody from '@/components/common/TableBody.vue'
 import NotificationPagination from '@/components/common/Type-Feature/NotificationPagination.vue'
 import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
-import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
-import { useCategoryTypesStore } from '@/stores/categoryTypes'
+import type { CategoryType } from '@/services/categoryTypeApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { ElMessage, ElNotification } from 'element-plus'
+import { mockCategoryTypes } from '../../Data/mockCategoryTypes'
 
 const router = useRouter()
 const route = useRoute()
 
-// Use category types store
-const categoryTypesStore = useCategoryTypesStore()
-const categoryTypes = computed(() => categoryTypesStore.categoryTypes)
-const loading = computed(() => categoryTypesStore.loading)
+// Use mock data for testing
+const categoryTypes = ref<CategoryType[]>([...mockCategoryTypes])
+const loading = ref(false)
 
 const page = ref(1)
 const perPage = ref(10)
@@ -155,9 +156,14 @@ const handleSearch = (value: string) => {
 
 const fetchCategoryTypes = async () => {
   try {
-    // Fetch from store (uses cache if valid)
-    await categoryTypesStore.fetchCategoryTypes()
+    // Use mock data for testing
+    loading.value = true
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    categoryTypes.value = [...mockCategoryTypes]
+    loading.value = false
   } catch (error) {
+    loading.value = false
     handleApiError(error, { operation: 'fetchCategoryTypes' })
   }
 }
@@ -188,16 +194,16 @@ const handleDeleteConfirm = async () => {
   if (!categoryToDelete.value) return
 
   try {
-    await categoryTypeApi.delete(categoryToDelete.value.id)
+    // Simulate API call with mock data
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
-    // Remove from store and clear cache
-    categoryTypesStore.removeCategoryType(categoryToDelete.value.id)
-    categoryTypesStore.clearCache()
+    // Remove from local mock data
+    const index = categoryTypes.value.findIndex((ct) => ct.id === categoryToDelete.value!.id)
+    if (index > -1) {
+      categoryTypes.value.splice(index, 1)
+    }
 
     showSuccess(`Category type "${categoryToDelete.value.name}" deleted successfully`)
-
-    // Refresh the list (will use cache if available, or fetch fresh)
-    await fetchCategoryTypes()
   } catch (error) {
     handleApiError(error, { operation: 'deleteCategoryType' })
   } finally {
@@ -231,8 +237,7 @@ watch(
   () => route.query.refresh,
   async (refreshParam) => {
     if (refreshParam) {
-      // Force refresh to get latest data
-      await categoryTypesStore.fetchCategoryTypes(true)
+      // Force refresh to get latest mock data
       await fetchCategoryTypes()
       // Remove the refresh param from URL without triggering another refresh
       router.replace({ path: '/templates', query: {} })

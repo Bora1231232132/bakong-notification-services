@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <Teleport to="body">
     <div v-if="visible" class="dialog-overlay">
       <div class="dialog-container" @click.stop>
