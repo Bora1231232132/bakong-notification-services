@@ -5,7 +5,7 @@
         class="change-password-container grid grid-cols-1 lg:grid-cols-3 grid-rows-1 lg:grid-rows-4 gap-4 lg:gap-[60px] w-full h-full"
       >
         <div
-          class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-[345px] mx-auto lg:mx-0 lg:w-[345px] h-auto lg:h-[232px] opacity-100 lg:row-span-2"
+          class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-[345px] mx-auto lg:mx-0 lg:w-[345px] h-auto lg:min-h-[232px] opacity-100 lg:row-span-2 lg:relative lg:overflow-visible"
         >
           <form
             ref="changePasswordFormRef"
@@ -135,7 +135,7 @@
             </div>
           </form>
           <div
-            class="w-full max-w-[259px] h-[56px] lg:absolute lg:w-[259px] lg:top-[260px] lg:left-0 opacity-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-[12px] mt-8!"
+            class="w-full max-w-[300px] h-auto min-h-[56px] opacity-100 flex flex-col sm:flex-row justify-start items-center gap-3 sm:gap-[15px] mt-[25px]!"
           >
             <button
               type="button"

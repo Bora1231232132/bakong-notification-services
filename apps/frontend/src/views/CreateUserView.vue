@@ -88,6 +88,7 @@
             :disabled="loading"
             :readonly="mode === 'view'"
             @input="handlePhoneNumberInput"
+            @focus="handlePhoneNumberFocus"
           />
         </div>
 
@@ -104,7 +105,7 @@
           </el-button>
           <el-button
             round
-            class="w-[118px] h-[56px]! rounded-[32px]! bg-[#f3f4f6] text-[#111827] font-semibold border-0 px-4 py-2"
+            class="cancel-btn w-[118px] h-[56px]! rounded-[32px]! font-semibold border-0 px-4 py-2"
             @click="handleCancel"
             :disabled="loading"
           >
@@ -180,8 +181,8 @@ const rules = computed<FormRules>(() => {
     phoneNumber: [
       { required: true, message: 'Phone number is required', trigger: 'blur' },
       {
-        pattern: /^\+?[0-9]+$/,
-        message: 'Phone number can only contain numbers and + sign',
+        pattern: /^\+855\s[0-9\s]+$/,
+        message: 'Input your phone number in the format +855 00 000 000',
         trigger: ['blur', 'change'],
       },
     ],
@@ -250,14 +251,43 @@ const handleCancel = () => {
   router.back()
 }
 
+const handlePhoneNumberFocus = () => {
+  // Auto-add +855 prefix if field is empty or doesn't start with +855
+  if (!form.phoneNumber || !form.phoneNumber.startsWith('+855 ')) {
+    // Extract only numbers from current value
+    const numbersOnly = form.phoneNumber.replace(/[^0-9]/g, '')
+    // Remove leading 855 if user typed it
+    const cleanedNumbers = numbersOnly.startsWith('855') ? numbersOnly.substring(3) : numbersOnly
+    form.phoneNumber = '+855 ' + cleanedNumbers
+  }
+}
+
 const handlePhoneNumberInput = (value: string) => {
-  // Only allow numbers and + sign
-  const filtered = value.replace(/[^0-9+]/g, '')
-  // Ensure + is only at the start
-  if (filtered.includes('+') && filtered.indexOf('+') !== 0) {
-    form.phoneNumber = '+' + filtered.replace(/\+/g, '')
+  // If value is empty, allow it (will be handled on focus)
+  if (!value || value.trim() === '') {
+    form.phoneNumber = ''
+    return
+  }
+
+  // Remove everything except numbers and spaces
+  const cleaned = value.replace(/[^0-9\s]/g, '')
+
+  // If user tries to delete the prefix, ensure it stays
+  if (value.startsWith('+855 ')) {
+    // Extract only numbers and spaces after the prefix
+    const afterPrefix = value.substring(5).replace(/[^0-9\s]/g, '')
+    form.phoneNumber = '+855 ' + afterPrefix
+  } else if (cleaned.trim().startsWith('855')) {
+    // If user typed 855 without +, treat it as country code
+    const numbersAfter855 = cleaned
+      .substring(3)
+      .trim()
+      .replace(/[^0-9\s]/g, '')
+    form.phoneNumber = '+855 ' + numbersAfter855
   } else {
-    form.phoneNumber = filtered
+    // Otherwise, ensure +855 prefix is added with cleaned numbers/spaces
+    const numbersAndSpaces = cleaned.trim().replace(/[^0-9\s]/g, '')
+    form.phoneNumber = '+855 ' + numbersAndSpaces
   }
 }
 
@@ -453,5 +483,26 @@ onMounted(async () => {
 :deep(.el-form)::-webkit-scrollbar-thumb {
   background-color: rgba(0, 0, 0, 0.2);
   border-radius: 3px;
+}
+
+.cancel-btn {
+  background: rgba(0, 19, 70, 0.05) !important;
+  color: #001346 !important;
+  backdrop-filter: blur(64px);
+  transition: all 0.3s ease;
+  outline: none !important;
+  border: none !important;
+}
+
+.cancel-btn:hover {
+  background: rgba(0, 19, 70, 0.1) !important;
+  color: #001346 !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.cancel-btn:focus {
+  outline: none !important;
+  border: none !important;
 }
 </style>

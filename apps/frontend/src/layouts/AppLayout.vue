@@ -90,8 +90,8 @@
               :class="{ active: $route.name === 'user-management' }"
               @click="$router.push('/user-management')"
             >
-            <img :src="userIcon" alt="User Management" class="nav-icon" />
-            <span>User Management</span>
+              <img :src="userIcon" alt="User Management" class="nav-icon" />
+              <span>User Management</span>
             </div>
             <!-- Test page - only visible in development environment -->
             <div
@@ -158,7 +158,15 @@ import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
-import { Plus, ArrowLeft, ArrowRight, Warning, CirclePlus, Tools, User } from '@element-plus/icons-vue'
+import {
+  Plus,
+  ArrowLeft,
+  ArrowRight,
+  Warning,
+  CirclePlus,
+  Tools,
+  User,
+} from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
@@ -171,7 +179,6 @@ import chartIconImg from '@/assets/image/chart--bar-target.svg'
 import settingsIconImg from '@/assets/image/settings_16.svg'
 import avatarImageImg from '@/assets/image/avatar.svg'
 import userIconImg from '@/assets/image/user--multiple.svg'
-
 
 // Explicitly declare const variables for TypeScript
 const nbcLogo = nbcLogoImg
@@ -360,10 +367,6 @@ const confirmLogout = () => {
   letter-spacing: 0;
   border: none;
   transition: all 0.3s ease;
-}
-
-.create-notification-btn:hover {
-  background: rgba(0, 19, 70, 0.1);
 }
 
 .plus-icon {
