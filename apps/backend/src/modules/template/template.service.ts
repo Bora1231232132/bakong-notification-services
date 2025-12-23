@@ -68,11 +68,13 @@ export class TemplateService implements OnModuleInit {
     if (dto.imageId) {
       const image = await this.imageRepo.findOne({ where: { fileId: dto.imageId } })
       if (!image) {
-        throw new BaseResponseDto({
-          responseCode: 1,
-          errorCode: ErrorCode.IMAGE_NOT_FOUND,
-          responseMessage: ResponseMessage.IMAGE_NOT_FOUND,
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.IMAGE_NOT_FOUND,
+            responseMessage: ResponseMessage.IMAGE_NOT_FOUND,
+          }),
+        )
       }
     }
 
@@ -92,26 +94,30 @@ export class TemplateService implements OnModuleInit {
       })
 
       if (!scheduledTime.isValid()) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'Invalid sendSchedule date format',
-          data: {
-            providedDate: dto.sendSchedule,
-            expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'Invalid sendSchedule date format',
+            data: {
+              providedDate: dto.sendSchedule,
+              expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
+            },
+          }),
+        )
       }
 
       if (scheduledTime.isBefore(now)) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-          responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-          data: {
-            scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
-            currentTime: now.format('h:mm A MMM D, YYYY'),
-            timezone: 'Asia/Phnom_Penh',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+            responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+            data: {
+              scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
+              currentTime: now.format('h:mm A MMM D, YYYY'),
+              timezone: 'Asia/Phnom_Penh',
+            },
+          }),
+        )
       }
     }
 
@@ -121,49 +127,57 @@ export class TemplateService implements OnModuleInit {
       const now = moment()
 
       if (!startTime.isValid()) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'Invalid sendInterval.startAt date format',
-          data: {
-            providedDate: dto.sendInterval.startAt,
-            expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'Invalid sendInterval.startAt date format',
+            data: {
+              providedDate: dto.sendInterval.startAt,
+              expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
+            },
+          }),
+        )
       }
 
       if (!endTime.isValid()) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'Invalid sendInterval.endAt date format',
-          data: {
-            providedDate: dto.sendInterval.endAt,
-            expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:40:00)',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'Invalid sendInterval.endAt date format',
+            data: {
+              providedDate: dto.sendInterval.endAt,
+              expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:40:00)',
+            },
+          }),
+        )
       }
 
       if (startTime.isBefore(now)) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-          responseMessage: 'sendInterval.startAt cannot be in the past',
-          data: {
-            startTime: startTime.format('h:mm A MMM D, YYYY'),
-            currentTime: now.format('h:mm A MMM D, YYYY'),
-            timezone: 'Asia/Phnom_Penh',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+            responseMessage: 'sendInterval.startAt cannot be in the past',
+            data: {
+              startTime: startTime.format('h:mm A MMM D, YYYY'),
+              currentTime: now.format('h:mm A MMM D, YYYY'),
+              timezone: 'Asia/Phnom_Penh',
+            },
+          }),
+        )
       }
 
       if (endTime.isBefore(startTime)) {
-        throw new BaseResponseDto({
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'sendInterval.endAt must be after startAt',
-          data: {
-            startTime: startTime.format('h:mm A MMM D, YYYY'),
-            endTime: endTime.format('h:mm A MMM D, YYYY'),
-            timezone: 'Asia/Phnom_Penh',
-          },
-        })
+        throw new BadRequestException(
+          new BaseResponseDto({
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'sendInterval.endAt must be after startAt',
+            data: {
+              startTime: startTime.format('h:mm A MMM D, YYYY'),
+              endTime: endTime.format('h:mm A MMM D, YYYY'),
+              timezone: 'Asia/Phnom_Penh',
+            },
+          }),
+        )
       }
     }
 
@@ -172,11 +186,13 @@ export class TemplateService implements OnModuleInit {
       !dto.sendSchedule &&
       dto.notificationType !== NotificationType.FLASH_NOTIFICATION
     ) {
-      throw new BaseResponseDto({
-        responseCode: 1,
-        errorCode: ErrorCode.VALIDATION_FAILED,
-        responseMessage: ResponseMessage.VALIDATION_FAILED,
-      })
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: ResponseMessage.VALIDATION_FAILED,
+        }),
+      )
     }
     // For SEND_NOW: if isSent is explicitly false, it's a draft - don't send
     // If isSent is true or undefined, send immediately
@@ -328,12 +344,14 @@ export class TemplateService implements OnModuleInit {
             : ''
 
         if (template.isSent !== false && (!title || !content)) {
-          throw new BaseResponseDto({
-            responseCode: 1,
-            errorCode: ErrorCode.VALIDATION_FAILED,
-            responseMessage: 'Title and content are required for published notifications',
-            data: {},
-          })
+          throw new BadRequestException(
+            new BaseResponseDto({
+              responseCode: 1,
+              errorCode: ErrorCode.VALIDATION_FAILED,
+              responseMessage: 'Title and content are required for published notifications',
+              data: {},
+            }),
+          )
         }
 
         if (existingTranslation) {
@@ -694,30 +712,34 @@ export class TemplateService implements OnModuleInit {
       if (sendSchedule !== undefined) {
         if (sendSchedule) {
           const scheduledTime = moment.utc(sendSchedule)
-          if (!scheduledTime.isValid()) {
-            throw new BadRequestException({
-              responseCode: 1,
-              errorCode: ErrorCode.VALIDATION_FAILED,
-              responseMessage: 'Invalid sendSchedule date format',
-              data: {
-                providedDate: sendSchedule,
-                expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
-              },
-            })
-          }
-          const now = moment.utc()
-          // Add 1-minute grace period for network latency and clock skew
-          if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
-            throw new BadRequestException({
-              responseCode: 1,
-              errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-              responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-              data: {
-                scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
-                currentTime: now.format('h:mm A MMM D, YYYY'),
-              },
-            })
-          }
+      if (!scheduledTime.isValid()) {
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'Invalid sendSchedule date format',
+            data: {
+              providedDate: sendSchedule,
+              expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
+            },
+          }),
+        )
+      }
+      const now = moment.utc()
+      // Add 1-minute grace period for network latency and clock skew
+      if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+            responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+            data: {
+              scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
+              currentTime: now.format('h:mm A MMM D, YYYY'),
+            },
+          }),
+        )
+      }
           updateFields.sendSchedule = scheduledTime.toDate()
         } else {
           updateFields.sendSchedule = null
@@ -1100,15 +1122,17 @@ export class TemplateService implements OnModuleInit {
             const now = moment.utc()
             // Add 1-minute grace period for network latency and clock skew
             if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
-              throw new BadRequestException({
-                responseCode: 1,
-                errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-                responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-                data: {
-                  scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
-                  currentTime: now.format('h:mm A MMM D, YYYY'),
-                },
-              })
+              throw new BadRequestException(
+                new BaseResponseDto({
+                  responseCode: 1,
+                  errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+                  responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+                  data: {
+                    scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
+                    currentTime: now.format('h:mm A MMM D, YYYY'),
+                  },
+                }),
+              )
             }
             updateFields.sendSchedule = scheduledTime.toDate()
           } else {
@@ -1447,15 +1471,17 @@ export class TemplateService implements OnModuleInit {
         name: error?.name,
         code: error?.code,
       })
-      throw new BaseResponseDto({
-        responseCode: 1,
-        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
-        responseMessage: error?.message || 'Failed to fetch templates',
-        data: {
-          error: error?.message,
-          context: 'findTemplatesAsNotifications',
-        },
-      })
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+          responseMessage: error?.message || 'Failed to fetch templates',
+          data: {
+            error: error?.message,
+            context: 'findTemplatesAsNotifications',
+          },
+        }),
+      )
     }
   }
 

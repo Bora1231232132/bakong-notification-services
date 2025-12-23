@@ -390,6 +390,7 @@ const isEditMode = computed(() => route.name === 'edit-notification')
 const notificationId = computed(() => route.params.id as string)
 const fromTab = computed(() => (route.query.fromTab as string) || '')
 const isEditingPublished = ref(false)
+const wasScheduled = ref(false)
 const isLoadingData = ref(false)
 
 // Dynamic button text based on context
@@ -541,9 +542,16 @@ const initializeCategoryTypes = async () => {
     // Set default to first category or NEWS if available
     if (categoryTypes.value.length > 0) {
       const newsCategory = categoryTypes.value.find(
-        (ct) => ct.name === 'News' || ct.name === 'NEWS',
+        (ct: CategoryTypeData) => ct.name === 'News' || ct.name === 'NEWS',
       )
-      formData.categoryTypeId = newsCategory?.id || categoryTypes.value[0].id
+      const defaultCategoryId = newsCategory?.id || categoryTypes.value[0].id
+      formData.categoryTypeId = defaultCategoryId
+      
+      // If we're creating a new notification, synchronize the original value
+      // so the default selection isn't counted as an "unsaved change"
+      if (!isEditMode.value) {
+        originalFormData.categoryTypeId = defaultCategoryId
+      }
     }
   } catch (error) {
     console.error('Failed to initialize category types:', error)
@@ -656,6 +664,7 @@ const loadNotificationData = async () => {
 
     if (template.sendSchedule) {
       formData.scheduleEnabled = true
+      wasScheduled.value = true
       try {
         const { date, time } = DateUtils.formatUTCToCambodiaDateTime(template.sendSchedule)
         if (date && time) {
@@ -1063,24 +1072,89 @@ const handlePublishNowInternal = async () => {
     let sendType = SendType.SEND_NOW
     let isSent = true
 
+    // Common schedule validation logic for both create and edit modes
+    const validateSchedule = async (): Promise<boolean> => {
+      if (formData.scheduleEnabled) {
+        // Debug: Log formData values before validation
+        console.log('🔍 [Schedule Validation] Form data:', {
+          scheduleEnabled: formData.scheduleEnabled,
+          scheduleDate: formData.scheduleDate,
+          scheduleTime: formData.scheduleTime,
+        })
+        
+        const dateValue = formData.scheduleDate
+        const timeValue = formData.scheduleTime
+        
+        const dateStr = dateValue != null && dateValue !== '' ? String(dateValue).trim() : ''
+        const timeStr = timeValue != null && timeValue !== '' ? String(timeValue).trim() : ''
+        
+        const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
+        const timePattern = /^\d{2}:\d{2}$/
+        
+        const hasValidDate = dateStr !== '' && datePattern.test(dateStr)
+        const hasValidTime = timeStr !== '' && timePattern.test(timeStr)
+        
+        if (!hasValidDate || !hasValidTime) {
+          ElNotification({
+            title: 'Error',
+            message: 'Please select both Date and Time for scheduling',
+            type: 'error',
+            duration: 2000,
+          })
+          return false
+        }
+        
+        try {
+          const scheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+          const nowUTC = new Date()
+          const diffMs = scheduleDateTime.getTime() - nowUTC.getTime()
+          
+          if (diffMs <= 0) {
+            ElNotification({
+              title: 'Error',
+              message: 'Scheduled time must be in the future. Please select a future time.',
+              type: 'error',
+              duration: 3000,
+            })
+            return false
+          }
+          return true
+        } catch (error) {
+          console.error('❌ [Schedule Validation] Error:', error)
+          ElNotification({
+            title: 'Error',
+            message: 'Invalid date or time format. Please check your selection.',
+            type: 'error',
+            duration: 2000,
+          })
+          return false
+        }
+      }
+      return true
+    }
+
     // When editing, determine redirect tab based on notification status and fromTab
     if (isEditMode.value) {
       // If editing a published notification, always keep it published
       if (isEditingPublished.value) {
-      sendType = SendType.SEND_NOW
-      isSent = true
-      redirectTab = 'published'
-      // Clear schedule fields to prevent any scheduling
-      formData.scheduleEnabled = false
-      formData.scheduleDate = ''
-      formData.scheduleTime = ''
-    } else {
+        sendType = SendType.SEND_NOW
+        isSent = true
+        redirectTab = 'published'
+        // Clear schedule fields to prevent any scheduling
+        formData.scheduleEnabled = false
+        formData.scheduleDate = ''
+        formData.scheduleTime = ''
+      } else {
         // Editing draft or scheduled notification
-        const hasValidDate = !!(formData.scheduleDate && String(formData.scheduleDate).trim() !== '')
-        const hasValidTime = !!(formData.scheduleTime && String(formData.scheduleTime).trim() !== '')
-
-        if (formData.scheduleEnabled && hasValidDate && hasValidTime) {
-          // User enabled schedule - redirect to scheduled tab
+        if (formData.scheduleEnabled) {
+          // Perform schedule validation even in edit mode!
+          const isValid = await validateSchedule()
+          if (!isValid) {
+            loadingNotification.close()
+            isSavingOrPublishing.value = false
+            return
+          }
+          
           sendType = SendType.SEND_SCHEDULE
           isSent = false
           redirectTab = 'scheduled'
@@ -1093,144 +1167,9 @@ const handlePublishNowInternal = async () => {
       }
     } else {
       // Creating new notification
-      // Check if schedule is enabled and validate date/time
       if (formData.scheduleEnabled) {
-        // Debug: Log formData values before validation
-        console.log('🔍 [Schedule Validation] Form data:', {
-          scheduleEnabled: formData.scheduleEnabled,
-          scheduleDate: formData.scheduleDate,
-          scheduleTime: formData.scheduleTime,
-          dateType: typeof formData.scheduleDate,
-          timeType: typeof formData.scheduleTime,
-        })
-        
-        // Get date/time values - handle null, undefined, empty string, and string values
-        const dateValue = formData.scheduleDate
-        const timeValue = formData.scheduleTime
-        
-        // Convert to string and trim, handling all edge cases
-        // Element Plus date picker with value-format="M/D/YYYY" should return string like "12/26/2025"
-        // Element Plus time picker with value-format="HH:mm" should return string like "15:37"
-        const dateStr = dateValue != null && dateValue !== '' ? String(dateValue).trim() : ''
-        const timeStr = timeValue != null && timeValue !== '' ? String(timeValue).trim() : ''
-        
-        // Validate that both date and time are provided
-        // Check for valid format: date should be M/D/YYYY, time should be HH:mm
-        const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
-        const timePattern = /^\d{2}:\d{2}$/
-        
-        const hasValidDate = dateStr !== '' && datePattern.test(dateStr)
-        const hasValidTime = timeStr !== '' && timePattern.test(timeStr)
-        
-        if (!hasValidDate || !hasValidTime) {
-          console.warn('❌ [Schedule Validation] Failed:', {
-            scheduleEnabled: formData.scheduleEnabled,
-            scheduleDate: formData.scheduleDate,
-            scheduleTime: formData.scheduleTime,
-            dateValue,
-            timeValue,
-            dateStr,
-            timeStr,
-            hasValidDate,
-            hasValidTime,
-            dateType: typeof dateValue,
-            timeType: typeof timeValue,
-            dateMatchesPattern: datePattern.test(dateStr),
-            timeMatchesPattern: timePattern.test(timeStr),
-          })
-          ElNotification({
-            title: 'Error',
-            message: 'Please select both Date and Time for scheduling',
-            type: 'error',
-            duration: 2000,
-          })
-          loadingNotification.close()
-          isSavingOrPublishing.value = false
-          return
-        }
-        
-        console.log('✅ [Schedule Validation] Date/Time validated:', { dateStr, timeStr })
-        
-        // Validate that the scheduled date/time is not in the past
-        try {
-          // parseScheduleDateTime creates a UTC Date representing Cambodia time
-          // Example: User selects 15:48 Cambodia time -> creates UTC Date for 08:48 UTC
-          const scheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
-          
-          // Get current UTC time for comparison
-          // Both dates are now in UTC, so direct comparison is correct
-          const nowUTC = new Date() // Same as DateUtils.nowInUTC()
-          
-          // Calculate time difference in milliseconds
-          const diffMs = scheduleDateTime.getTime() - nowUTC.getTime()
-          const diffMinutes = Math.round(diffMs / (1000 * 60))
-          const diffSeconds = Math.round(diffMs / 1000)
-          
-          // Get Cambodia time representations for display/debugging
-          const scheduleCambodia = DateUtils.toCambodiaTime(scheduleDateTime)
-          const nowCambodia = DateUtils.toCambodiaTime(nowUTC)
-          
-          // Debug logging with both UTC and Cambodia representations
-          console.log('🔍 [Schedule Validation] Time comparison:', {
-            input: { dateStr, timeStr },
-            scheduleDateTime: {
-              utc: scheduleDateTime.toISOString(),
-              cambodia: scheduleCambodia.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
-              timestamp: scheduleDateTime.getTime(),
-            },
-            now: {
-              utc: nowUTC.toISOString(),
-              cambodia: nowCambodia.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
-              timestamp: nowUTC.getTime(),
-            },
-            difference: {
-              ms: diffMs,
-              seconds: diffSeconds,
-              minutes: diffMinutes,
-              isFuture: diffMs > 0,
-            },
-          })
-          
-          // Allow scheduling if time is in the future (even 1 millisecond ahead is fine)
-          // This is very lenient - allows scheduling for "now" or very near future
-          if (diffMs <= 0) {
-            const errorMsg = diffMinutes === 0 && diffSeconds <= 0
-              ? 'Scheduled time must be in the future. Please select a time at least 1 minute from now.'
-              : 'Scheduled time must be in the future. Please select a future time.'
-            
-            console.error('❌ [Schedule Validation] Validation failed:', {
-              scheduleDateTime: scheduleDateTime.toISOString(),
-              nowUTC: nowUTC.toISOString(),
-              diffMs,
-              diffMinutes,
-              diffSeconds,
-            })
-            
-            ElNotification({
-              title: 'Error',
-              message: errorMsg,
-              type: 'error',
-              duration: 3000,
-            })
-            loadingNotification.close()
-            isSavingOrPublishing.value = false
-            return
-          }
-          
-          console.log('✅ [Schedule Validation] Date/Time is in the future (', diffMinutes, 'minutes ahead)')
-        } catch (error) {
-          console.error('❌ [Schedule Validation] Error parsing schedule date/time:', error, {
-            dateStr,
-            timeStr,
-            scheduleDate: formData.scheduleDate,
-            scheduleTime: formData.scheduleTime,
-          })
-          ElNotification({
-            title: 'Error',
-            message: 'Invalid date or time format. Please check your selection.',
-            type: 'error',
-            duration: 2000,
-          })
+        const isValid = await validateSchedule()
+        if (!isValid) {
           loadingNotification.close()
           isSavingOrPublishing.value = false
           return
@@ -2000,8 +1939,11 @@ const handleDiscard = () => {
   // Clear any pending navigation
   pendingNavigation = null
   
+  // Determine default tab if fromTab is missing
+  const defaultTab = isEditingPublished.value ? 'published' : (wasScheduled.value ? 'scheduled' : 'draft')
+  
   // Navigate back to where the user came from, or default to the appropriate tab
-  const redirectTab = fromTab.value || (isEditMode.value ? (isEditingPublished.value ? 'published' : 'draft') : 'draft')
+  const redirectTab = fromTab.value || (isEditMode.value ? defaultTab : 'published')
   
   router.push(`/?tab=${redirectTab}`).finally(() => {
     // Reset flag after navigation completes
@@ -2105,10 +2047,15 @@ const handleLeaveDialogConfirm = async () => {
   showLeaveDialog.value = false
   pendingNavigation = null
   
-  // Use the robust handleSaveDraft logic with forceDraft = true
-  // This ensures all data (images, translations, global fields) is saved as a draft
-  // which satisfies the user's requirement to "save in draft but keep all data"
-  await handleSaveDraft(true)
+  if (isEditingPublished.value || fromTab.value === 'scheduled' || wasScheduled.value) {
+    // For published or scheduled notifications, "Update and leave" should preserve their status
+    // handlePublishNowInternal correctly handles the update and redirect logic
+    await handlePublishNowInternal()
+  } else {
+    // For Drafts or new notifications, "Save as draft & leave" saves as draft
+    // handleSaveDraft(true) forces the draft status and redirects to Draft tab
+    await handleSaveDraft(true)
+  }
 }
 
 const handleLeaveDialogCancel = () => {
@@ -2128,8 +2075,11 @@ const handleUpdateConfirmationCancel = () => {
   showUpdateConfirmationDialog.value = false
   isSavingOrPublishing.value = false
   
+  // Determine default tab if fromTab is missing
+  const defaultTab = isEditingPublished.value ? 'published' : (wasScheduled.value ? 'scheduled' : 'draft')
+  
   // Navigate to home screen based on tab
-  const redirectTab = fromTab.value || 'published'
+  const redirectTab = fromTab.value || defaultTab
   if (isEditMode.value) {
     setTimeout(() => {
       window.location.href = `/?tab=${redirectTab}`

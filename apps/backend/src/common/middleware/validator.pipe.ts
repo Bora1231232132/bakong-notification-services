@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common'
+import { ValidationPipe, BadRequestException } from '@nestjs/common'
 import { BaseResponseDto } from '../base-response.dto'
 import { ErrorCode, ResponseMessage } from '@bakong/shared'
 import { BaseFunctionHelper } from '../util/base-function.helper'
@@ -39,11 +39,13 @@ export const GlobalValidationPipe = new ValidationPipe({
   exceptionFactory(errors) {
     const grouped = groupValidationErrors(errors)
 
-    throw new BaseResponseDto({
-      responseCode: 1,
-      errorCode: ErrorCode.VALIDATION_FAILED,
-      responseMessage: ResponseMessage.VALIDATION_FAILED,
-      data: [grouped],
-    })
+    throw new BadRequestException(
+      new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: ResponseMessage.VALIDATION_FAILED,
+        data: [grouped],
+      }),
+    )
   },
 })

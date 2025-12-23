@@ -194,6 +194,8 @@ export class ValidationHelper {
       case ErrorCode.DATABASE_CHECK_CONSTRAINT_VIOLATION:
       case ErrorCode.DATABASE_CONSTRAINT_VIOLATION:
       case ErrorCode.SENT_TEMPLATE:
+      case ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST:
+      case ErrorCode.TEMPLATE_SEND_INTERVAL_INVAILD_DURATION:
         return 400
 
       case ErrorCode.FAILED_AUTHENTICATION:
@@ -209,6 +211,7 @@ export class ValidationHelper {
       case ErrorCode.USER_NOT_FOUND:
       case ErrorCode.RECORD_NOT_FOUND:
       case ErrorCode.NOTIFICATION_NOT_FOUND:
+      case ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM:
         return 404
 
       case ErrorCode.DATABASE_UNIQUE_CONSTRAINT_VIOLATION:
