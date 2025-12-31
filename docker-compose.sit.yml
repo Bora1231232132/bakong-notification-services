@@ -53,7 +53,7 @@ services:
       - NODE_ENV=staging
       - CORS_ORIGIN=https://sit-bakong-notification.nbc.gov.kh,http://10.20.6.57
       - LOG_LEVEL=info
-      - TYPEORM_SYNCHRONIZE=true
+      - TYPEORM_SYNCHRONIZE=false
     volumes:
       # SIT Firebase service account files for all platforms
       - ./bakong-sit-firebase-service-account.json:/opt/bk_notification_service/bakong-sit-firebase-service-account.json:ro
