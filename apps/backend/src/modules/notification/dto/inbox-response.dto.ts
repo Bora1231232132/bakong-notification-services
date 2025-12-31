@@ -55,7 +55,7 @@ export class InboxResponseDto implements NotificationData {
         : null)
 
     this.id = Number(data.id)
-    this.templateId = data.templateId || 0
+    this.templateId = Number(data.templateId || 0)
     this.language = language
     this.notificationType = data.template?.notificationType || NotificationType.ANNOUNCEMENT
     this.categoryType = data.template?.categoryType || CategoryType.NEWS
