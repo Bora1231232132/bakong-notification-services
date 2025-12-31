@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS bakong_user (
     "fcmToken" VARCHAR(255) NOT NULL,
     "participantCode" VARCHAR(50),
     platform VARCHAR(50),
+    "bakongPlatform" bakong_platform_enum,
     language VARCHAR(10) DEFAULT 'EN',
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -77,6 +78,9 @@ CREATE TABLE IF NOT EXISTS template (
     "sendInterval" INTEGER,
     "isSent" BOOLEAN DEFAULT FALSE,
     "sendSchedule" TIMESTAMPTZ,
+    "createdBy" VARCHAR(255),
+    "updatedBy" VARCHAR(255),
+    "publishedBy" VARCHAR(255),
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "deletedAt" TIMESTAMPTZ NULL
