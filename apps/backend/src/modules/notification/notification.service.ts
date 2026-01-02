@@ -813,7 +813,7 @@ export class NotificationService {
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
       const extraData = {
-        templateId: String(template.id),
+        templateId: template.id,
         notificationType: String(template.notificationType),
         categoryType: String(template.categoryType),
         language: String(translation.language),

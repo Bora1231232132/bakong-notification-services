@@ -7,6 +7,7 @@ import {
   IsArray,
   ValidateNested,
   ValidateIf,
+  IsInt,
 } from 'class-validator'
 import { CategoryType, Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
@@ -54,7 +55,14 @@ export default class SentNotificationDto {
   language: Language
 
   @IsOptional()
-  @IsNumber()
+  @Transform(({ value }) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = parseInt(value, 10)
+      return Number.isNaN(parsed) ? value : parsed
+    }
+    return value
+  })
+  @IsInt()
   templateId?: number
 
   @IsOptional()
@@ -87,7 +95,14 @@ export default class SentNotificationDto {
   categoryType?: CategoryType
 
   @IsOptional()
-  @IsNumber()
+  @Transform(({ value }) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = parseInt(value, 10)
+      return Number.isNaN(parsed) ? value : parsed
+    }
+    return value
+  })
+  @IsInt()
   notificationId?: number
 
   @IsOptional()

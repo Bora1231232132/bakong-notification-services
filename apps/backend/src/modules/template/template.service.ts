@@ -1473,9 +1473,9 @@ export class TemplateService implements OnModuleInit {
     return { template, notificationType: validatedRequest }
   }
 
-  async findTemplateById(templateId: string): Promise<Template> {
+  async findTemplateById(templateId: number): Promise<Template> {
     const template = await this.repo.findOne({
-      where: { id: Number(templateId) },
+      where: { id: templateId },
       relations: ['translations', 'translations.image'],
     })
 
