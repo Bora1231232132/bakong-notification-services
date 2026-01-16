@@ -1,14 +1,16 @@
 import { api } from './api'
+import { UserRole } from '@bakong/shared'
 
 export interface User {
   id: number
-  username: string
-  displayName: string
-  role: 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER'
-  failLoginAttempt: number
-  createdAt: string
-  updatedAt?: string
-  deletedAt?: string
+  name: string // Backend returns 'name' (mapped from displayName)
+  email: string // Backend returns 'email' (mapped from username)
+  phoneNumber: string
+  role: UserRole
+  status: string
+  imageId?: string
+  createdAt: string | Date
+  updatedAt?: string | Date
 }
 
 export interface UserFilters {
@@ -28,16 +30,20 @@ export interface PaginatedResponse<T> {
 
 export interface CreateUserData {
   username: string
+  email: string
   displayName: string
   password: string
-  role: 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER'
+  role: UserRole
+  phoneNumber: string
 }
 
 export interface UpdateUserData {
-  username?: string
+  email?: string
   displayName?: string
   password?: string
-  role?: 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER'
+  role?: UserRole
+  phoneNumber?: string
+  status?: string // UserStatus: 'ACTIVE' or 'DEACTIVATED'
 }
 
 export const userApi = {
@@ -50,61 +56,36 @@ export const userApi = {
       }
 
       try {
-        const response = await api.get('/auth/users', {
+        // Call the correct endpoint: /api/v1/user
+        const response = await api.get('/api/v1/user', {
           params: {
             page: filters.page || 1,
-            pageSize: filters.pageSize || 10,
+            size: filters.pageSize || 10, // Backend uses 'size' not 'pageSize'
             search: filters.search,
             role: filters.role,
           },
         })
 
-        let users = []
-        if (response.data && Array.isArray(response.data)) {
-          users = response.data
-        } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-          users = response.data.data
-        } else if (response.data && response.data.users && Array.isArray(response.data.users)) {
-          users = response.data.users
-        } else {
-          throw new Error('Invalid response format from backend')
+        // Backend response format: { responseCode: 0, data: { users: [...], pagination: {...} } }
+        if (response.data && response.data.responseCode === 0 && response.data.data) {
+          const responseData = response.data.data
+          const users = responseData.users || []
+          const pagination = responseData.pagination || {}
+
+          return {
+            data: users,
+            total: pagination.total || users.length,
+            page: pagination.page || filters.page || 1,
+            pageSize: pagination.size || filters.pageSize || 10,
+            totalPages:
+              pagination.totalPages ||
+              Math.ceil(
+                (pagination.total || users.length) / (pagination.size || filters.pageSize || 10),
+              ),
+          }
         }
 
-        let filteredUsers = users
-
-        if (filters.search) {
-          const searchLower = filters.search.toLowerCase()
-          filteredUsers = filteredUsers.filter(
-            (user: any) =>
-              user.username.toLowerCase().includes(searchLower) ||
-              user.displayName.toLowerCase().includes(searchLower) ||
-              user.role.toLowerCase().includes(searchLower),
-          )
-        }
-
-        if (filters.role) {
-          filteredUsers = filteredUsers.filter((user: any) => user.role === filters.role)
-        }
-
-        filteredUsers.sort((a: any, b: any) => {
-          const dateA = new Date(a.createdAt).getTime()
-          const dateB = new Date(b.createdAt).getTime()
-          return dateB - dateA
-        })
-
-        const page = filters.page || 1
-        const pageSize = filters.pageSize || 10
-        const startIndex = (page - 1) * pageSize
-        const endIndex = startIndex + pageSize
-        const paginatedData = filteredUsers.slice(startIndex, endIndex)
-
-        return {
-          data: paginatedData,
-          total: filteredUsers.length,
-          page,
-          pageSize,
-          totalPages: Math.ceil(filteredUsers.length / pageSize),
-        }
+        throw new Error('Invalid response format from backend')
       } catch (apiError: any) {
         throw apiError
       }
@@ -121,9 +102,15 @@ export const userApi = {
       }
 
       try {
-        const response = await api.get(`/auth/users/${userId}`)
+        // Call the correct endpoint: /api/v1/user/:id
+        const response = await api.get(`/api/v1/user/${userId}`)
 
-        return response.data.data || response.data || null
+        // Backend response format: { responseCode: 0, data: { id, name, email, ... } }
+        if (response.data && response.data.responseCode === 0 && response.data.data) {
+          return response.data.data
+        }
+
+        return null
       } catch (apiError: any) {
         throw apiError
       }
@@ -136,18 +123,23 @@ export const userApi = {
     try {
       const token = localStorage.getItem('auth_token')
       if (!token) {
-        return true
+        throw new Error('Authentication required. Please login again.')
       }
 
       try {
-        const response = await api.post('/api/v1/user/create', userData)
+        const response = await api.post('/api/v1/user', userData)
 
-        return response.status === 200 || response.status === 201
-      } catch (apiError: any) {
+        if (response.data && response.data.responseCode === 0) {
+          return true
+        }
+
         return false
+      } catch (apiError: any) {
+        // Re-throw to let the caller handle the error
+        throw apiError
       }
     } catch (error: any) {
-      return false
+      throw error
     }
   },
 
@@ -155,18 +147,23 @@ export const userApi = {
     try {
       const token = localStorage.getItem('auth_token')
       if (!token) {
-        return true
+        throw new Error('Authentication required. Please login again.')
       }
 
       try {
         const response = await api.put(`/api/v1/user/${userId}`, userData)
 
-        return response.status === 200
-      } catch (apiError: any) {
+        if (response.data && response.data.responseCode === 0) {
+          return true
+        }
+
         return false
+      } catch (apiError: any) {
+        // Re-throw to let the caller handle the error
+        throw apiError
       }
     } catch (error: any) {
-      return false
+      throw error
     }
   },
 
@@ -262,6 +259,41 @@ export const userApi = {
       }
     } catch (error: any) {
       throw error
+    }
+  },
+
+  async setupInitialPassword(
+    userId: number,
+    newPassword: string,
+    confirmNewPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await api.post('/api/v1/auth/setup-initial-password', {
+        userId,
+        newPassword,
+        confirmNewPassword,
+      })
+
+      if (response.data && response.data.responseCode === 0) {
+        return {
+          success: true,
+          message: response.data.responseMessage || 'Password set successfully',
+        }
+      }
+
+      return {
+        success: false,
+        message: response.data?.responseMessage || 'Failed to set password',
+      }
+    } catch (apiError: any) {
+      const errorData = apiError.response?.data
+      const errorMessage =
+        errorData?.responseMessage ||
+        errorData?.message ||
+        apiError.message ||
+        'Failed to set password'
+
+      throw new Error(errorMessage)
     }
   },
 }

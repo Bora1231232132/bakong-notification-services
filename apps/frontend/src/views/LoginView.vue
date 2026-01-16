@@ -196,12 +196,10 @@ const handleSubmitLogin = async (formRef: any) => {
 
       await new Promise((resolve) => setTimeout(resolve, 200))
 
-      if (authStore.user && authStore.token) {
-        router.replace('/')
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 200))
-        router.replace('/')
-      }
+      // If backend indicates this is a temporary/default password,
+      // send user directly to change-password screen.
+      const targetRoute = result.mustChangePassword ? '/change-password' : '/'
+      router.replace(targetRoute)
     } else {
       const errorMessage = result?.error || 'Login failed. Please try again.'
 

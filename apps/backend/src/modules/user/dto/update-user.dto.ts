@@ -1,0 +1,29 @@
+import { IsNotEmpty, IsString, IsEnum, IsOptional, IsEmail, Length, Matches } from 'class-validator'
+import { UserRole, UserStatus } from '@bakong/shared'
+
+export class UpdateUserDto {
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole
+
+  @IsNotEmpty()
+  @IsEnum(UserStatus)
+  status: UserStatus
+
+  @IsNotEmpty()
+  @IsString()
+  displayName: string
+
+  @IsNotEmpty()
+  @IsString()
+  @IsEmail({}, { message: 'Email must be a valid email address' })
+  email: string
+
+  @IsNotEmpty()
+  @IsString()
+  @Length(10, 20)
+  @Matches(/^[+]?[0-9\s\-().]{10,20}$/, {
+    message: 'Phone number must be in a valid format',
+  })
+  phoneNumber: string
+}

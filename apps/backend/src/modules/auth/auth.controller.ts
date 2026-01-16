@@ -18,6 +18,8 @@ import { Roles } from 'src/common/middleware/roles.guard'
 import { LocalAuthGuard } from '../../common/middleware/local-auth.guard'
 import { CreateUserDto } from '../user/dto/create-user.dto'
 import { ChangePasswordDto } from './dto/change-password.dto'
+import { SetupPasswordDto } from './dto/setup-password.dto'
+import { SetupInitialPasswordDto } from './dto/setup-initial-password.dto'
 import { AuthService } from './auth.service'
 
 @Controller('auth')
@@ -31,7 +33,7 @@ export class AuthController {
     return this.authService.login(req.user, req)
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Get('jwt')
   async decodeJwt(@Req() req) {
     return req.user
@@ -43,7 +45,7 @@ export class AuthController {
     return this.authService.register(dto)
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Get('users')
   async getAllUsers(
     @Query('page') page = 1,
@@ -54,7 +56,7 @@ export class AuthController {
     return this.authService.getAllUsers(page, pageSize, search, role)
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Get('users/:id')
   async getUserById(@Param('id') id: number) {
     return this.authService.getUserById(id)
@@ -64,6 +66,24 @@ export class AuthController {
   async changePassword(@Req() req, @Body() dto: ChangePasswordDto) {
     // JWT strategy returns { id: payload.sub, ... }, so use req.user.id
     return this.authService.changePassword(req.user.id, dto)
+  }
+
+  @Public()
+  @Get('verify/:token')
+  async verifyAccount(@Param('token') token: string) {
+    return this.authService.verifyAccount(token)
+  }
+
+  @Public()
+  @Post('setup-password')
+  async setupPassword(@Body() dto: SetupPasswordDto) {
+    return this.authService.setupPassword(dto.userId, dto.newPassword)
+  }
+
+  @Public()
+  @Post('setup-initial-password')
+  async setupInitialPassword(@Body() dto: SetupInitialPasswordDto) {
+    return this.authService.setupInitialPassword(dto.userId, dto.newPassword)
   }
 
   @Post('upload-avatar')

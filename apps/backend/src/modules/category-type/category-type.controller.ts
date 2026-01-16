@@ -71,7 +71,7 @@ export class CategoryTypeController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Post()
   @UseInterceptors(FileInterceptor('icon'))
   async create(@Body('name') name: string, @UploadedFile() file?: Express.Multer.File) {
@@ -109,7 +109,7 @@ export class CategoryTypeController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Put(':id')
   @UseInterceptors(FileInterceptor('icon'))
   async update(
@@ -154,7 +154,7 @@ export class CategoryTypeController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.categoryTypeService.remove(id)

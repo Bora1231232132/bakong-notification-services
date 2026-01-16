@@ -3,10 +3,10 @@
 -- ============================================================================
 -- This script combines initialization and all migrations into one file
 -- It's safe to run multiple times (idempotent) - checks before creating/adding
--- 
+--
 -- Usage:
 --   psql -U <username> -d <database> -f apps/backend/unified-migration.sql
--- 
+--
 -- Or via Docker:
 --   docker exec -i <container-name> psql -U <username> -d <database> < apps/backend/unified-migration.sql
 -- ============================================================================
@@ -42,35 +42,35 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  user_role_enum already exists';
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'send_type_enum') THEN
         CREATE TYPE send_type_enum AS ENUM ('SEND_NOW', 'SEND_SCHEDULE', 'SEND_INTERVAL');
         RAISE NOTICE '✅ Created send_type_enum';
     ELSE
         RAISE NOTICE 'ℹ️  send_type_enum already exists';
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'platform_enum') THEN
         CREATE TYPE platform_enum AS ENUM ('ALL', 'IOS', 'ANDROID');
         RAISE NOTICE '✅ Created platform_enum';
     ELSE
         RAISE NOTICE 'ℹ️  platform_enum already exists';
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'language_enum') THEN
         CREATE TYPE language_enum AS ENUM ('EN', 'KM', 'JP');
         RAISE NOTICE '✅ Created language_enum';
     ELSE
         RAISE NOTICE 'ℹ️  language_enum already exists';
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bakong_platform_enum') THEN
         CREATE TYPE bakong_platform_enum AS ENUM ('BAKONG', 'BAKONG_TOURIST', 'BAKONG_JUNIOR');
         RAISE NOTICE '✅ Created bakong_platform_enum';
     ELSE
         RAISE NOTICE 'ℹ️  bakong_platform_enum already exists';
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type_enum') THEN
         CREATE TYPE notification_type_enum AS ENUM ('FLASH_NOTIFICATION', 'ANNOUNCEMENT', 'NOTIFICATION');
         RAISE NOTICE '✅ Created notification_type_enum';
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     password VARCHAR(255) NOT NULL,
     "displayName" VARCHAR(255) NOT NULL,
     role VARCHAR(50) DEFAULT 'NORMAL_USER',
-    "failLoginAttempt" INTEGER DEFAULT 0,
+    "syncStatus" JSONB DEFAULT '{"failLoginAttempt": 0, "login_at": null, "changePassword_count": 0}'::jsonb,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "deletedAt" TIMESTAMPTZ NULL
@@ -208,8 +208,8 @@ CREATE TABLE IF NOT EXISTS notification (
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'bakongPlatform'
     ) THEN
         ALTER TABLE template ADD COLUMN "bakongPlatform" bakong_platform_enum;
@@ -223,8 +223,8 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'bakongPlatform'
     ) THEN
         ALTER TABLE bakong_user ADD COLUMN "bakongPlatform" bakong_platform_enum;
@@ -238,8 +238,8 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'createdBy'
     ) THEN
         ALTER TABLE template ADD COLUMN "createdBy" VARCHAR(255);
@@ -247,10 +247,10 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  template.createdBy already exists';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'updatedBy'
     ) THEN
         ALTER TABLE template ADD COLUMN "updatedBy" VARCHAR(255);
@@ -258,10 +258,10 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  template.updatedBy already exists';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'publishedBy'
     ) THEN
         ALTER TABLE template ADD COLUMN "publishedBy" VARCHAR(255);
@@ -269,11 +269,11 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  template.publishedBy already exists';
     END IF;
-    
+
     -- Add showPerDay column for flash notification limits
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'showPerDay'
     ) THEN
         ALTER TABLE template ADD COLUMN "showPerDay" INTEGER DEFAULT 1;
@@ -281,11 +281,11 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  template.showPerDay already exists';
     END IF;
-    
+
     -- Add maxDayShowing column for flash notification limits
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'maxDayShowing'
     ) THEN
         ALTER TABLE template ADD COLUMN "maxDayShowing" INTEGER DEFAULT 1;
@@ -299,8 +299,8 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
         AND column_name = 'imageId'
     ) THEN
         ALTER TABLE "user" ADD COLUMN "imageId" VARCHAR(255) NULL;
@@ -310,13 +310,53 @@ BEGIN
     END IF;
 END$$;
 
+-- Add phoneNumber column to user table (after role column)
+DO $$
+DECLARE
+    null_count INTEGER;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
+        AND column_name = 'phoneNumber'
+    ) THEN
+        ALTER TABLE "user" ADD COLUMN "phoneNumber" VARCHAR(20) NULL;
+        RAISE NOTICE '✅ Added phoneNumber column to user table';
+
+        SELECT COUNT(*) INTO null_count FROM "user" WHERE "phoneNumber" IS NULL;
+        IF null_count > 0 THEN
+            UPDATE "user" SET "phoneNumber" = '0000000000' WHERE "phoneNumber" IS NULL;
+            RAISE NOTICE '✅ Updated % existing users with placeholder phone number', null_count;
+        END IF;
+
+        ALTER TABLE "user" ALTER COLUMN "phoneNumber" SET NOT NULL;
+        RAISE NOTICE '✅ Made phoneNumber NOT NULL';
+    ELSE
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'user'
+            AND column_name = 'phoneNumber'
+            AND is_nullable = 'YES'
+        ) THEN
+            SELECT COUNT(*) INTO null_count FROM "user" WHERE "phoneNumber" IS NULL;
+            IF null_count > 0 THEN
+                UPDATE "user" SET "phoneNumber" = '0000000000' WHERE "phoneNumber" IS NULL;
+            END IF;
+            ALTER TABLE "user" ALTER COLUMN "phoneNumber" SET NOT NULL;
+            RAISE NOTICE '✅ Made phoneNumber NOT NULL';
+        ELSE
+            RAISE NOTICE 'ℹ️  user.phoneNumber already exists and is NOT NULL';
+        END IF;
+    END IF;
+END$$;
+
 -- Fix sendInterval column type from INTEGER to JSON (if needed)
 DO $$
 BEGIN
     -- Check if sendInterval exists and is INTEGER type
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'sendInterval'
         AND data_type = 'integer'
     ) THEN
@@ -324,8 +364,8 @@ BEGIN
         ALTER TABLE template ALTER COLUMN "sendInterval" TYPE JSON USING NULL;
         RAISE NOTICE '✅ Changed sendInterval from INTEGER to JSON';
     ELSIF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'sendInterval'
         AND data_type = 'json'
     ) THEN
@@ -339,23 +379,23 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'platforms'
         AND data_type = 'character varying'
     ) THEN
         -- Convert VARCHAR to TEXT[] array
         -- Handle existing data: convert comma-separated string to array or empty array
-        ALTER TABLE template 
-        ALTER COLUMN platforms TYPE TEXT[] 
-        USING CASE 
+        ALTER TABLE template
+        ALTER COLUMN platforms TYPE TEXT[]
+        USING CASE
             WHEN platforms IS NULL OR platforms = '' THEN ARRAY[]::TEXT[]
             ELSE string_to_array(platforms, ',')
         END;
         RAISE NOTICE '✅ Changed platforms from VARCHAR to TEXT[] array';
     ELSIF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'platforms'
         AND udt_name = '_text'
     ) THEN
@@ -369,23 +409,23 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'notificationType'
         AND data_type = 'character varying'
     ) THEN
         -- Convert VARCHAR to notification_type_enum
-        ALTER TABLE template 
-        ALTER COLUMN "notificationType" TYPE notification_type_enum 
-        USING CASE 
-            WHEN "notificationType" IN ('FLASH_NOTIFICATION', 'ANNOUNCEMENT', 'NOTIFICATION') 
+        ALTER TABLE template
+        ALTER COLUMN "notificationType" TYPE notification_type_enum
+        USING CASE
+            WHEN "notificationType" IN ('FLASH_NOTIFICATION', 'ANNOUNCEMENT', 'NOTIFICATION')
             THEN "notificationType"::notification_type_enum
             ELSE 'FLASH_NOTIFICATION'::notification_type_enum
         END;
         RAISE NOTICE '✅ Changed notificationType from VARCHAR to notification_type_enum';
     ELSIF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'notificationType'
         AND udt_name = 'notification_type_enum'
     ) THEN
@@ -399,8 +439,8 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'categoryTypeId'
     ) THEN
         ALTER TABLE template ADD COLUMN "categoryTypeId" INTEGER NULL;
@@ -414,8 +454,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'categoryType'
     ) THEN
         ALTER TABLE template DROP COLUMN "categoryType";
@@ -437,8 +477,8 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'image' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'image'
         AND column_name = 'fileHash'
     ) THEN
         ALTER TABLE image ADD COLUMN "fileHash" VARCHAR(32);
@@ -452,8 +492,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
         AND column_name = 'displayName'
         AND is_nullable = 'YES'
     ) THEN
@@ -470,7 +510,7 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
+        SELECT 1 FROM pg_constraint
         WHERE conrelid = 'bakong_user'::regclass
         AND conname LIKE '%accountId%'
         AND contype = 'u'
@@ -478,9 +518,9 @@ BEGIN
         -- Handle any duplicate accountIds first
         DELETE FROM bakong_user a
         USING bakong_user b
-        WHERE a.id > b.id 
+        WHERE a.id > b.id
         AND a."accountId" = b."accountId";
-        
+
         ALTER TABLE bakong_user ADD CONSTRAINT "UQ_bakong_user_accountId" UNIQUE ("accountId");
         RAISE NOTICE '✅ Added UNIQUE constraint on bakong_user.accountId';
     ELSE
@@ -495,28 +535,28 @@ DECLARE
 BEGIN
     -- First, check and clean up NULL values BEFORE making any changes
     SELECT COUNT(*) INTO null_count FROM notification WHERE "templateId" IS NULL;
-    
+
     IF null_count > 0 THEN
         RAISE NOTICE '⚠️  Found % notification records with NULL templateId - cleaning up...', null_count;
         DELETE FROM notification WHERE "templateId" IS NULL;
         RAISE NOTICE '✅ Deleted % notification records with NULL templateId', null_count;
     END IF;
-    
+
     -- Change to BIGINT if it's INTEGER
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'notification' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notification'
         AND column_name = 'templateId'
         AND data_type = 'integer'
     ) THEN
         ALTER TABLE notification ALTER COLUMN "templateId" TYPE BIGINT;
         RAISE NOTICE '✅ Changed notification.templateId from INTEGER to BIGINT';
     END IF;
-    
+
     -- Make NOT NULL if it's nullable (after cleaning NULL values)
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'notification' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notification'
         AND column_name = 'templateId'
         AND is_nullable = 'YES'
     ) THEN
@@ -525,7 +565,7 @@ BEGIN
         IF null_count > 0 THEN
             RAISE EXCEPTION 'Cannot make templateId NOT NULL: % records still have NULL values', null_count;
         END IF;
-        
+
         ALTER TABLE notification ALTER COLUMN "templateId" SET NOT NULL;
         RAISE NOTICE '✅ Made notification.templateId NOT NULL';
     ELSE
@@ -537,8 +577,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'id'
         AND data_type = 'integer'
     ) THEN
@@ -554,8 +594,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'image' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'image'
         AND column_name = 'id'
         AND data_type = 'integer'
     ) THEN
@@ -569,23 +609,23 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
         AND column_name = 'role'
         AND data_type = 'character varying'
     ) THEN
         -- Convert VARCHAR to user_role_enum
-        ALTER TABLE "user" 
-        ALTER COLUMN role TYPE user_role_enum 
-        USING CASE 
-            WHEN role IN ('ADMIN_USER', 'NORMAL_USER', 'API_USER') 
+        ALTER TABLE "user"
+        ALTER COLUMN role TYPE user_role_enum
+        USING CASE
+            WHEN role IN ('ADMIN_USER', 'NORMAL_USER', 'API_USER')
             THEN role::user_role_enum
             ELSE 'NORMAL_USER'::user_role_enum
         END;
         RAISE NOTICE '✅ Changed user.role from VARCHAR to user_role_enum';
     ELSIF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
         AND column_name = 'role'
         AND udt_name = 'user_role_enum'
     ) THEN
@@ -599,8 +639,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'sendType'
         AND column_default LIKE '%SEND_NOW%'
     ) THEN
@@ -615,8 +655,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'template' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
         AND column_name = 'priority'
         AND column_default LIKE '%1%'
     ) THEN
@@ -632,30 +672,30 @@ DO $$
 BEGIN
     -- Fix participantCode length from 50 to 32
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'participantCode'
         AND character_maximum_length = 50
     ) THEN
         ALTER TABLE bakong_user ALTER COLUMN "participantCode" TYPE VARCHAR(32);
         RAISE NOTICE '✅ Changed bakong_user.participantCode length from 50 to 32';
     END IF;
-    
+
     -- Fix platform length from 50 to 32
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'platform'
         AND character_maximum_length = 50
     ) THEN
         ALTER TABLE bakong_user ALTER COLUMN platform TYPE VARCHAR(32);
         RAISE NOTICE '✅ Changed bakong_user.platform length from 50 to 32';
     END IF;
-    
+
     -- Fix language length from 10 to 2
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'language'
         AND character_maximum_length = 10
     ) THEN
@@ -668,8 +708,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'image' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'image'
         AND column_name = 'file'
         AND is_nullable = 'YES'
     ) THEN
@@ -686,8 +726,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'image' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'image'
         AND column_name = 'mimeType'
         AND is_nullable = 'YES'
     ) THEN
@@ -712,12 +752,12 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
+        SELECT 1 FROM information_schema.table_constraints
         WHERE constraint_name = 'FK_template_translation_template'
         AND table_name = 'template_translation'
     ) THEN
-        ALTER TABLE template_translation 
-        ADD CONSTRAINT "FK_template_translation_template" 
+        ALTER TABLE template_translation
+        ADD CONSTRAINT "FK_template_translation_template"
         FOREIGN KEY ("templateId") REFERENCES template(id) ON DELETE CASCADE;
         RAISE NOTICE '✅ Added FK_template_translation_template';
     ELSE
@@ -729,12 +769,12 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
+        SELECT 1 FROM information_schema.table_constraints
         WHERE constraint_name = 'FK_template_translation_image'
         AND table_name = 'template_translation'
     ) THEN
-        ALTER TABLE template_translation 
-        ADD CONSTRAINT "FK_template_translation_image" 
+        ALTER TABLE template_translation
+        ADD CONSTRAINT "FK_template_translation_image"
         FOREIGN KEY ("imageId") REFERENCES image("fileId") ON DELETE SET NULL;
         RAISE NOTICE '✅ Added FK_template_translation_image';
     ELSE
@@ -754,27 +794,27 @@ BEGIN
     WHERE conrelid = 'notification'::regclass
       AND contype = 'f'
       AND confrelid = 'template'::regclass;
-    
+
     -- Drop the constraint if it exists (to update it to CASCADE)
     IF constraint_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE notification DROP CONSTRAINT %I', constraint_name);
         RAISE NOTICE '✅ Dropped existing FK_notification_template to update to CASCADE';
     END IF;
-    
+
     -- Clean up orphaned notification records (those with NULL templateId or invalid templateId)
     DELETE FROM notification
-    WHERE "templateId" IS NULL 
+    WHERE "templateId" IS NULL
        OR "templateId" NOT IN (SELECT id FROM template);
-    
+
     IF (SELECT COUNT(*) FROM notification WHERE "templateId" IS NULL OR "templateId" NOT IN (SELECT id FROM template)) > 0 THEN
         RAISE NOTICE '✅ Cleaned up orphaned notification records';
     ELSE
         RAISE NOTICE 'ℹ️  No orphaned notification records found';
     END IF;
-    
+
     -- Recreate the constraint with CASCADE delete
-    ALTER TABLE notification 
-    ADD CONSTRAINT "FK_notification_template" 
+    ALTER TABLE notification
+    ADD CONSTRAINT "FK_notification_template"
     FOREIGN KEY ("templateId") REFERENCES template(id) ON DELETE CASCADE;
     RAISE NOTICE '✅ Added FK_notification_template with CASCADE delete';
 END$$;
@@ -783,7 +823,7 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
+        SELECT 1 FROM information_schema.table_constraints
         WHERE constraint_name = 'fk_template_category_type'
         AND table_name = 'template'
         AND constraint_type = 'FOREIGN KEY'
@@ -845,23 +885,23 @@ DECLARE
     processed_count INTEGER := 0;
 BEGIN
     -- Populate fileHash for existing images that don't have it
-    FOR image_record IN 
+    FOR image_record IN
         SELECT id, file FROM image WHERE "fileHash" IS NULL AND file IS NOT NULL
     LOOP
         -- Compute MD5 hash of the file
         SELECT md5(image_record.file) INTO hash_value;
-        
+
         -- Update the record with the hash
         UPDATE image SET "fileHash" = hash_value WHERE id = image_record.id;
-        
+
         processed_count := processed_count + 1;
-        
+
         -- Log progress every 100 records
         IF processed_count % 100 = 0 THEN
             RAISE NOTICE '   Processed % images...', processed_count;
         END IF;
     END LOOP;
-    
+
     IF processed_count > 0 THEN
         RAISE NOTICE '✅ Populated fileHash for % existing images', processed_count;
     ELSE
@@ -878,17 +918,17 @@ DO $$
 BEGIN
     -- Check if unique constraint already exists
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'UQ_image_fileHash'
     ) THEN
         -- First, handle any duplicate hashes (shouldn't happen, but just in case)
         -- Keep the oldest record for each hash
         DELETE FROM image a
         USING image b
-        WHERE a.id > b.id 
+        WHERE a.id > b.id
         AND a."fileHash" = b."fileHash"
         AND a."fileHash" IS NOT NULL;
-        
+
         -- Now add unique constraint
         ALTER TABLE image ADD CONSTRAINT "UQ_image_fileHash" UNIQUE ("fileHash");
         RAISE NOTICE '✅ Added unique constraint on fileHash';
@@ -905,8 +945,8 @@ END$$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'image' 
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'image'
         AND column_name = 'fileHash'
         AND is_nullable = 'YES'
     ) THEN
@@ -939,19 +979,19 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 
-        FROM information_schema.columns 
-        WHERE table_name = 'bakong_user' 
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'bakong_user'
         AND column_name = 'syncStatus'
     ) THEN
         -- Add syncStatus column
-        ALTER TABLE bakong_user 
+        ALTER TABLE bakong_user
         ADD COLUMN "syncStatus" JSONB DEFAULT '{
           "status": "SUCCESS",
           "lastSyncAt": null,
           "lastSyncMessage": null
         }'::jsonb;
-        
+
         RAISE NOTICE '✅ Added syncStatus column to bakong_user table';
     ELSE
         RAISE NOTICE 'ℹ️  syncStatus column already exists, skipping';
@@ -962,13 +1002,13 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 
-        FROM pg_indexes 
+        SELECT 1
+        FROM pg_indexes
         WHERE indexname = 'idx_bakong_user_sync_status_gin'
     ) THEN
-        CREATE INDEX idx_bakong_user_sync_status_gin 
+        CREATE INDEX idx_bakong_user_sync_status_gin
         ON bakong_user USING GIN ("syncStatus");
-        
+
         RAISE NOTICE '✅ Created GIN index on syncStatus';
     ELSE
         RAISE NOTICE 'ℹ️  GIN index already exists, skipping';
@@ -979,13 +1019,13 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 
-        FROM pg_indexes 
+        SELECT 1
+        FROM pg_indexes
         WHERE indexname = 'idx_bakong_user_sync_status'
     ) THEN
-        CREATE INDEX idx_bakong_user_sync_status 
+        CREATE INDEX idx_bakong_user_sync_status
         ON bakong_user USING BTREE (("syncStatus"->>'status'));
-        
+
         RAISE NOTICE '✅ Created BTREE index on syncStatus status';
     ELSE
         RAISE NOTICE 'ℹ️  BTREE status index already exists, skipping';
@@ -996,15 +1036,15 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 
-        FROM pg_indexes 
+        SELECT 1
+        FROM pg_indexes
         WHERE indexname = 'idx_bakong_user_sync_last_sync_at'
     ) THEN
         -- Create partial index for non-NULL values
-        CREATE INDEX idx_bakong_user_sync_last_sync_at 
+        CREATE INDEX idx_bakong_user_sync_last_sync_at
         ON bakong_user USING BTREE (((syncStatus->>'lastSyncAt')::timestamp))
         WHERE syncStatus->>'lastSyncAt' IS NOT NULL;
-        
+
         RAISE NOTICE '✅ Created BTREE index on syncStatus lastSyncAt';
     ELSE
         RAISE NOTICE 'ℹ️  BTREE lastSyncAt index already exists, skipping';
@@ -1015,7 +1055,7 @@ EXCEPTION
 END $$;
 
 -- Update existing users with default sync status if they don't have one
-UPDATE bakong_user 
+UPDATE bakong_user
 SET "syncStatus" = '{
   "status": "SUCCESS",
   "lastSyncAt": null,
@@ -1061,29 +1101,29 @@ COMMENT ON COLUMN bakong_user."syncStatus" IS 'JSONB column tracking sync status
 \echo ''
 
 -- List all tables
-SELECT 
+SELECT
     'Tables' as category,
     COUNT(*)::text as count
-FROM information_schema.tables 
-WHERE table_schema = 'public' 
+FROM information_schema.tables
+WHERE table_schema = 'public'
 AND table_type = 'BASE TABLE'
 
 UNION ALL
 
 -- List all columns in template table
-SELECT 
+SELECT
     'template.columns' as category,
     COUNT(*)::text as count
-FROM information_schema.columns 
+FROM information_schema.columns
 WHERE table_name = 'template'
 
 UNION ALL
 
 -- List all indexes
-SELECT 
+SELECT
     'Indexes' as category,
     COUNT(*)::text as count
-FROM pg_indexes 
+FROM pg_indexes
 WHERE schemaname = 'public';
 
 \echo ''

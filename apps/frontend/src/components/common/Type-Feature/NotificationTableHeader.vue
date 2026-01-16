@@ -9,7 +9,7 @@
       <input
         v-model="searchValue"
         type="text"
-        placeholder="Search by name..."
+        :placeholder="searchPlaceholder || getDefaultPlaceholder()"
         class="flex-1 sm:flex-initial sm:w-[313px] h-[56px] px-4 border border-[#0013461A] focus:border-[#0013460D] outline-blue-500/50 rounded-[8px] text-[#001346] text-[14px]"
         style="padding-left: 16px !important"
         @input="handleSearch"
@@ -60,10 +60,12 @@ const props = withDefaults(
     modelValue?: string
     showRefresh?: boolean
     labelText?: string
+    searchPlaceholder?: string
   }>(),
   {
     showRefresh: true,
     labelText: 'Category type',
+    searchPlaceholder: '',
   },
 )
 
@@ -78,6 +80,15 @@ const emit = defineEmits<{
 const searchValue = ref(props.modelValue || '')
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
+
+const getDefaultPlaceholder = () => {
+  // If labelText is "User", show username/email placeholder
+  if (props.labelText?.toLowerCase() === 'user') {
+    return 'Search by username or email...'
+  }
+  // Default placeholder for other types
+  return 'Search by name...'
+}
 
 const handleSearch = () => {
   emit('update:modelValue', searchValue.value)

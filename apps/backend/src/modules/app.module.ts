@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
 import { TypeOrmModule } from '@nestjs/typeorm'
 import { JwtAuthGuard } from 'src/common/middleware/jwt-auth.guard'
@@ -15,6 +15,7 @@ import { CategoryTypeModule } from './category-type/category-type.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { ConfigService } from '../common/services/config.service'
 import { FirebaseManager } from '../common/services/firebase-manager.service'
+import { EmailService } from '../common/services/email.service'
 import { AppController } from '../app.controller'
 import { AppService } from '../app.service'
 
@@ -25,7 +26,7 @@ import { AppService } from '../app.service'
     ManagementModule,
     NotificationModule,
     AuthModule,
-    UserModule,
+    forwardRef(() => UserModule), // Use forwardRef to allow UserModule to import AppModule
     TemplateModule,
     ImageModule,
     CategoryTypeModule,
@@ -34,6 +35,7 @@ import { AppService } from '../app.service'
   providers: [
     ConfigService,
     FirebaseManager,
+    EmailService,
     AppService,
     {
       provide: APP_GUARD,
@@ -48,6 +50,6 @@ import { AppService } from '../app.service'
       useClass: ApiKeyGuard,
     },
   ],
-  exports: [ConfigService],
+  exports: [ConfigService, EmailService],
 })
 export class AppModule {}

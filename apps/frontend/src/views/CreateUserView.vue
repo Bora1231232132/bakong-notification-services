@@ -42,29 +42,36 @@
           />
         </div>
 
-        <div class="field-input w-full max-w-[603px]">
+        <div class="field-input w-full max-w-[603px]" key="displayName-field">
           <div class="flex items-center gap-1 mb-1!">
             <span class="text-sm leading-snug text-[#001346] label-text">Name</span>
-            <span class="text-red-500 text-sm">*</span>
           </div>
           <FormField
             v-model="form.displayName"
+            type="input"
             prop="displayName"
             label=""
             placeholder="Full name"
-            required
             :disabled="loading"
             :readonly="mode === 'view'"
           />
         </div>
 
-        <div class="field-input w-full max-w-[603px]">
+        <!-- Default temporary password info (create mode only) -->
+        <p v-if="mode === 'create'" class="text-xs text-gray-500 mt-1">
+          Default temporary password for this user:
+          <span class="font-semibold">{{ form.password }}</span
+          >. They will be forced to change it on first login.
+        </p>
+
+        <div class="field-input w-full max-w-[603px]" key="username-field">
           <div class="flex items-center gap-1 mb-1!">
             <span class="text-sm leading-snug text-[#001346] label-text">Email</span>
             <span class="text-red-500 text-sm">*</span>
           </div>
           <FormField
             v-model="form.username"
+            type="input"
             prop="username"
             label=""
             placeholder="firstname.lastname.nbc.gov.kh"
@@ -124,8 +131,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { FormField, type FormFieldOption } from '@/components/common'
 import { userApi } from '@/services/userApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
-import { mockUsers } from '../../Data/mockUsers'
-import type { UserItem } from '@/components/common'
+import { UserRole } from '@bakong/shared'
 
 const router = useRouter()
 const route = useRoute()
@@ -147,19 +153,21 @@ const formRef = ref<FormInstance>()
 const loading = ref(false)
 
 const form = reactive({
-  role: 'NORMAL_USER',
+  role: UserRole.VIEW_ONLY,
   displayName: '',
   username: '',
+  email: '', // Separate email field for backend
   phoneNumber: '',
   status: 'Active', // 'Active' or 'Deactivate' - only used in edit mode
   // hidden default password to satisfy API requirement
-  password: 'Temp@12345',
+  password: 'userP0@bkns',
 })
 
+// Role options using enum, excluding ADMINISTRATOR (only ADMINISTRATOR can create other users)
 const roleOptions: FormFieldOption[] = [
-  { label: 'Normal User', value: 'NORMAL_USER' },
-  { label: 'Admin User', value: 'ADMIN_USER' },
-  { label: 'API User', value: 'API_USER' },
+  { label: 'Editor', value: UserRole.EDITOR },
+  { label: 'View Only', value: UserRole.VIEW_ONLY },
+  { label: 'Approval', value: UserRole.APPROVAL },
 ]
 
 const statusOptions: FormFieldOption[] = [
@@ -173,7 +181,7 @@ const rules = computed<FormRules>(() => {
     return {}
   }
   return {
-    displayName: [{ required: true, message: 'Name is required', trigger: 'blur' }],
+    displayName: [{ required: false }], // Optional field
     username: [
       { required: true, message: 'Email is required', trigger: 'blur' },
       { type: 'email', message: 'Invalid email', trigger: ['blur', 'change'] },
@@ -190,8 +198,9 @@ const rules = computed<FormRules>(() => {
 })
 
 const resetForm = () => {
-  form.role = 'NORMAL_USER'
+  form.role = UserRole.VIEW_ONLY
   form.username = ''
+  form.email = ''
   form.displayName = ''
   form.phoneNumber = ''
   formRef.value?.clearValidate()
@@ -208,33 +217,44 @@ const handleSubmit = () => {
     try {
       if (mode.value === 'edit' && userId.value) {
         // Edit mode - update existing user
+        // Convert email to lowercase (backend requirement)
+        const lowercaseEmail = form.username.trim().toLowerCase()
+
+        // Map form status (Active/Deactivate) to backend status (ACTIVE/DEACTIVATED)
+        const backendStatus = form.status === 'Deactivate' ? 'DEACTIVATED' : 'ACTIVE'
+
         const success = await userApi.updateUser(userId.value, {
-          username: form.username.trim(),
+          email: lowercaseEmail, // Backend expects 'email' not 'username'
           displayName: form.displayName.trim(),
-          role: form.role as 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER',
-          // Note: Status will be included in payload for future backend integration
-          // Backend should handle status by setting/clearing deletedAt field
+          role: form.role as UserRole,
+          phoneNumber: form.phoneNumber.trim(),
+          status: backendStatus, // Backend requires status field
         })
 
         if (success) {
           showSuccess('User updated successfully')
-          router.push({ path: '/users' })
+          router.push({ path: '/user-management' })
         } else {
           showWarning('Failed to update user. Please try again.')
         }
       } else {
         // Create mode - create new user
+        // Convert username to lowercase (backend requirement)
+        const lowercaseUsername = form.username.trim().toLowerCase()
+
         const success = await userApi.createUser({
-          username: form.username.trim(),
+          username: lowercaseUsername,
+          email: lowercaseUsername, // Use same value for email (user enters email in username field)
           displayName: form.displayName.trim(),
           password: form.password,
-          role: form.role as 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER',
+          role: form.role as UserRole,
+          phoneNumber: form.phoneNumber.trim(),
         })
 
         if (success) {
           showSuccess('User created successfully')
           resetForm()
-          router.push({ path: '/users' })
+          router.push({ path: '/user-management' })
         } else {
           showWarning('Failed to create user. Please try again.')
         }
@@ -291,74 +311,48 @@ const handlePhoneNumberInput = (value: string) => {
   }
 }
 
-// Helper function to convert mock user to API user format
-const convertMockUserToApiUser = (mockUser: UserItem) => {
-  // Map role from display format to API format
-  let role: 'ADMIN_USER' | 'NORMAL_USER' | 'API_USER' = 'NORMAL_USER'
-  if (mockUser.role === 'Editor' || mockUser.role === 'ADMIN_USER') {
-    role = 'ADMIN_USER'
-  } else if (mockUser.role === 'View only' || mockUser.role === 'NORMAL_USER') {
-    role = 'NORMAL_USER'
-  } else if (mockUser.role === 'Approval' || mockUser.role === 'API_USER') {
-    role = 'API_USER'
-  }
-
-  return {
-    id: typeof mockUser.id === 'string' ? parseInt(mockUser.id) : mockUser.id,
-    username: mockUser.email || mockUser.username || '',
-    displayName: mockUser.name || mockUser.displayName || '',
-    phoneNumber: mockUser.phoneNumber || '',
-    role,
-    deletedAt: mockUser.status === 'Deactivate' ? new Date().toISOString() : undefined,
-    failLoginAttempt: 0,
-    createdAt: new Date().toISOString(),
-  }
-}
-
 // Fetch user data for edit and view modes
 onMounted(async () => {
   if ((mode.value === 'edit' || mode.value === 'view') && userId.value) {
     loading.value = true
     try {
-      // Try to fetch from API first
-      let user: any = null
-      try {
-        user = await userApi.getUserById(userId.value)
-        // If API returns null, fall back to mock data
-        if (!user) {
-          throw new Error('User not found in API')
-        }
-      } catch (apiError) {
-        // If API fails, use mock data for testing
-        console.log('API call failed or returned null, using mock data for testing')
-        const mockUser = mockUsers.find((u) => {
-          const mockId = typeof u.id === 'string' ? parseInt(u.id) : u.id
-          const targetId = typeof userId.value === 'string' ? parseInt(userId.value) : userId.value
-          return mockId === targetId
-        }) as UserItem | undefined
-
-        if (mockUser) {
-          user = convertMockUserToApiUser(mockUser)
-        }
-      }
+      // Fetch user from API
+      const user = await userApi.getUserById(userId.value)
 
       if (user) {
-        form.role = user.role
-        form.displayName = user.displayName
-        form.username = user.username
+        // Map API response to form fields
+        // Backend returns: { id, name, email, phoneNumber, role, status, ... }
+        form.role = user.role as UserRole
+        form.displayName = user.name || '' // Backend returns 'name' (mapped from displayName)
+        form.username = user.email || '' // Backend returns 'email' (mapped from username)
         form.phoneNumber = user.phoneNumber || ''
-        // Compute status from deletedAt field (only used in edit mode)
-        form.status = user.deletedAt ? 'Deactivate' : 'Active'
+
+        // Map backend status (ACTIVE/DEACTIVATED) to form status (Active/Deactivate)
+        if (mode.value === 'edit') {
+          if (user.status === 'DEACTIVATED' || user.status === 'Deactivate') {
+            form.status = 'Deactivate'
+          } else {
+            form.status = 'Active'
+          }
+        }
 
         // Clear validation after data is loaded to prevent false errors
         await nextTick()
         formRef.value?.clearValidate()
       } else {
-        // If no user found in API or mock data, show error
+        // If no user found, show error
         handleApiError(new Error('User not found'), { operation: 'fetchUser' })
+        // Redirect back to user management after a delay
+        setTimeout(() => {
+          router.push({ path: '/user-management' })
+        }, 2000)
       }
     } catch (error) {
       handleApiError(error, { operation: 'fetchUser' })
+      // Redirect back to user management on error
+      setTimeout(() => {
+        router.push({ path: '/user-management' })
+      }, 2000)
     } finally {
       loading.value = false
     }
@@ -382,6 +376,12 @@ onMounted(async () => {
   border: 1px solid var(--surface-main-surface-secondary-bold, #0013461a) !important;
 }
 
+/* Normal cursor for disabled select in view mode */
+:deep(.field-select .el-select.is-disabled .el-select__wrapper),
+:deep(.field-select .el-select__wrapper.is-disabled) {
+  cursor: default !important;
+}
+
 :deep(.field-input .el-input__wrapper) {
   width: 100% !important;
   height: 56px !important;
@@ -391,6 +391,39 @@ onMounted(async () => {
   border-width: 1px !important;
   column-gap: 8px !important;
   border: 1px solid var(--surface-main-surface-secondary-bold, #0013461a) !important;
+}
+
+/* Normal cursor for readonly/disabled inputs in view mode */
+:deep(.field-input .el-input.is-disabled .el-input__wrapper),
+:deep(.field-input .el-input__wrapper.is-disabled),
+:deep(.field-input input[readonly]),
+:deep(.field-input .el-input.is-disabled),
+:deep(.field-input .el-input.is-disabled .el-input__wrapper:hover),
+:deep(.field-input .el-input__wrapper.is-disabled:hover),
+:deep(.field-input .el-input.is-disabled .el-input__wrapper:active),
+:deep(.field-input .el-input__wrapper.is-disabled:active),
+:deep(.field-input .el-input.is-disabled .el-input__wrapper:focus),
+:deep(.field-input .el-input__wrapper.is-disabled:focus) {
+  cursor: default !important;
+  pointer-events: auto !important;
+}
+
+:deep(.field-input .el-input.is-disabled .el-input__inner),
+:deep(.field-input input[readonly]),
+:deep(.field-input input[readonly]:hover),
+:deep(.field-input input[readonly]:active),
+:deep(.field-input input[readonly]:focus),
+:deep(.field-input .el-input__inner[readonly]) {
+  cursor: default !important;
+}
+
+/* Prevent text selection in readonly inputs */
+:deep(.field-input input[readonly]),
+:deep(.field-input .el-input.is-disabled .el-input__inner) {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
 }
 
 /* Position error message inside field-input container */

@@ -1,8 +1,4 @@
-export enum UserRole {
-  ADMIN_USER = 'ADMIN_USER',
-  NORMAL_USER = 'NORMAL_USER',
-  API_USER = 'API_USER',
-}
+export { UserRole } from './user-role.enum'
 
 export enum Language {
   EN = 'EN',

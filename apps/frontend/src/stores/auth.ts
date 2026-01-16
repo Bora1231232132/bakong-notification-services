@@ -99,7 +99,7 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await authApi.login(credentials)
 
       if (response.data.responseCode === 0) {
-        const { accessToken, user: userData } = response.data.data
+        const { accessToken, user: userData, mustChangePassword } = response.data.data
 
         token.value = accessToken
         user.value = userData
@@ -123,7 +123,8 @@ export const useAuthStore = defineStore('auth', () => {
 
         localStorage.setItem('auth_token', accessToken)
 
-        return { success: true }
+        // Propagate mustChangePassword flag so caller can redirect user
+        return { success: true, mustChangePassword: !!mustChangePassword }
       } else {
         // Use error handler to get the correct message based on errorCode (without showing notification)
         const apiError = {

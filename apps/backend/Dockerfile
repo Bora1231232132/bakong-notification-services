@@ -22,9 +22,18 @@ COPY apps/backend/nest-cli.json ./apps/backend/
 
 # -----------------------------------------------------
 # Install dependencies
+# Add retry logic for network resilience
 # -----------------------------------------------------
-RUN npm ci --legacy-peer-deps \
-  && cd apps/backend && npm ci --legacy-peer-deps
+RUN set -eux; \
+    for i in 1 2 3; do \
+      npm ci --legacy-peer-deps && break || \
+      (echo "⚠️  npm install attempt $i failed, retrying..." && sleep 5); \
+    done && \
+    cd apps/backend && \
+    for i in 1 2 3; do \
+      npm ci --legacy-peer-deps && break || \
+      (echo "⚠️  backend npm install attempt $i failed, retrying..." && sleep 5); \
+    done
 
 # -----------------------------------------------------
 # Copy full source
@@ -49,10 +58,20 @@ RUN node fix-paths.js
 # -----------------------------------------------------
 FROM node:20-alpine AS runtime
 WORKDIR /opt/bk_notification_service
-ENV NODE_ENV=production
+# NODE_ENV is controlled by docker-compose.yml per environment (development/staging/production)
 
 # Install build dependencies needed for native modules (bcrypt, etc.)
-RUN apk add --no-cache python3 make g++
+# Add retry logic for network/I/O resilience (handles package integrity errors)
+RUN set -eux; \
+    for i in 1 2 3; do \
+      (apk update && apk add --no-cache python3 make g++) && break || \
+      (echo "⚠️  apk install attempt $i failed, clearing cache and retrying..." && \
+       rm -rf /var/cache/apk/* /tmp/* && sleep 5); \
+    done; \
+    if [ $? -ne 0 ]; then \
+      echo "❌ Failed to install packages after 3 attempts"; \
+      exit 1; \
+    fi
 
 # Copy package files (needed for workspace structure)
 COPY package*.json ./

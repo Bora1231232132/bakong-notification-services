@@ -13,12 +13,16 @@
       </div>
       <div class="flex-1 w-full" style="min-height: 434px">
         <TableBody
+          v-if="!loading"
           mode="user"
           :items="displayUsers"
           @view="handleView"
           @edit="handleEdit"
           @delete="handleDelete"
         />
+        <div v-else class="flex items-center justify-center h-full">
+          <LoadingSpinner />
+        </div>
       </div>
       <div class="h-2"></div>
       <div class="h-auto sm:h-[56px] flex-shrink-0">
@@ -55,77 +59,109 @@ import NotificationPagination, {
   type PaginationStyle,
 } from '@/components/common/Type-Feature/NotificationPagination.vue'
 import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
-import { ref, computed, watch } from 'vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockUsers } from '../../Data/mockUsers'
 import type { UserItem } from '@/components/common'
 import { useErrorHandler } from '@/composables/useErrorHandler'
+import { userApi } from '@/services/userApi'
+import { UserRole } from '@bakong/shared'
 
 const paginationStyle: PaginationStyle = 'user-management'
 
 const router = useRouter()
-const { showSuccess, handleApiError } = useErrorHandler({
+const { showSuccess, showWarning, handleApiError } = useErrorHandler({
   operation: 'user',
 })
 
 const searchQuery = ref('')
 const page = ref(1)
 const perPage = ref(10)
+const loading = ref(false)
 
-const users = ref<UserItem[]>(mockUsers)
+const users = ref<UserItem[]>([])
+const totalUsers = ref(0)
 const showDeleteDialog = ref(false)
 const userToDelete = ref<UserItem | null>(null)
 
-const filteredUsers = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return users.value
+// Convert API User to UserItem format
+const convertApiUserToUserItem = (user: any): UserItem => {
+  // Map backend status (ACTIVE/DEACTIVATED) to frontend format (Active/Deactivate)
+  let status: 'Active' | 'Deactivate' = 'Active'
+  if (user.status === 'DEACTIVATED' || user.status === 'Deactivate') {
+    status = 'Deactivate'
+  } else if (user.status === 'ACTIVE' || user.status === 'Active') {
+    status = 'Active'
   }
 
-  const query = searchQuery.value.toLowerCase()
-  return users.value.filter(
-    (user: UserItem) =>
-      user.name?.toLowerCase().includes(query) ||
-      user.email?.toLowerCase().includes(query) ||
-      user.phoneNumber?.toLowerCase().includes(query) ||
-      user.role?.toLowerCase().includes(query),
-  )
-})
+  return {
+    id: user.id,
+    name: user.name || user.displayName || '',
+    email: user.email || user.username || '',
+    phoneNumber: user.phoneNumber || '',
+    role: user.role || '',
+    status: status,
+  }
+}
+
+// Fetch users from API
+const fetchUsers = async () => {
+  try {
+    loading.value = true
+    const response = await userApi.getAllUsers({
+      page: page.value,
+      pageSize: perPage.value,
+      search: searchQuery.value.trim() || undefined,
+    })
+
+    // Convert API users to UserItem format
+    users.value = response.data.map(convertApiUserToUserItem)
+    totalUsers.value = response.total
+  } catch (error) {
+    handleApiError(error, { operation: 'fetchUsers' })
+    users.value = []
+    totalUsers.value = 0
+  } finally {
+    loading.value = false
+  }
+}
 
 const totalPages = computed(() => {
-  return Math.max(1, Math.ceil(filteredUsers.value.length / perPage.value))
+  return Math.max(1, Math.ceil(totalUsers.value / perPage.value))
 })
 
 const displayUsers = computed(() => {
-  const start = (page.value - 1) * perPage.value
-  const end = start + perPage.value
-  return filteredUsers.value.slice(start, end)
+  // Filter out ADMINISTRATOR users to prevent accidental deletion
+  return users.value.filter((user) => user.role !== UserRole.ADMINISTRATOR)
 })
 
-const nextPage = () => {
+const nextPage = async () => {
   if (page.value < totalPages.value) {
     page.value++
+    await fetchUsers()
   }
 }
 
-const prevPage = () => {
+const prevPage = async () => {
   if (page.value > 1) {
     page.value--
+    await fetchUsers()
   }
 }
 
-const goToPage = (num: number) => {
+const goToPage = async (num: number) => {
   const targetPage = Number(num)
   if (targetPage >= 1 && targetPage <= totalPages.value) {
     page.value = targetPage
+    await fetchUsers()
   }
 }
 
-const handlePerPageChange = (newPerPage: number) => {
+const handlePerPageChange = async (newPerPage: number) => {
   perPage.value = newPerPage
-  // If current page exceeds total pages after perPage change, reset to page 1
-  if (page.value > totalPages.value) {
-    page.value = 1
-  }
+  // Reset to page 1 when changing page size
+  page.value = 1
+  await fetchUsers()
 }
 
 const addNew = () => {
@@ -136,17 +172,17 @@ const filter = () => {
   console.log('filter')
 }
 
-const handleSearch = () => {
-  console.log('handleSearch', searchQuery.value)
+const handleSearch = async () => {
   // Reset to page 1 when searching
   page.value = 1
+  await fetchUsers()
 }
 
-const handleRefresh = () => {
-  // Reset search and pagination, and emit refresh intent
+const handleRefresh = async () => {
+  // Reset search and pagination, then fetch fresh data
   searchQuery.value = ''
   page.value = 1
-  console.log('refresh table')
+  await fetchUsers()
 }
 
 const handleView = (user: UserItem) => {
@@ -169,22 +205,32 @@ const handleDelete = (user: UserItem) => {
 }
 
 const handleDeleteConfirm = async () => {
-  if (!userToDelete.value) return
+  if (!userToDelete.value || !userToDelete.value.id) return
 
   try {
-    // Simulate API call with mock data
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Ensure id is a number
+    const userId = typeof userToDelete.value.id === 'string'
+      ? parseInt(userToDelete.value.id, 10)
+      : userToDelete.value.id
 
-    // Remove from local mock data
-    const index = users.value.findIndex((u) => u.id === userToDelete.value!.id)
-    if (index > -1) {
+    if (isNaN(userId)) {
+      throw new Error('Invalid user ID')
+    }
+
+    const success = await userApi.deleteUser(userId)
+
+    if (success) {
       const userName =
         userToDelete.value.name ||
         userToDelete.value.displayName ||
         userToDelete.value.username ||
         'User'
-      users.value.splice(index, 1)
       showSuccess(`User "${userName}" deleted successfully`)
+
+      // Refresh the user list
+      await fetchUsers()
+    } else {
+      showWarning('Failed to delete user. Please try again.')
     }
   } catch (error) {
     handleApiError(error, { operation: 'deleteUser' })
@@ -199,16 +245,15 @@ const handleDeleteCancel = () => {
   showDeleteDialog.value = false
 }
 
-// Watch filteredUsers to reset page when data changes (search/filter/delete)
-watch(
-  () => filteredUsers.value.length,
-  (newLength, oldLength) => {
-    // Reset to page 1 if current page exceeds total pages or if items were deleted
-    if (page.value > totalPages.value || (oldLength && newLength < oldLength && page.value > 1)) {
-      page.value = 1
-    }
-  },
-)
+// Fetch users on mount
+onMounted(() => {
+  fetchUsers()
+})
+
+// Watch for page/perPage changes to refetch
+watch([page, perPage], () => {
+  fetchUsers()
+})
 </script>
 
 <style scoped>

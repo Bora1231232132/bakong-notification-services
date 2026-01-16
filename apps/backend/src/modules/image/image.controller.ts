@@ -25,7 +25,7 @@ export class ImageController {
   constructor(private readonly imageService: ImageService) {}
 
   @Post('upload')
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @UseInterceptors(AnyFilesInterceptor())
   async uploadFiles(
     @UploadedFiles() files: Express.Multer.File[],

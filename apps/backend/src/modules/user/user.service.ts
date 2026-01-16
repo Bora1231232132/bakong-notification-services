@@ -1,11 +1,14 @@
 import { CreateUserDto } from './dto/create-user.dto'
+import { UpdateUserDto } from './dto/update-user.dto'
+import { GetUsersQueryDto } from './dto/get-users-query.dto'
+import { GetUserResponseDto } from './dto/get-user-response.dto'
 import { Injectable } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { User } from 'src/entities/user.entity'
 import { Repository } from 'typeorm'
 import * as bcrypt from 'bcrypt'
 import { BaseResponseDto } from 'src/common/base-response.dto'
-import { ErrorCode } from '@bakong/shared'
+import { ErrorCode, PaginationUtils, ResponseMessage, UserStatus } from '@bakong/shared'
 
 @Injectable()
 export class UserService {
@@ -14,38 +17,95 @@ export class UserService {
   async findByUsername(username: string) {
     try {
       // Use QueryBuilder to explicitly select columns and avoid relationship loading
-      return await this.repo
+      // First try: exact match (case-insensitive)
+      let user = await this.repo
         .createQueryBuilder('user')
         .select([
           'user.id',
           'user.username',
+          'user.email',
           'user.displayName',
           'user.role',
+          'user.phoneNumber',
           'user.imageId',
-          'user.failLoginAttempt',
+          'user.mustChangePassword',
+          'user.syncStatus',
           'user.createdAt',
           'user.updatedAt',
         ])
-        .where('user.username = :username', { username })
+        .where('LOWER(user.username) = LOWER(:username)', { username })
         .andWhere('user.deletedAt IS NULL')
         .getOne()
+
+      // If not found and username doesn't contain @, try matching against part before @
+      if (!user && !username.includes('@')) {
+        user = await this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.email',
+            'user.displayName',
+            'user.role',
+            'user.phoneNumber',
+            'user.imageId',
+            'user.mustChangePassword',
+            'user.syncStatus',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+          .andWhere('user.deletedAt IS NULL')
+          .getOne()
+      }
+
+      return user
     } catch (error: any) {
-      // If imageId column doesn't exist yet, query without it
-      if (error.message?.includes('imageId') || error.message?.includes('column')) {
-        return await this.repo
+      // If email or imageId column doesn't exist yet, query without it
+      if (
+        error.message?.includes('email') ||
+        error.message?.includes('imageId') ||
+        error.message?.includes('column')
+      ) {
+        // Try exact match first
+        let user = await this.repo
           .createQueryBuilder('user')
           .select([
             'user.id',
             'user.username',
             'user.displayName',
             'user.role',
-            'user.failLoginAttempt',
+            'user.phoneNumber',
+            'user.mustChangePassword',
+            'user.syncStatus',
             'user.createdAt',
             'user.updatedAt',
           ])
-          .where('user.username = :username', { username })
+          .where('LOWER(user.username) = LOWER(:username)', { username })
           .andWhere('user.deletedAt IS NULL')
           .getOne()
+
+        // If not found and username doesn't contain @, try matching against part before @
+        if (!user && !username.includes('@')) {
+          user = await this.repo
+            .createQueryBuilder('user')
+            .select([
+              'user.id',
+              'user.username',
+              'user.displayName',
+              'user.role',
+              'user.phoneNumber',
+              'user.mustChangePassword',
+              'user.syncStatus',
+              'user.createdAt',
+              'user.updatedAt',
+            ])
+            .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+            .andWhere('user.deletedAt IS NULL')
+            .getOne()
+        }
+
+        return user
       }
       throw error
     }
@@ -54,26 +114,141 @@ export class UserService {
   async findByUsernameWithPassword(username: string) {
     // Explicitly fetch user with password field for authentication
     // This ensures we get fresh data from database, not cached
-    return this.repo
+    // Must use addSelect to include password field despite @Exclude() decorator
+
+    // First try: exact match (case-insensitive)
+    let user = await this.repo
       .createQueryBuilder('user')
-      .where('user.username = :username', { username })
+      .addSelect('user.password')
+      .addSelect('user.mustChangePassword')
+      .addSelect('user.syncStatus')
+      .where('LOWER(user.username) = LOWER(:username)', { username })
       .andWhere('user.deletedAt IS NULL')
       .getOne()
+
+    // If not found and username doesn't contain @, try matching against part before @
+    // This allows login with just "virak" even if username is "virak@nbc.gov.kh"
+    if (!user && !username.includes('@')) {
+      user = await this.repo
+        .createQueryBuilder('user')
+        .addSelect('user.password')
+        .addSelect('user.mustChangePassword')
+        .addSelect('user.syncStatus')
+        .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+        .andWhere('user.deletedAt IS NULL')
+        .getOne()
+    }
+
+    return user
   }
 
+  /**
+   * Create a new user
+   * @param dto - User creation data (password is required - Administrator must provide it)
+   * @returns Created user entity
+   */
   async create(dto: CreateUserDto) {
-    const { password } = dto
-    let user = this.repo.create({ ...dto, password: await bcrypt.hash(password, 10) })
+    // Hash the password provided by administrator
+    const hashedPassword = await bcrypt.hash(dto.password, 10)
+
+    // Derive displayName if not provided:
+    // - Prefer explicit displayName
+    // - Otherwise use the part before '@' from username/email
+    const normalizedEmail = dto.email.toLowerCase()
+    const derivedDisplayName =
+      (dto.displayName && dto.displayName.trim()) ||
+      (dto.username?.includes('@') ? dto.username.split('@')[0] : dto.username) ||
+      (normalizedEmail.includes('@') ? normalizedEmail.split('@')[0] : normalizedEmail)
+
+    // Create user entity - starts as ACTIVE with mustChangePassword = true
+    let user = this.repo.create({
+      ...dto,
+      displayName: derivedDisplayName,
+      email: normalizedEmail, // Normalize email to lowercase
+      password: hashedPassword,
+      status: UserStatus.ACTIVE, // ACTIVE so user can login immediately
+      mustChangePassword: true, // User must change password on first login
+    })
+
     user = await this.repo.save(user)
     return user
   }
 
+  /**
+   * Helper method to safely update syncStatus JSONB field
+   * Handles missing syncStatus by initializing with defaults
+   */
+  async updateSyncStatus(
+    id: number,
+    updates: {
+      failLoginAttempt?: number
+      login_at?: string | null
+      changePassword_count?: number
+    },
+  ) {
+    // Get current syncStatus or use defaults
+    const user = await this.repo.findOne({ where: { id }, select: ['id', 'syncStatus'] })
+    const currentSyncStatus = user?.syncStatus || {
+      failLoginAttempt: 0,
+      login_at: null,
+      changePassword_count: 0,
+    }
+
+    // Merge updates with current values
+    const updatedSyncStatus = {
+      failLoginAttempt:
+        updates.failLoginAttempt !== undefined
+          ? updates.failLoginAttempt
+          : currentSyncStatus.failLoginAttempt ?? 0,
+      login_at:
+        updates.login_at !== undefined ? updates.login_at : currentSyncStatus.login_at ?? null,
+      changePassword_count:
+        updates.changePassword_count !== undefined
+          ? updates.changePassword_count
+          : currentSyncStatus.changePassword_count ?? 0,
+    }
+
+    // Update using save for proper JSONB handling
+    if (user) {
+      user.syncStatus = updatedSyncStatus
+      await this.repo.save(user)
+      return { affected: 1 }
+    }
+    return { affected: 0 }
+  }
+
   increementFailLoginAttempt(id: number) {
-    return this.repo.increment({ id }, 'failLoginAttempt', 1)
+    // Use raw SQL to increment failLoginAttempt in syncStatus JSONB
+    return this.repo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        syncStatus: () =>
+          `jsonb_set(
+            COALESCE("syncStatus", '{"failLoginAttempt": 0, "login_at": null, "changePassword_count": 0}'::jsonb),
+            '{failLoginAttempt}',
+            to_jsonb(COALESCE(("syncStatus"->>'failLoginAttempt')::int, 0) + 1)
+          )`,
+      })
+      .where('id = :id', { id })
+      .execute()
   }
 
   resetFailLoginAttempt(id: number) {
-    return this.repo.update({ id }, { failLoginAttempt: 0 })
+    // Use raw SQL to reset failLoginAttempt in syncStatus JSONB
+    return this.repo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        syncStatus: () =>
+          `jsonb_set(
+            COALESCE("syncStatus", '{"failLoginAttempt": 0, "login_at": null, "changePassword_count": 0}'::jsonb),
+            '{failLoginAttempt}',
+            '0'::jsonb
+          )`,
+      })
+      .where('id = :id', { id })
+      .execute()
   }
 
   async findAll() {
@@ -84,10 +259,13 @@ export class UserService {
         .select([
           'user.id',
           'user.username',
+          'user.email',
           'user.displayName',
           'user.role',
+          'user.phoneNumber',
           'user.imageId',
-          'user.failLoginAttempt',
+          'user.mustChangePassword',
+          'user.syncStatus',
           'user.createdAt',
           'user.updatedAt',
         ])
@@ -103,12 +281,204 @@ export class UserService {
             'user.username',
             'user.displayName',
             'user.role',
-            'user.failLoginAttempt',
+            'user.phoneNumber',
+            'user.mustChangePassword',
+            'user.syncStatus',
             'user.createdAt',
             'user.updatedAt',
           ])
           .where('user.deletedAt IS NULL')
           .getMany()
+      }
+      throw error
+    }
+  }
+
+  async findAllPaginated(
+    query: GetUsersQueryDto,
+  ): Promise<{ users: GetUserResponseDto[]; totalCount: number }> {
+    try {
+      const {
+        page = 1,
+        size = 10,
+        sortBy = 'createdAt',
+        sortOrder = 'DESC',
+        search,
+        status,
+        role,
+      } = query
+
+      // Normalize pagination
+      const { skip, take } = PaginationUtils.normalizePagination(page, size)
+
+      // Build query
+      const queryBuilder = this.repo
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.email',
+          'user.displayName',
+          'user.role',
+          'user.phoneNumber',
+          'user.status',
+          'user.mustChangePassword',
+          'user.imageId',
+          'user.createdAt',
+          'user.updatedAt',
+        ])
+        .where('user.deletedAt IS NULL')
+
+      // Apply search filter - search by username (supports both full email and part before @)
+      if (search) {
+        const searchLower = search.toLowerCase()
+        if (searchLower.includes('@')) {
+          // If search contains @, match full username/email
+          queryBuilder.andWhere(
+            '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+            { search: `%${search}%` },
+          )
+        } else {
+          // If search doesn't contain @, match username part before @ or full username
+          queryBuilder.andWhere(
+            '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, \'@\', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+            { search: `%${search}%` },
+          )
+        }
+      }
+
+      // Apply status filter
+      if (status) {
+        queryBuilder.andWhere('user.status = :status', { status })
+      }
+
+      // Apply role filter
+      if (role) {
+        queryBuilder.andWhere('user.role = :role', { role })
+      }
+
+      // Apply sorting
+      const sortColumnMap: Record<string, string> = {
+        name: 'user.displayName',
+        email: 'user.email',
+        status: 'user.status',
+        role: 'user.role',
+        createdAt: 'user.createdAt',
+      }
+
+      const sortColumn = sortColumnMap[sortBy] || 'user.createdAt'
+      queryBuilder.orderBy(sortColumn, sortOrder)
+
+      // Apply pagination
+      queryBuilder.skip(skip).take(take)
+
+      // Execute query
+      const [users, totalCount] = await queryBuilder.getManyAndCount()
+
+      // Map to response DTO
+      const userResponses: GetUserResponseDto[] = users.map((user) => ({
+        id: user.id,
+        role: user.role,
+        name: user.displayName,
+        email: user.email || user.username,
+        phoneNumber: user.phoneNumber,
+        status: user.status,
+        imageId: user.imageId,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      }))
+
+      return {
+        users: userResponses,
+        totalCount,
+      }
+    } catch (error: any) {
+      // If imageId column doesn't exist yet, query without it
+      if (error.message?.includes('imageId') || error.message?.includes('column')) {
+        const {
+          page = 1,
+          size = 10,
+          sortBy = 'createdAt',
+          sortOrder = 'DESC',
+          search,
+          status,
+          role,
+        } = query
+
+        const { skip, take } = PaginationUtils.normalizePagination(page, size)
+
+        const queryBuilder = this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.email',
+            'user.displayName',
+            'user.role',
+            'user.phoneNumber',
+            'user.status',
+            'user.mustChangePassword',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('user.deletedAt IS NULL')
+
+        if (search) {
+          const searchLower = search.toLowerCase()
+          if (searchLower.includes('@')) {
+            // If search contains @, match full username/email
+            queryBuilder.andWhere(
+              '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+              { search: `%${search}%` },
+            )
+          } else {
+            // If search doesn't contain @, match username part before @ or full username
+            queryBuilder.andWhere(
+              '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, \'@\', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+              { search: `%${search}%` },
+            )
+          }
+        }
+
+        if (status) {
+          queryBuilder.andWhere('user.status = :status', { status })
+        }
+
+        if (role) {
+          queryBuilder.andWhere('user.role = :role', { role })
+        }
+
+        const sortColumnMap: Record<string, string> = {
+          name: 'user.displayName',
+          email: 'user.email',
+          status: 'user.status',
+          role: 'user.role',
+          createdAt: 'user.createdAt',
+        }
+
+        const sortColumn = sortColumnMap[sortBy] || 'user.createdAt'
+        queryBuilder.orderBy(sortColumn, sortOrder)
+
+        queryBuilder.skip(skip).take(take)
+
+        const [users, totalCount] = await queryBuilder.getManyAndCount()
+
+        const userResponses: GetUserResponseDto[] = users.map((user) => ({
+          id: user.id,
+          role: user.role,
+          name: user.displayName,
+          email: user.email || user.username,
+          phoneNumber: user.phoneNumber,
+          status: user.status,
+          imageId: undefined,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        }))
+
+        return {
+          users: userResponses,
+          totalCount,
+        }
       }
       throw error
     }
@@ -122,10 +492,14 @@ export class UserService {
         .select([
           'user.id',
           'user.username',
+          'user.email',
           'user.displayName',
           'user.role',
+          'user.phoneNumber',
+          'user.status',
+          'user.mustChangePassword',
           'user.imageId',
-          'user.failLoginAttempt',
+          'user.syncStatus',
           'user.createdAt',
           'user.updatedAt',
         ])
@@ -147,9 +521,13 @@ export class UserService {
           .select([
             'user.id',
             'user.username',
+            'user.email',
             'user.displayName',
             'user.role',
-            'user.failLoginAttempt',
+            'user.phoneNumber',
+            'user.status',
+            'user.mustChangePassword',
+            'user.syncStatus',
             'user.createdAt',
             'user.updatedAt',
           ])
@@ -169,8 +547,11 @@ export class UserService {
 
   async findByIdWithPassword(id: number) {
     // Explicitly exclude soft-deleted users to be consistent with other queries
+    // Must use addSelect to include password field despite @Exclude() decorator
     return this.repo
       .createQueryBuilder('user')
+      .addSelect('user.password')
+      .addSelect('user.mustChangePassword')
       .where('user.id = :id', { id })
       .andWhere('user.deletedAt IS NULL')
       .getOne()
@@ -180,8 +561,10 @@ export class UserService {
     // Use a transaction to ensure the update and verification are consistent
     const updatedUser = await this.repo.manager.transaction(async (manager) => {
       // Find user explicitly excluding soft-deleted records
+      // Must use addSelect to include password field despite @Exclude() decorator
       const user = await manager
         .createQueryBuilder(User, 'user')
+        .addSelect('user.password')
         .where('user.id = :id', { id })
         .andWhere('user.deletedAt IS NULL')
         .getOne()
@@ -210,8 +593,10 @@ export class UserService {
       }
 
       // Reload the user using the transactional manager to get the fresh password
+      // Must use addSelect to include password field despite @Exclude() decorator
       const reloaded = await manager
         .createQueryBuilder(User, 'user')
+        .addSelect('user.password')
         .where('user.id = :id', { id })
         .andWhere('user.deletedAt IS NULL')
         .getOne()
@@ -228,5 +613,71 @@ export class UserService {
     })
 
     return updatedUser
+  }
+
+  async update(id: number, dto: UpdateUserDto): Promise<User> {
+    // Find user by ID
+    const user = await this.findById(id)
+
+    if (!user) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: 'User not found',
+      })
+    }
+
+    // Check email uniqueness if email is being changed
+    if (dto.email && dto.email !== user.email) {
+      const existingUser = await this.repo.findOne({
+        where: { email: dto.email.toLowerCase() },
+      })
+      if (existingUser && existingUser.id !== id) {
+        throw new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: 'Email already exists',
+        })
+      }
+    }
+
+    // Map DTO fields to entity fields and update only provided fields
+    if (dto.displayName !== undefined) {
+      user.displayName = dto.displayName
+    }
+    if (dto.email !== undefined) {
+      user.email = dto.email.toLowerCase() // Normalize email to lowercase
+    }
+    if (dto.phoneNumber !== undefined) {
+      user.phoneNumber = dto.phoneNumber
+    }
+    if (dto.status !== undefined) {
+      user.status = dto.status
+    }
+    if (dto.role !== undefined) {
+      user.role = dto.role
+    }
+
+    // Save and return updated user
+    const updated = await this.repo.save(user)
+    return updated
+  }
+
+  async updateMustChangePassword(id: number, mustChangePassword: boolean): Promise<void> {
+    await this.repo.update({ id }, { mustChangePassword })
+  }
+
+  async remove(id: number): Promise<void> {
+    const user = await this.findById(id)
+
+    if (!user) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: ResponseMessage.USER_NOT_FOUND,
+      })
+    }
+
+    await this.repo.softRemove(user)
   }
 }

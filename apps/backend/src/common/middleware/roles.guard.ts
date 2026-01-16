@@ -65,6 +65,11 @@ export class RolesGuard implements CanActivate {
       })
     }
 
+    // ADMINISTRATOR has full access - bypass all role checks
+    if (user.role === UserRole.ADMINISTRATOR) {
+      return true
+    }
+
     const validRole = requiredRoles.some((role) => user.role == role)
     if (!validRole) {
       throw new BaseResponseDto({

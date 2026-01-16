@@ -59,12 +59,12 @@
             <div class="input-container password-container">
               <input
                 :type="showConfirmPassword ? 'text' : 'password'"
-                v-model="formData.confirmPassword"
+                v-model="formData.confirmNewPassword"
                 class="form-input"
-                :class="{ error: errors.confirmPassword }"
+                :class="{ error: errors.confirmNewPassword }"
                 placeholder="********"
                 autocomplete="new-password"
-                @input="clearFieldError('confirmPassword')"
+                @input="clearFieldError('confirmNewPassword')"
               />
               <button
                 type="button"
@@ -80,8 +80,8 @@
                 </el-icon>
               </button>
             </div>
-            <div v-if="errors.confirmPassword" class="error-message">
-              {{ errors.confirmPassword }}
+            <div v-if="errors.confirmNewPassword" class="error-message">
+              {{ errors.confirmNewPassword }}
             </div>
           </div>
           <button type="submit" class="submit-button" :disabled="isLoading">
@@ -101,12 +101,15 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { View, Hide, ArrowRight } from '@element-plus/icons-vue'
+import { userApi } from '@/services/userApi'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const formData = ref({
   newPassword: '',
-  confirmPassword: '',
+  confirmNewPassword: '',
 })
 
 const showNewPassword = ref(false)
@@ -117,7 +120,7 @@ const changePasswordFormRef = ref()
 
 const errors = ref({
   newPassword: '',
-  confirmPassword: '',
+  confirmNewPassword: '',
 })
 
 const clearFieldError = (field: string) => {
@@ -136,23 +139,23 @@ const toggleConfirmPasswordVisibility = () => {
 
 const handleChangePassword = async () => {
   errors.value.newPassword = ''
-  errors.value.confirmPassword = ''
+  errors.value.confirmNewPassword = ''
 
   let hasErrors = false
 
   if (!formData.value.newPassword) {
     errors.value.newPassword = 'Please enter your new password'
     hasErrors = true
-  } else if (formData.value.newPassword.length < 6) {
-    errors.value.newPassword = 'Password must be at least 6 characters long'
+  } else if (formData.value.newPassword.length < 8) {
+    errors.value.newPassword = 'Password must be at least 8 characters long'
     hasErrors = true
   }
 
-  if (!formData.value.confirmPassword) {
-    errors.value.confirmPassword = 'Please confirm your new password'
+  if (!formData.value.confirmNewPassword) {
+    errors.value.confirmNewPassword = 'Please confirm your new password'
     hasErrors = true
-  } else if (formData.value.newPassword !== formData.value.confirmPassword) {
-    errors.value.confirmPassword = 'Passwords do not match'
+  } else if (formData.value.newPassword !== formData.value.confirmNewPassword) {
+    errors.value.confirmNewPassword = 'Passwords do not match'
     hasErrors = true
   }
 
@@ -160,35 +163,55 @@ const handleChangePassword = async () => {
     return
   }
 
+  // Get userId from auth store
+  if (!authStore.user?.id) {
+    ElNotification({
+      title: 'Error',
+      message: 'User information not found. Please login again.',
+      type: 'error',
+      duration: 2000,
+    })
+    return
+  }
+
   try {
     isLoading.value = true
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    const mockResponse = {
-      success: true,
-      message: 'Password changed successfully',
-    }
-    if (mockResponse.success) {
+
+    const result = await userApi.setupInitialPassword(
+      authStore.user.id,
+      formData.value.newPassword,
+      formData.value.confirmNewPassword,
+    )
+
+    if (result.success) {
       ElNotification({
         title: 'Success',
-        message: 'Password changed successfully!',
+        message: result.message || 'Password set successfully!',
         type: 'success',
         duration: 2000,
       })
 
       formData.value.newPassword = ''
-      formData.value.confirmPassword = ''
+      formData.value.confirmNewPassword = ''
       showNewPassword.value = false
       showConfirmPassword.value = false
 
       setTimeout(() => {
         router.push('/')
       }, 2000)
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: result.message || 'Failed to set password. Please try again.',
+        type: 'error',
+        duration: 2000,
+      })
     }
-  } catch (error) {
-    console.error('Change password error:', error)
+  } catch (error: any) {
+    console.error('Setup initial password error:', error)
     ElNotification({
       title: 'Error',
-      message: 'Failed to change password. Please try again.',
+      message: error.message || 'Failed to set password. Please try again.',
       type: 'error',
       duration: 2000,
     })

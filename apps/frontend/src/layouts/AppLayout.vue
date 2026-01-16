@@ -85,10 +85,10 @@
               <span>Insight</span>
             </div>
             <div
-              v-if="isDevelopment"
+              v-if="showUserManagement"
               class="nav-item"
               :class="{ active: $route.name === 'user-management' }"
-              @click="$router.push('/user-management')"
+              @click="handleUserManagementClick"
             >
               <img :src="userIcon" alt="User Management" class="nav-icon" />
               <span>User Management</span>
@@ -156,6 +156,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
 import {
@@ -260,12 +261,32 @@ const isDevelopment = computed(() => {
   return import.meta.env.DEV || import.meta.env.MODE === 'development'
 })
 
+// Check if user has admin role (ADMINISTRATOR has full access)
+const isAdmin = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
+})
+
+// Show User Management menu if in development AND user is admin
+const showUserManagement = computed(() => {
+  return isDevelopment.value && isAdmin.value
+})
+
 const handleCreateNotification = () => {
   router.push('/notifications/create')
 }
 
 const handleGoToSettings = () => {
   router.push('/settings')
+}
+
+const handleUserManagementClick = () => {
+  // Use route name instead of path for better reliability
+  router.push({ name: 'user-management' }).catch((err) => {
+    // Ignore navigation errors (e.g., already on the same route)
+    if (err.name !== 'NavigationDuplicated') {
+      console.error('Navigation error:', err)
+    }
+  })
 }
 
 const handleInsightClick = () => {

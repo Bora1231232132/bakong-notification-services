@@ -12,6 +12,23 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(username: string, password: string): Promise<any> {
+    // Check if username or password are missing (Passport passes undefined if fields not found)
+    if (!username || username.trim() === '') {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: 'Username is required. Please provide a username field in the request body.',
+      })
+    }
+
+    if (!password || password.trim() === '') {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: 'Password is required. Please provide a password field in the request body.',
+      })
+    }
+
     // validateUserLogin now throws errors directly instead of returning null
     // This provides more specific error messages
     const user = await this.authService.validateUserLogin(username, password)

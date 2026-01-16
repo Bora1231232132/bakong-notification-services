@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore, UserRole } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.VITE_BASE_URL || '/'),
@@ -117,7 +118,7 @@ const router = createRouter({
           name: 'users',
           component: () => import('../views/UsersView.vue'),
           meta: {
-            requiredRole: UserRole.ADMIN_USER,
+            requiredRole: UserRole.ADMINISTRATOR,
             breadcrumb: { label: 'Users' },
           },
         },
@@ -126,7 +127,7 @@ const router = createRouter({
           name: 'create-user',
           component: () => import('../views/CreateUserView.vue'),
           meta: {
-            requiredRole: UserRole.ADMIN_USER,
+            requiredRole: UserRole.ADMINISTRATOR,
             breadcrumb: {
               label: 'Create User',
               parent: { name: 'user-management', label: 'Users' },
@@ -138,7 +139,7 @@ const router = createRouter({
           name: 'view-user',
           component: () => import('../views/CreateUserView.vue'),
           meta: {
-            requiredRole: UserRole.ADMIN_USER,
+            requiredRole: UserRole.ADMINISTRATOR,
             breadcrumb: {
               label: 'View User',
               parent: { name: 'user-management', label: 'Users' },
@@ -150,7 +151,7 @@ const router = createRouter({
           name: 'edit-user',
           component: () => import('../views/CreateUserView.vue'),
           meta: {
-            requiredRole: UserRole.ADMIN_USER,
+            requiredRole: UserRole.ADMINISTRATOR,
             breadcrumb: {
               label: 'Edit User',
               parent: { name: 'user-management', label: 'Users' },
@@ -162,7 +163,7 @@ const router = createRouter({
           name: 'user-management',
           component: () => import('../views/UserManagementView.vue'),
           meta: {
-            requiredRole: UserRole.ADMIN_USER,
+            requiredRole: UserRole.ADMINISTRATOR,
             breadcrumb: { label: 'User Management' },
           },
         },

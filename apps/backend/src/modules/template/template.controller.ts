@@ -11,7 +11,7 @@ import { TemplateService } from './template.service'
 export class TemplateController {
   constructor(private readonly templateService: TemplateService) {}
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Post('create')
   async create(@Body() dto: CreateTemplateDto, @Req() req: any) {
     console.log('🎯 [CONTROLLER] /template/create endpoint called')
@@ -51,7 +51,7 @@ export class TemplateController {
     }
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Post(':id/update-publish')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateTemplateDto, @Req() req: any) {
     console.log('🎯 [CONTROLLER] /template/:id/update-publish endpoint called for template:', id)
@@ -82,7 +82,7 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Post(':id/remove')
   async remove(@Param('id') id: string) {
     const template = await this.templateService.remove(+id)
@@ -99,13 +99,13 @@ export class TemplateController {
     return this.templateService.getCronJob()
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Get('all')
   async getAll(@Query('language') language?: string) {
     return this.templateService.all(language)
   }
 
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER, UserRole.API_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const template = await this.templateService.findOne(+id)
@@ -117,7 +117,7 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER, UserRole.API_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
   @Get()
   async findTemplates(
     @Query() query: any,

@@ -19,7 +19,7 @@ export class NotificationController {
 
   @Post('send')
   @ApiKeyRequired()
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
   async sendNotification(@Body() dto: SentNotificationDto, @Req() req: any) {
     console.log('📤 /send API endpoint called with:', {
       templateId: dto.templateId,
@@ -194,7 +194,7 @@ export class NotificationController {
 
   @Post('inbox')
   @ApiKeyRequired()
-  @Roles(UserRole.ADMIN_USER, UserRole.API_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   async postNotificationInbox(@Body() dto: NotificationInboxDto, @Req() req: any) {
     return await this.service.getNotificationCenter(dto, req)
   }
@@ -237,7 +237,7 @@ export class NotificationController {
 
   @Post('test-token')
   @ApiKeyRequired()
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
   async testToken(@Body() dto: { token: string; bakongPlatform?: BakongApp }, @Req() req: any) {
     console.log('🧪 [testToken] Testing token validation:', {
       tokenPrefix: dto.token ? `${dto.token.substring(0, 30)}...` : 'NO TOKEN',
@@ -269,7 +269,7 @@ export class NotificationController {
 
   @Post('sync-users')
   @ApiKeyRequired()
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
   async syncUsers(@Req() req: any) {
     console.log('🔄 [syncUsers] Manual user sync requested')
 

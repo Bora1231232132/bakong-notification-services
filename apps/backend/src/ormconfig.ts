@@ -123,6 +123,16 @@ const options: PostgresConnectionOptions = {
   migrations: ['dist/migrations/*.{ts,js}'],
   logging: true,
   logger: new TruncatedLogger(), // Use custom logger to truncate binary data
+  // Connection pool settings to handle connection drops and retries
+  extra: {
+    // Connection pool configuration
+    max: 20, // Maximum number of connections in the pool
+    min: 5, // Minimum number of connections in the pool
+    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+    connectionTimeoutMillis: 10000, // Timeout for new connections (10 seconds)
+  },
+  // Connection retry on startup
+  connectTimeoutMS: 10000, // 10 seconds timeout for initial connection
 }
 
 const datasource = new DataSource(options)

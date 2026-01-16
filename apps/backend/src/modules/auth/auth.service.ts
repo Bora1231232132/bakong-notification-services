@@ -1,7 +1,8 @@
-import { ErrorCode, ResponseMessage, UserRole, ValidationUtils } from '@bakong/shared'
+import { ErrorCode, ResponseMessage, UserRole, ValidationUtils, UserStatus } from '@bakong/shared'
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { UserService } from '../user/user.service'
 import { ImageService } from '../image/image.service'
+import { OtpService } from './otp.service'
 import * as bcrypt from 'bcrypt'
 import { JwtService } from '@nestjs/jwt'
 import { User } from 'src/entities/user.entity'
@@ -17,6 +18,7 @@ export class AuthService implements OnModuleInit {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly imageService: ImageService,
+    private readonly otpService: OtpService,
   ) {}
 
   async onModuleInit() {
@@ -24,9 +26,11 @@ export class AuthService implements OnModuleInit {
     if (!admin) {
       await this.userService.create({
         username: k.API_ADMIN_USERNAME,
+        email: `${k.API_ADMIN_USERNAME}@bakong.local`,
         password: k.API_ADMIN_PASSWORD,
         displayName: k.API_ADMIN_USERNAME,
-        role: UserRole.ADMIN_USER,
+        role: UserRole.EDITOR,
+        phoneNumber: '+855 00 000 000',
       })
     }
   }
@@ -35,6 +39,8 @@ export class AuthService implements OnModuleInit {
     try {
       // Reset failed login attempts on successful login
       await this.userService.resetFailLoginAttempt(user.id)
+      // Update login_at timestamp
+      await this.userService.updateSyncStatus(user.id, { login_at: new Date().toISOString() })
 
       // Fetch user with imageId
       let userWithImage = null
@@ -48,6 +54,7 @@ export class AuthService implements OnModuleInit {
           username: user.username,
           displayName: user.displayName,
           role: user.role,
+          phoneNumber: user.phoneNumber,
           imageId: null,
         }
       }
@@ -70,10 +77,12 @@ export class AuthService implements OnModuleInit {
         data: {
           accessToken: this.jwtService.sign(payload),
           expireAt: expireAt,
+          mustChangePassword: user.mustChangePassword || false,
           user: {
             id: user.id,
             username: user.username,
             role: user.role,
+            phoneNumber: user.phoneNumber,
             displayName: user.displayName,
             image: image,
           },
@@ -95,17 +104,20 @@ export class AuthService implements OnModuleInit {
   }
 
   async validateUserLogin(username: string, password: string) {
-    // Validate username format before database lookup
-    if (!ValidationUtils.isValidUsername(username)) {
+    // Normalize username so login is more flexible:
+    // - trim spaces
+    // - make lookup case-insensitive
+    const normalizedUsername = username.trim()
+    if (!normalizedUsername) {
       throw new BaseResponseDto({
         responseCode: 1,
         errorCode: ErrorCode.VALIDATION_FAILED,
-        responseMessage: 'Username must be lowercase with no spaces.',
+        responseMessage: 'Username is required.',
       })
     }
 
     // Use findByUsernameWithPassword to ensure we get fresh password data from database
-    const user = await this.userService.findByUsernameWithPassword(username)
+    const user = await this.userService.findByUsernameWithPassword(normalizedUsername)
     if (!user) {
       // User not found - throw specific error
       throw new BaseResponseDto({
@@ -116,18 +128,20 @@ export class AuthService implements OnModuleInit {
     }
 
     // Check if account is locked (6 failed attempts)
-    if (user.failLoginAttempt >= 6) {
+    const failLoginAttempt = user.syncStatus?.failLoginAttempt ?? 0
+    if (failLoginAttempt >= 6) {
       throw new BaseResponseDto({
         responseCode: 1,
         errorCode: ErrorCode.ACCOUNT_TIMEOUT,
-        responseMessage: `Account locked due to ${user.failLoginAttempt} failed login attempts. Please contact administrator to unlock your account.`,
+        responseMessage: `Account locked due to ${failLoginAttempt} failed login attempts. Please contact administrator to unlock your account.`,
       })
     }
 
     // Verify password
     if (await bcrypt.compare(password, user.password)) {
       // Password correct - reset failLoginAttempt and return user
-      if (user.failLoginAttempt > 0) {
+      const currentFailAttempts = user.syncStatus?.failLoginAttempt ?? 0
+      if (currentFailAttempts > 0) {
         await this.userService.resetFailLoginAttempt(user.id)
       }
       return user
@@ -137,15 +151,16 @@ export class AuthService implements OnModuleInit {
     await this.userService.increementFailLoginAttempt(user.id)
 
     // Get updated user to check current attempt count
-    const updatedUser = await this.userService.findByUsername(username)
-    const remainingAttempts = 6 - (updatedUser?.failLoginAttempt || 0)
+    const updatedUser = await this.userService.findByUsername(normalizedUsername)
+    const updatedFailAttempts = updatedUser?.syncStatus?.failLoginAttempt ?? 0
+    const remainingAttempts = 6 - updatedFailAttempts
 
     if (remainingAttempts <= 0) {
       // Account is now locked
       throw new BaseResponseDto({
         responseCode: 1,
         errorCode: ErrorCode.ACCOUNT_TIMEOUT,
-        responseMessage: `Account locked due to ${updatedUser.failLoginAttempt} failed login attempts. Please contact administrator to unlock your account.`,
+        responseMessage: `Account locked due to ${updatedFailAttempts} failed login attempts. Please contact administrator to unlock your account.`,
       })
     }
 
@@ -297,6 +312,13 @@ export class AuthService implements OnModuleInit {
     // This proves the user knows their current password, so we can reset the counter
     await this.userService.resetFailLoginAttempt(userId)
 
+    // Step 8: Increment changePassword_count
+    const currentUser = await this.userService.findById(userId)
+    const currentCount = currentUser?.syncStatus?.changePassword_count ?? 0
+    await this.userService.updateSyncStatus(userId, {
+      changePassword_count: currentCount + 1,
+    })
+
     return {
       responseCode: 0,
       responseMessage: 'Password changed successfully',
@@ -330,5 +352,117 @@ export class AuthService implements OnModuleInit {
     return {
       imageId,
     }
+  }
+
+  /**
+   * Verify account using token from email link
+   * Activates the account when verification link is clicked
+   */
+  async verifyAccount(token: string) {
+    const result = await this.otpService.verifyToken(token)
+
+    if (!result.valid) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage:
+          result.reason === 'EXPIRED'
+            ? 'Verification link has expired. Please contact administrator for a new link.'
+            : 'Invalid or expired verification link.',
+      })
+    }
+
+    // Verify user exists
+    const user = await this.userService.findById(result.userId!)
+    if (!user) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: 'User not found',
+      })
+    }
+
+    // Activate account (status changes from DEACTIVATED to ACTIVE)
+    await this.userService.update(result.userId!, { status: UserStatus.ACTIVE } as any)
+
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Account verified successfully. You can now set your password.',
+      data: {
+        verified: true,
+        userId: result.userId,
+        message: 'Please set your password to complete account setup.',
+      },
+    })
+  }
+
+  /**
+   * Setup password for verified users
+   * Can be used after account verification or by active users
+   */
+  async setupPassword(userId: number, newPassword: string) {
+    // Verify user exists
+    const user = await this.userService.findById(userId)
+    if (!user) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: 'User not found',
+      })
+    }
+
+    // Check if user is verified (ACTIVE status)
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: 'Please verify your account first before setting a password.',
+      })
+    }
+
+    // Update password
+    await this.userService.updatePassword(userId, newPassword)
+
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Password set successfully.',
+      data: { passwordSet: true },
+    })
+  }
+
+  /**
+   * Setup initial password for users with default password
+   * This is called when user logs in with default password and must change it
+   * No current password required - only userId and newPassword
+   */
+  async setupInitialPassword(userId: number, newPassword: string) {
+    // Verify user exists
+    const user = await this.userService.findById(userId)
+    if (!user) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.USER_NOT_FOUND,
+        responseMessage: 'User not found',
+      })
+    }
+
+    // Check if user must change password
+    if (!user.mustChangePassword) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: 'Password has already been changed. Use change-password endpoint instead.',
+      })
+    }
+
+    // Update password and set mustChangePassword to false
+    await this.userService.updatePassword(userId, newPassword)
+    await this.userService.updateMustChangePassword(userId, false)
+
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Password changed successfully. You can now access the system.',
+      data: { passwordChanged: true },
+    })
   }
 }
