@@ -106,11 +106,13 @@ import {
   getNotificationMessage,
   formatPlatform,
 } from '@/utils/helpers'
-import { DateUtils } from '@bakong/shared'
+import { DateUtils, ErrorCode } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
 import { api } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const authStore = useAuthStore()
 
 // Helper function to correct notification status based on isSent flag
 const correctNotificationStatus = (notification: Notification): Notification => {
@@ -124,7 +126,7 @@ const correctNotificationStatus = (notification: Notification): Notification => 
   }
 }
 
-const activeTab = ref<'published' | 'scheduled' | 'draft'>('published')
+const activeTab = ref<'published' | 'scheduled' | 'draft' | 'pending'>('published')
 const selectedFilter = ref('ALL')
 const searchQuery = ref('')
 const loading = ref(false)
@@ -134,6 +136,7 @@ const filteredNotifications = ref<Notification[]>([])
 const filterTabs = [
   { value: 'published', label: 'Published' },
   { value: 'scheduled', label: 'Scheduled' },
+  { value: 'pending', label: 'Pending' },
   { value: 'draft', label: 'Draft' },
 ]
 
@@ -447,9 +450,33 @@ if (initialCache.notifications && initialCache.notifications.length > 0) {
   cachedNotifications = correctedNotifications
   cacheTimestamp = initialCache.timestamp
   notifications.value = correctedNotifications
-  let tempFiltered = [...correctedNotifications].filter(
-    (notification) => notification.status === activeTab.value,
+  let tempFiltered = [...correctedNotifications]
+  // For pending tab, filter by approvalStatus instead of status
+  if (activeTab.value === 'pending') {
+    // Show notifications that are pending approval (submitted for immediate send or scheduled time arrived)
+    tempFiltered = tempFiltered.filter((notification) => notification.approvalStatus === 'PENDING')
+  } else if (activeTab.value === 'published') {
+    // Published tab should only show approved notifications that are published
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        notification.status === 'published' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
+    )
+  } else if (activeTab.value === 'scheduled') {
+    // Scheduled tab shows all scheduled notifications, including pending ones
+    // Pending scheduled notifications will move to Pending tab when their scheduled time arrives
+    tempFiltered = tempFiltered.filter((notification) => notification.status === 'scheduled')
+  } else if (activeTab.value === 'draft') {
+    // Draft tab shows:
+    // 1. Drafts with no approvalStatus (not submitted yet)
+    // 2. Drafts that are not pending (approved/rejected drafts can still be in draft status)
+    // 3. Exclude pending notifications (they're awaiting approval in Pending tab)
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        notification.status === 'draft' &&
+        notification.approvalStatus !== 'PENDING',
   )
+  }
   if (selectedFilter.value !== 'ALL') {
     tempFiltered = tempFiltered.filter((notification) => notification.type === selectedFilter.value)
   }
@@ -596,7 +623,7 @@ const fetchNotifications = async (forceRefresh = false) => {
         if (notification.isSent === true) {
           status = 'published'
         }
-        
+
         return {
           ...notification,
           id: Number(notification.id),
@@ -630,7 +657,7 @@ const fetchNotifications = async (forceRefresh = false) => {
         if (notification.isSent === true) {
           status = 'published'
         }
-        
+
         const corrected = correctNotificationStatus({
           ...notification,
           id: Number(notification.id),
@@ -639,13 +666,17 @@ const fetchNotifications = async (forceRefresh = false) => {
           description: notification.content || '',
           image: notification.image || '',
           date: notification.date,
+          // Preserve approvalStatus and related fields
+          approvalStatus: notification.approvalStatus,
+          approvedBy: notification.approvedBy,
+          approvedAt: notification.approvedAt,
         })
-        
+
         // Debug logging for status correction
         if (notification.isSent === true && corrected.status !== 'published') {
           console.warn(`⚠️ [Status Correction] Notification ${corrected.id} has isSent=true but status=${corrected.status}`)
         }
-        
+
         return corrected
       })
       notifications.value = mappedNotifications
@@ -681,7 +712,32 @@ const debouncedFetchNotifications = () => {
 const applyFilters = () => {
   let filtered = [...notifications.value]
 
-  filtered = filtered.filter((notification) => notification.status === activeTab.value)
+  // For pending tab, filter by approvalStatus instead of status
+  if (activeTab.value === 'pending') {
+    // Show notifications that are pending approval (submitted for immediate send or scheduled time arrived)
+    filtered = filtered.filter((notification) => notification.approvalStatus === 'PENDING')
+  } else if (activeTab.value === 'published') {
+    // Published tab should only show approved notifications that are published
+    filtered = filtered.filter(
+      (notification) =>
+        notification.status === 'published' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
+    )
+  } else if (activeTab.value === 'scheduled') {
+    // Scheduled tab shows all scheduled notifications, including pending ones
+    // Pending scheduled notifications will move to Pending tab when their scheduled time arrives
+    filtered = filtered.filter((notification) => notification.status === 'scheduled')
+  } else if (activeTab.value === 'draft') {
+    // Draft tab shows:
+    // 1. Drafts with no approvalStatus (not submitted yet)
+    // 2. Drafts that are not pending (approved/rejected drafts can still be in draft status)
+    // 3. Exclude pending notifications (they're awaiting approval in Pending tab)
+    filtered = filtered.filter(
+      (notification) =>
+        notification.status === 'draft' &&
+        notification.approvalStatus !== 'PENDING',
+    )
+  }
 
   if (selectedFilter.value !== 'ALL') {
     filtered = filtered.filter((notification) => notification.type === selectedFilter.value)
@@ -854,17 +910,17 @@ const handlePublishNotification = async (notification: Notification) => {
         // Validate that draft has enough data to send (both title and content required)
         const translations = template?.translations || []
         let hasValidData = false
-        
+
         for (const translation of translations) {
           const hasTitle = translation?.title && translation.title.trim() !== ''
           const hasContent = translation?.content && translation.content.trim() !== ''
-          
+
           if (hasTitle && hasContent) {
             hasValidData = true
             break
           }
         }
-        
+
         if (!hasValidData) {
           publishingNotifications.delete(key)
           ElNotification({
@@ -913,10 +969,39 @@ const handlePublishNotification = async (notification: Notification) => {
 
         const result = await notificationApi.updateTemplate(Number(notificationId), updatePayload)
 
-        // Check if error response (no users found)
+        // Check if error response (no users found or approval required)
         if (result?.responseCode !== 0 || result?.errorCode !== 0) {
           const errorMessage =
             result?.responseMessage || result?.message || 'Failed to publish notification'
+          const errorCode = result?.errorCode
+
+          // Handle approval required error specifically
+          if (
+            errorCode === ErrorCode.NO_PERMISSION &&
+            errorMessage.includes('Template must be approved')
+          ) {
+            const templateId = result?.data?.templateId || notificationId
+            const canApprove = authStore.isAdmin || authStore.isApproval
+
+            ElNotification({
+              title: 'Approval Required',
+              message: canApprove
+                ? `This notification requires approval before sending. You can approve it from the Pending tab.`
+                : `This notification requires approval before sending. Please wait for an administrator to approve it.`,
+              type: 'warning',
+              duration: 5000,
+              dangerouslyUseHTMLString: true,
+            })
+
+            // Redirect to pending tab where user can approve if they have permission
+            activeTab.value = 'pending'
+            cachedNotifications = null
+            cacheTimestamp = 0
+            clearCacheFromStorage()
+            await fetchNotifications(true)
+            applyFilters()
+            return
+          }
 
           // Get platform name from response data or notification
           const platformName = getFormattedPlatformName({
@@ -952,7 +1037,7 @@ const handlePublishNotification = async (notification: Notification) => {
         })
 
         const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
-        
+
         // Get device platform from result data or template
         const platforms = result?.data?.platforms || template?.platforms || []
         let devicePlatform = 'ALL'
@@ -966,7 +1051,7 @@ const handlePublishNotification = async (notification: Notification) => {
         }
 
         const devicePlatformFormatted = formatPlatform(devicePlatform )
-        
+
         const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform, devicePlatformFormatted)
         const successfulCount = result?.data?.successfulCount ?? 0
         const failedCount = result?.data?.failedCount ?? 0
@@ -1228,10 +1313,10 @@ onMounted(async () => {
     return
   }
   isMounted = true
-  
+
   let tabChanged = false
-  if (route.query?.tab && ['published', 'scheduled', 'draft'].includes(route.query.tab as string)) {
-    const queryTab = route.query.tab as 'published' | 'scheduled' | 'draft'
+  if (route.query?.tab && ['published', 'scheduled', 'draft', 'pending'].includes(route.query.tab as string)) {
+    const queryTab = route.query.tab as 'published' | 'scheduled' | 'draft' | 'pending'
     if (activeTab.value !== queryTab) {
       activeTab.value = queryTab
       tabChanged = true
@@ -1245,11 +1330,11 @@ onMounted(async () => {
   }
 
   await new Promise((resolve) => setTimeout(resolve, 200))
-  
+
   // Check if cache was recently cleared - force refresh
   const cacheWasCleared = !localStorage.getItem('notifications_cache_timestamp')
   const shouldForceRefresh = cacheWasCleared || tabChanged
-  
+
   // Use appropriate cache duration based on active tab
   const cacheDuration =
     activeTab.value === 'scheduled'
@@ -1257,7 +1342,7 @@ onMounted(async () => {
       : activeTab.value === 'published'
         ? PUBLISHED_TAB_CACHE_DURATION
         : DATA_CACHE_DURATION
-  
+
   // Only fetch once on mount - avoid duplicate fetches
   if (cachedNotifications && cacheTimestamp && !shouldForceRefresh) {
     const now = Date.now()
@@ -1291,7 +1376,7 @@ onMounted(async () => {
       console.log('⏭️ [Polling] Polling already set up, skipping duplicate setup')
       return
     }
-    
+
     // Clear any existing polling interval to prevent duplicates
     if (pollingInterval) {
       clearInterval(pollingInterval)

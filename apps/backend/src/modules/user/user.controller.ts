@@ -101,7 +101,7 @@ export class UserController {
     })
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
+  @Roles(UserRole.ADMINISTRATOR)
   @Put(':id')
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -141,7 +141,7 @@ export class UserController {
     }
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
+  @Roles(UserRole.ADMINISTRATOR)
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number): Promise<BaseResponseDto<void>> {
     try {

@@ -95,6 +95,9 @@ const addResponseInterceptor = (axiosInstance: typeof api) => {
       const isAuthEndpoint =
         error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register')
       const isChangePasswordEndpoint = error.config?.url?.includes('/auth/change-password')
+      const isTemplateEndpoint =
+        error.config?.url?.includes('/template/create') ||
+        (error.config?.url?.includes('/template/') && error.config?.url?.includes('/update-publish'))
       const currentToken = localStorage.getItem('auth_token')
       const isOnAuthPage =
         window.location.pathname.includes('/login') ||
@@ -108,6 +111,12 @@ const addResponseInterceptor = (axiosInstance: typeof api) => {
         }
 
         if (isAuthEndpoint) {
+          return Promise.reject(error)
+        }
+
+        // Don't auto-redirect for template endpoints - let component handle errors gracefully
+        // This allows the component to show error messages instead of immediately redirecting
+        if (isTemplateEndpoint) {
           return Promise.reject(error)
         }
 

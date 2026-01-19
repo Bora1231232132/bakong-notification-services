@@ -15,6 +15,7 @@
         @input="handleSearch"
       />
       <button
+        v-if="showAddNew !== false"
         class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 w-[140px] px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap"
         @click="$emit('addNew')"
         aria-label="Add new"
@@ -59,11 +60,13 @@ const props = withDefaults(
   defineProps<{
     modelValue?: string
     showRefresh?: boolean
+    showAddNew?: boolean
     labelText?: string
     searchPlaceholder?: string
   }>(),
   {
     showRefresh: true,
+    showAddNew: true,
     labelText: 'Category type',
     searchPlaceholder: '',
   },

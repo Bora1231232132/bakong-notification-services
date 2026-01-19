@@ -8,7 +8,7 @@ import { User } from 'src/entities/user.entity'
 import { Repository } from 'typeorm'
 import * as bcrypt from 'bcrypt'
 import { BaseResponseDto } from 'src/common/base-response.dto'
-import { ErrorCode, PaginationUtils, ResponseMessage, UserStatus } from '@bakong/shared'
+import { ErrorCode, PaginationUtils, ResponseMessage, UserStatus, UserRole } from '@bakong/shared'
 
 @Injectable()
 export class UserService {
@@ -54,7 +54,7 @@ export class UserService {
             'user.createdAt',
             'user.updatedAt',
           ])
-          .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+          .where("LOWER(SPLIT_PART(user.username, '@', 1)) = LOWER(:username)", { username })
           .andWhere('user.deletedAt IS NULL')
           .getOne()
       }
@@ -100,7 +100,7 @@ export class UserService {
               'user.createdAt',
               'user.updatedAt',
             ])
-            .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+            .where("LOWER(SPLIT_PART(user.username, '@', 1)) = LOWER(:username)", { username })
             .andWhere('user.deletedAt IS NULL')
             .getOne()
         }
@@ -122,6 +122,7 @@ export class UserService {
       .addSelect('user.password')
       .addSelect('user.mustChangePassword')
       .addSelect('user.syncStatus')
+      .addSelect('user.status')
       .where('LOWER(user.username) = LOWER(:username)', { username })
       .andWhere('user.deletedAt IS NULL')
       .getOne()
@@ -134,7 +135,8 @@ export class UserService {
         .addSelect('user.password')
         .addSelect('user.mustChangePassword')
         .addSelect('user.syncStatus')
-        .where('LOWER(SPLIT_PART(user.username, \'@\', 1)) = LOWER(:username)', { username })
+        .addSelect('user.status')
+        .where("LOWER(SPLIT_PART(user.username, '@', 1)) = LOWER(:username)", { username })
         .andWhere('user.deletedAt IS NULL')
         .getOne()
     }
@@ -341,7 +343,7 @@ export class UserService {
         } else {
           // If search doesn't contain @, match username part before @ or full username
           queryBuilder.andWhere(
-            '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, \'@\', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+            "(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, '@', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))",
             { search: `%${search}%` },
           )
         }
@@ -434,7 +436,7 @@ export class UserService {
           } else {
             // If search doesn't contain @, match username part before @ or full username
             queryBuilder.andWhere(
-              '(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, \'@\', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
+              "(LOWER(user.username) LIKE LOWER(:search) OR LOWER(SPLIT_PART(user.username, '@', 1)) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))",
               { search: `%${search}%` },
             )
           }
@@ -641,6 +643,16 @@ export class UserService {
       }
     }
 
+    // Prevent deactivating ADMINISTRATOR users
+    if (dto.status === UserStatus.DEACTIVATED && user.role === UserRole.ADMINISTRATOR) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.NO_PERMISSION,
+        responseMessage:
+          'Cannot deactivate ADMINISTRATOR account. Please change role first if needed.',
+      })
+    }
+
     // Map DTO fields to entity fields and update only provided fields
     if (dto.displayName !== undefined) {
       user.displayName = dto.displayName
@@ -655,6 +667,18 @@ export class UserService {
       user.status = dto.status
     }
     if (dto.role !== undefined) {
+      // Prevent changing ADMINISTRATOR role to non-ADMINISTRATOR if trying to deactivate
+      if (
+        dto.role !== UserRole.ADMINISTRATOR &&
+        user.role === UserRole.ADMINISTRATOR &&
+        dto.status === UserStatus.DEACTIVATED
+      ) {
+        throw new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.NO_PERMISSION,
+          responseMessage: 'Cannot change ADMINISTRATOR role and deactivate in the same operation.',
+        })
+      }
       user.role = dto.role
     }
 

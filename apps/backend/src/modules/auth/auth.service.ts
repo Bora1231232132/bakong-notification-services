@@ -24,14 +24,28 @@ export class AuthService implements OnModuleInit {
   async onModuleInit() {
     const admin = await this.userService.findByUsername(k.API_ADMIN_USERNAME)
     if (!admin) {
-      await this.userService.create({
+      const createdAdmin = await this.userService.create({
         username: k.API_ADMIN_USERNAME,
         email: `${k.API_ADMIN_USERNAME}@bakong.local`,
         password: k.API_ADMIN_PASSWORD,
         displayName: k.API_ADMIN_USERNAME,
-        role: UserRole.EDITOR,
+        role: UserRole.ADMINISTRATOR,
         phoneNumber: '+855 00 000 000',
       })
+      // Ensure admin is always ACTIVE (create already sets it, but double-check)
+      if (createdAdmin.status !== UserStatus.ACTIVE) {
+        await this.userService.update(createdAdmin.id, {
+          status: UserStatus.ACTIVE,
+        } as any)
+      }
+    } else {
+      // Ensure existing admin is ACTIVE and has ADMINISTRATOR role
+      if (admin.status !== UserStatus.ACTIVE || admin.role !== UserRole.ADMINISTRATOR) {
+        await this.userService.update(admin.id, {
+          status: UserStatus.ACTIVE,
+          role: UserRole.ADMINISTRATOR,
+        } as any)
+      }
     }
   }
 
@@ -124,6 +138,16 @@ export class AuthService implements OnModuleInit {
         responseCode: 1,
         errorCode: ErrorCode.USER_NOT_FOUND,
         responseMessage: ResponseMessage.USER_NOT_FOUND,
+      })
+    }
+
+    // Check if account is deactivated
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.NO_PERMISSION,
+        responseMessage:
+          'Your account has been deactivated. Please contact administrator to reactivate your account.',
       })
     }
 

@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { Template } from 'src/entities/template.entity'
 import { NotificationService } from './notification.service'
-import { SendType } from '@bakong/shared'
+import { SendType, ApprovalStatus } from '@bakong/shared'
 
 @Injectable()
 export class NotificationSchedulerService {
@@ -228,8 +228,42 @@ export class NotificationSchedulerService {
         nowLocal: now.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
         timeDifferenceMinutes: timeDifferenceMinutes.toFixed(2),
         timeDifferenceSeconds: timeDifferenceSeconds.toFixed(0),
+        approvalStatus: freshTemplate.approvalStatus,
       })
 
+      // Check if this scheduled notification requires approval
+      if (freshTemplate.approvalStatus === ApprovalStatus.PENDING) {
+        // If approval is pending, DON'T send yet - just move to Pending tab
+        // Clear the schedule and change sendType to SEND_NOW so it appears as "ready to send"
+        this.logger.log(
+          `⏸️ Template ${template.id} requires approval - moving to Pending tab instead of auto-sending`,
+        )
+        const updateResult = await this.templateRepo
+          .createQueryBuilder()
+          .update(Template)
+          .set({
+            sendType: SendType.SEND_NOW, // Change to SEND_NOW so it's ready to send after approval
+            sendSchedule: null, // Clear schedule since the scheduled time has arrived
+            // Keep isSent: false and approvalStatus: PENDING so it appears in Pending tab
+          })
+          .where('id = :id', { id: template.id })
+          .andWhere('isSent = :isSent', { isSent: false })
+          .execute()
+
+        if (updateResult.affected === 0) {
+          this.logger.log(
+            `⏭️ Template ${template.id} was already processed by another process, skipping`,
+          )
+          return
+        }
+
+        this.logger.log(
+          `✅ Template ${template.id} moved to Pending tab - awaiting approval before sending`,
+        )
+        return // Don't send the notification, just wait for approval
+      }
+
+      // If approved or no approval status (legacy notifications), send immediately
       // When scheduled notification is sent, mark as published and clear schedule
       // This moves it from Scheduled tab to Published tab
       const updateResult = await this.templateRepo

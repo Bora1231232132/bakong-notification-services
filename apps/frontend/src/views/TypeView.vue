@@ -5,6 +5,7 @@
         <NotificationTableHeader
           v-model="searchQuery"
           :show-refresh="false"
+          :show-add-new="canManageCategoryTypes"
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
@@ -15,6 +16,8 @@
         <TableBody
           mode="notification"
           :items="displayItems"
+          :show-edit="canManageCategoryTypes"
+          :show-delete="canManageCategoryTypes"
           @view="viewItem"
           @edit="editItem"
           @delete="deleteItem"
@@ -58,13 +61,21 @@ import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { ElMessage, ElNotification } from 'element-plus'
 import { mockCategoryTypes } from '../../Data/mockCategoryTypes'
+import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 // Initialize with empty array, will be populated by fetchCategoryTypes
 const categoryTypes = ref<CategoryType[]>([])
 const loading = ref(false)
+
+// Permission check for category type management
+const canManageCategoryTypes = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
+})
 
 const page = ref(1)
 const perPage = ref(10)
@@ -128,16 +139,16 @@ const handlePerPageChange = (newPerPage: number) => {
 }
 
 const addNew = () => {
-  // Commented out: Add Category feature - coming soon
-  // router.push('/templates/create')
-
-  // Show notification that feature is coming soon
-  ElNotification({
-    title: 'Coming Soon',
-    message: 'This feature is coming soon!',
-    type: 'info',
-    duration: 3000,
-  })
+  if (canManageCategoryTypes.value) {
+    router.push('/notification-type/create')
+  } else {
+    ElNotification({
+      title: 'Permission Denied',
+      message: 'You do not have permission to create category types',
+      type: 'error',
+      duration: 3000,
+    })
+  }
 }
 
 const filter = () => {

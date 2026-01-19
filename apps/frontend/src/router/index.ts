@@ -103,6 +103,17 @@ const router = createRouter({
           },
         },
         {
+          path: 'notifications/view/:id',
+          name: 'view-notification',
+          component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'View Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
+        },
+        {
           path: 'notifications/edit/:id',
           name: 'edit-notification',
           component: () => import('../views/CreateNotificationView.vue'),

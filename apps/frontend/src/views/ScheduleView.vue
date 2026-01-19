@@ -59,12 +59,12 @@
           <div v-if="loading" class="flex items-center justify-center h-full">
             <div class="text-slate-500">Loading notifications...</div>
           </div>
-          
+
           <!-- Error message -->
           <div v-else-if="error" class="flex items-center justify-center h-full">
             <div class="text-red-500">Error: {{ error }}</div>
           </div>
-          
+
           <!-- Calendar content -->
           <template v-else>
             <!-- day headers -->
@@ -122,6 +122,8 @@ import type { Notification } from '@/services/notificationApi'
 import { notificationApi } from '@/services/notificationApi'
 import { api } from '@/services/api'
 import ScheduleNotificationCard from '@/components/common/ScheduleNotificationCard.vue'
+import { ErrorCode } from '@bakong/shared'
+import { useAuthStore } from '@/stores/auth'
 import {
   BakongApp,
   SendType,
@@ -130,6 +132,8 @@ import {
   getFormattedPlatformName,
   getNoUsersAvailableMessage,
 } from '@/utils/helpers'
+
+const authStore = useAuthStore()
 
 const handleSendNow = async (notification: Notification) => {
   try {
@@ -160,17 +164,17 @@ const handleSendNow = async (notification: Notification) => {
     // Validate that draft has enough data to send (both title and content required)
     const translations = template?.translations || []
     let hasValidData = false
-    
+
     for (const translation of translations) {
       const hasTitle = translation?.title && translation.title.trim() !== ''
       const hasContent = translation?.content && translation.content.trim() !== ''
-      
+
       if (hasTitle && hasContent) {
         hasValidData = true
         break
       }
     }
-    
+
     if (!hasValidData) {
       ElNotification({
         title: 'Error',
@@ -217,10 +221,32 @@ const handleSendNow = async (notification: Notification) => {
 
     const result = await notificationApi.updateTemplate(notificationId, updatePayload)
 
-    // Check if error response (no users found)
+    // Check if error response (no users found or approval required)
     if (result?.responseCode !== 0 || result?.errorCode !== 0) {
       const errorMessage =
         result?.responseMessage || result?.message || 'Failed to publish notification'
+      const errorCode = result?.errorCode
+
+      // Handle approval required error specifically
+      if (
+        errorCode === ErrorCode.NO_PERMISSION &&
+        errorMessage.includes('Template must be approved')
+      ) {
+        const canApprove = authStore.isAdmin || authStore.isApproval
+
+        ElNotification({
+          title: 'Approval Required',
+          message: canApprove
+            ? `This notification requires approval before sending. You can approve it from the Pending tab.`
+            : `This notification requires approval before sending. Please wait for an administrator to approve it.`,
+          type: 'warning',
+          duration: 5000,
+          dangerouslyUseHTMLString: true,
+        })
+
+        await fetchNotifications()
+        return
+      }
 
       // Get platform name from response data or notification
       const platformName = getFormattedPlatformName({
@@ -266,10 +292,10 @@ const handleSendNow = async (notification: Notification) => {
 
     // Refresh notifications after publishing
     await fetchNotifications()
-    
+
     // REDIRECT TO CURRENT DATE: Set currentWeekStart to today so the user sees the notification on today's date
     currentWeekStart.value = new Date()
-    
+
     // Clear HomeView cache to ensure fresh data when navigating to Home
     try {
       localStorage.removeItem('notifications_cache')
@@ -284,7 +310,7 @@ const handleSendNow = async (notification: Notification) => {
       err.response?.data?.message ||
       err.message ||
       'Failed to publish notification'
-    
+
     ElNotification({
       title: 'Error',
       message: errorMsg,
@@ -361,19 +387,19 @@ const getNotificationsForDay = (date: Date): Notification[] => {
     if (isNaN(scheduleDate.getTime())) return false
     const dateMatches = formatDateForComparison(scheduleDate) === dateStr
     if (!dateMatches) return false
-    
+
     // Filter by selected bakongPlatform
     // If no platform is selected, show all (shouldn't happen with current setup)
     if (!selectedPlatform.value) return true
-    
+
     const notificationPlatform = (n as any).bakongPlatform
     // If notification has no platform, don't show it when filtering
     if (!notificationPlatform) return false
-    
+
     // Compare platforms (case-insensitive)
     const normalizedNotificationPlatform = String(notificationPlatform).toUpperCase().trim()
     const normalizedSelectedPlatform = String(selectedPlatform.value).toUpperCase().trim()
-    
+
     return normalizedNotificationPlatform === normalizedSelectedPlatform
   })
 }
@@ -382,7 +408,7 @@ const getNotificationsForDay = (date: Date): Notification[] => {
 const fetchNotifications = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
     // Use the existing API endpoint with notification format
     const notificationResponse = await notificationApi.getAllNotifications({
@@ -390,17 +416,17 @@ const fetchNotifications = async () => {
       pageSize: 1000, // Get all templates for schedule view
       language: 'KM',
     })
-    
+
     // Filter for published and scheduled templates only
     const filteredNotifications = notificationResponse.data.filter((n) => {
       const status = n.status?.toLowerCase()
       return status === 'published' || status === 'scheduled'
     })
-    
+
     // Fetch raw template data to get sendSchedule for date matching
     const rawTemplatesResponse = await api.get('/api/v1/template/all')
     const rawTemplatesMap = new Map<number, any>()
-    
+
     const rawTemplatesData = rawTemplatesResponse.data?.data || rawTemplatesResponse.data
     if (Array.isArray(rawTemplatesData)) {
       rawTemplatesData.forEach((template: any) => {
@@ -408,7 +434,7 @@ const fetchNotifications = async () => {
         rawTemplatesMap.set(id, template)
       })
     }
-    
+
     // Map and normalize the data for schedule view
     const mappedNotifications = filteredNotifications.map((n) => {
       // Normalize status to match component expectations
@@ -418,17 +444,17 @@ const fetchNotifications = async () => {
       } else if (normalizedStatus === 'SCHEDULED') {
         normalizedStatus = 'SCHEDULED'
       }
-      
+
       // Get sendSchedule from raw template data
       // Use templateId if available, otherwise fall back to id
       const templateId = Number(n.templateId || n.id)
       const rawTemplate = rawTemplatesMap.get(templateId)
-      
+
       // Get date for calendar display
       // For sent/published notifications, use updatedAt (the time it was sent)
       // For scheduled notifications, use sendSchedule
       let displayDate: string | Date | undefined
-      
+
       if (normalizedStatus === 'SENT' || n.isSent) {
         // Use updatedAt for sent notifications, fallback to createdAt
         displayDate = (n as any).updatedAt || n.createdAt
@@ -441,12 +467,12 @@ const fetchNotifications = async () => {
       } else {
         displayDate = n.createdAt
       }
-      
+
       // Ensure displayDate is an ISO string for consistent parsing in getNotificationsForDay
-      const finalDisplayDate = displayDate instanceof Date 
-        ? displayDate.toISOString() 
+      const finalDisplayDate = displayDate instanceof Date
+        ? displayDate.toISOString()
         : displayDate
-      
+
       // Format time helper for scheduledTime display
       const formatTimeFromDate = (date: Date | string | null | undefined): string | null => {
         if (!date) return null
@@ -460,7 +486,7 @@ const fetchNotifications = async () => {
           return null
         }
       }
-      
+
       return {
         ...n,
         status: normalizedStatus,
@@ -480,7 +506,7 @@ const fetchNotifications = async () => {
         bakongPlatform: (n as any).bakongPlatform || rawTemplate?.bakongPlatform || undefined,
       } as Notification
     })
-    
+
     notifications.value = mappedNotifications
   } catch (err: any) {
     console.error('Error fetching notifications:', err)

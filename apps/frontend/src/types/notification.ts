@@ -6,7 +6,7 @@ export interface Notification {
   content?: string
   image?: string
   date: string
-  status: 'published' | 'scheduled' | 'draft'
+  status: 'published' | 'scheduled' | 'draft' | 'pending'
   scheduledTime?: string
   nextSendAt?: string | Date
   lastSentAt?: string | Date
@@ -28,6 +28,9 @@ export interface Notification {
   templateEndAt?: string
   linkPreview?: string
   language?: string
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
+  approvedBy?: string
+  approvedAt?: Date | string
 }
 
 export interface NotificationCardProps {

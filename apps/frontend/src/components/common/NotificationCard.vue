@@ -52,18 +52,59 @@
             </p>
 
             <div class="button-container">
+              <!-- Approval Status Badge (hidden in Draft tab since drafts haven't been submitted for approval) -->
+              <div 
+                v-if="notification.approvalStatus && props.activeTab !== 'draft'" 
+                class="approval-badge" 
+                :class="getApprovalBadgeClass(notification.approvalStatus)"
+              >
+                {{ getApprovalStatusLabel(notification.approvalStatus) }}
+              </div>
+              
+              <!-- View Details button for pending notifications (APPROVAL and ADMINISTRATOR roles) -->
               <button
-                v-if="notification.status === 'scheduled' || notification.status === 'draft'"
+                v-if="canApprove && notification.approvalStatus === 'PENDING'"
+                class="view-details-button"
+                @click="handleViewDetailsClick(notification)"
+              >
+                <span>View Details</span>
+              </button>
+              
+              <!-- Approval/Reject buttons for APPROVAL and ADMINISTRATOR roles -->
+              <template v-if="canApprove">
+                <button
+                  v-if="notification.approvalStatus === 'PENDING'"
+                  class="approve-button"
+                  @click="handleApproveClick(notification)"
+                >
+                  <span>Approve</span>
+                </button>
+                <button
+                  v-if="notification.approvalStatus === 'PENDING'"
+                  class="reject-button"
+                  @click="handleRejectClick(notification)"
+                >
+                  <span>Reject</span>
+                </button>
+              </template>
+              
+              <!-- Publish button (only if approved or admin) -->
+              <button
+                v-if="(notification.status === 'scheduled' || notification.status === 'draft') && (canPublish(notification) || isAdmin)"
                 class="publish-button"
                 @click="handlePublishClick(notification)"
               >
                 <span>Publish now</span>
               </button>
-              <button class="edit-button" @click="handleEditClick(notification)">
+              
+              <!-- Edit button (hidden for APPROVAL role) -->
+              <button v-if="canEdit" class="edit-button" @click="handleEditClick(notification)">
                 <span>Edit</span>
                 <img :src="editIcon" alt="Edit" class="button-icon" />
               </button>
-              <button class="delete-button" @click="handleDeleteClick(notification)">
+              
+              <!-- Delete button (hidden for APPROVAL role) -->
+              <button v-if="canDelete" class="delete-button" @click="handleDeleteClick(notification)">
                 <span>Delete</span>
                 <img :src="deleteIcon" alt="Delete" class="button-icon" />
               </button>
@@ -98,12 +139,16 @@ import type { Notification } from '@/types/notification'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
 import { containsKhmer } from '@/utils/helpers'
+import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
+import { notificationApi } from '@/services/notificationApi'
+import { ElNotification } from 'element-plus'
 
 const editIcon = new URL('@/assets/image/edit.png', import.meta.url).href
 const deleteIcon = new URL('@/assets/image/trash-can.png', import.meta.url).href
 
 interface Props {
-  activeTab?: 'published' | 'scheduled' | 'draft'
+  activeTab?: 'published' | 'scheduled' | 'draft' | 'pending'
   notifications?: Notification[]
   loading?: boolean
 }
@@ -121,6 +166,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const searchQuery = ref('')
 const selectedFilter = ref('ALL')
@@ -128,13 +174,70 @@ const selectedFilter = ref('ALL')
 const { isVisible, options, handleConfirm, handleCancel, showDeleteDialog } =
   useConfirmationDialog()
 
+// Permission checks
+const canApprove = computed(() => {
+  const role = authStore.user?.role
+  return role === UserRole.APPROVAL || role === UserRole.ADMINISTRATOR
+})
+
+const canEdit = computed(() => {
+  const role = authStore.user?.role
+  return role !== UserRole.APPROVAL && role !== UserRole.VIEW_ONLY
+})
+
+const canDelete = computed(() => {
+  const role = authStore.user?.role
+  return role !== UserRole.APPROVAL && role !== UserRole.VIEW_ONLY
+})
+
+const isAdmin = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
+})
+
+const canPublish = (notification: Notification) => {
+  return notification.approvalStatus === 'APPROVED' || !notification.approvalStatus
+}
+
+const getApprovalStatusLabel = (status: string) => {
+  switch (status) {
+    case 'PENDING':
+      return 'Pending Approval'
+    case 'APPROVED':
+      return 'Approved'
+    case 'REJECTED':
+      return 'Rejected'
+    default:
+      return ''
+  }
+}
+
+const getApprovalBadgeClass = (status: string) => {
+  switch (status) {
+    case 'PENDING':
+      return 'badge-pending'
+    case 'APPROVED':
+      return 'badge-approved'
+    case 'REJECTED':
+      return 'badge-rejected'
+    default:
+      return ''
+  }
+}
+
 const displayNotifications = computed(() => {
   return props.notifications || []
 })
 
 const filteredNotifications = computed(() => {
   return displayNotifications.value.filter((n) => {
-    const matchesTab = n.status === props.activeTab
+    // For pending tab, filter by approvalStatus instead of status
+    let matchesTab = false
+    if (props.activeTab === 'pending') {
+      matchesTab = n.approvalStatus === 'PENDING'
+    } else {
+      matchesTab = n.status === props.activeTab
+    }
+    
     const matchesSearch =
       searchQuery.value === '' ||
       n.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
@@ -177,6 +280,64 @@ const handlePublishClick = (notification: Notification) => {
 const handleEditClick = (notification: Notification) => {
   const editId = notification.templateId || notification.id
   router.push(`/notifications/edit/${editId}?fromTab=${props.activeTab}`)
+}
+
+const handleViewDetailsClick = (notification: Notification) => {
+  const viewId = notification.templateId || notification.id
+  // Navigate to view page (read-only mode for APPROVAL role)
+  router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
+}
+
+const handleApproveClick = async (notification: Notification) => {
+  try {
+    const templateId = notification.templateId || notification.id
+    await notificationApi.approveTemplate(Number(templateId))
+    
+    // Determine if this notification will be auto-published or scheduled
+    const isScheduled = notification.status === 'scheduled'
+    const message = isScheduled 
+      ? 'Notification approved successfully! It will be sent at the scheduled time.'
+      : 'Notification approved and published successfully! Users will receive it shortly.'
+    
+    ElNotification({
+      title: 'Success',
+      message: message,
+      type: 'success',
+      duration: 3000,
+    })
+    emit('refresh')
+  } catch (error: any) {
+    ElNotification({
+      title: 'Error',
+      message: error.response?.data?.responseMessage || 'Failed to approve template',
+      type: 'error',
+      duration: 3000,
+    })
+  }
+}
+
+const handleRejectClick = async (notification: Notification) => {
+  const confirmed = await showDeleteDialog('reject')
+  if (confirmed) {
+    try {
+      const templateId = notification.templateId || notification.id
+      await notificationApi.rejectTemplate(Number(templateId))
+      ElNotification({
+        title: 'Success',
+        message: 'Template rejected successfully',
+        type: 'success',
+        duration: 2000,
+      })
+      emit('refresh')
+    } catch (error: any) {
+      ElNotification({
+        title: 'Error',
+        message: error.response?.data?.responseMessage || 'Failed to reject template',
+        type: 'error',
+        duration: 3000,
+      })
+    }
+  }
 }
 </script>
 
@@ -531,6 +692,103 @@ const handleEditClick = (notification: Notification) => {
 
 .delete-button:hover {
   background: #e03e3e;
+}
+
+.approval-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  height: 24px;
+}
+
+.badge-pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.badge-approved {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.badge-rejected {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.view-details-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+  min-width: 120px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: #3b82f6;
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.view-details-button:hover {
+  background: #2563eb;
+}
+
+.approve-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+  min-width: 100px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: #10b981;
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.approve-button:hover {
+  background: #059669;
+}
+
+.reject-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+  min-width: 100px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: #ef4444;
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.reject-button:hover {
+  background: #dc2626;
 }
 
 .button-icon {

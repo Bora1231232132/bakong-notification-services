@@ -281,9 +281,16 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.role === role
   }
 
-  const isAdmin = computed(() => hasRole(UserRole.ADMIN_USER))
-  const isNormalUser = computed(() => hasRole(UserRole.NORMAL_USER))
-  const isApiUser = computed(() => hasRole(UserRole.API_USER))
+  const isAdmin = computed(() => hasRole(UserRole.ADMINISTRATOR))
+  const isApproval = computed(() => hasRole(UserRole.APPROVAL))
+  const isEditor = computed(() => hasRole(UserRole.EDITOR))
+  const isViewOnly = computed(() => hasRole(UserRole.VIEW_ONLY))
+
+  // Permission helpers
+  const permissions = computed(() => {
+    const { getPermissions } = require('@/utils/permissions')
+    return getPermissions(user.value?.role)
+  })
 
   return {
     user,
@@ -293,8 +300,10 @@ export const useAuthStore = defineStore('auth', () => {
     userAvatar,
     isAuthenticated,
     isAdmin,
-    isNormalUser,
-    isApiUser,
+    isApproval,
+    isEditor,
+    isViewOnly,
+    permissions,
     login,
     register,
     logout,

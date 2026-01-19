@@ -266,8 +266,9 @@ const isAdmin = computed(() => {
   return authStore.user?.role === UserRole.ADMINISTRATOR
 })
 
-// Show User Management menu if in development AND user is admin
+// Show User Management menu only for ADMINISTRATOR role
 const showUserManagement = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
   return isDevelopment.value && isAdmin.value
 })
 

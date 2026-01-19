@@ -289,6 +289,9 @@ export const notificationApi = {
           scheduledTime: notification.scheduledTime,
           language: notification.language,
           bakongPlatform: notification.bakongPlatform,
+          approvalStatus: notification.approvalStatus,
+          approvedBy: notification.approvedBy,
+          approvedAt: notification.approvedAt,
         }
       })
 
@@ -570,6 +573,26 @@ export const notificationApi = {
 
   async scheduleNotification(id: number, scheduleTime: string): Promise<void> {
     await api.post(`/api/v1/template/${id}/schedule`, { scheduleTime })
+  },
+
+  async approveTemplate(id: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/approve`)
+      return response.data
+    } catch (error: any) {
+      console.error('Error approving template:', error)
+      throw error
+    }
+  },
+
+  async rejectTemplate(id: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/reject`)
+      return response.data
+    } catch (error: any) {
+      console.error('Error rejecting template:', error)
+      throw error
+    }
   },
 
   async updateTemplate(id: number, templateData: CreateTemplateRequest): Promise<any> {

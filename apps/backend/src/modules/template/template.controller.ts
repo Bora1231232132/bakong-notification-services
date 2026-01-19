@@ -105,7 +105,7 @@ export class TemplateController {
     return this.templateService.all(language)
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const template = await this.templateService.findOne(+id)
@@ -117,7 +117,7 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get()
   async findTemplates(
     @Query() query: any,
@@ -141,5 +141,31 @@ export class TemplateController {
       )
     }
     return this.templateService.findTemplates(page, size, isAscending, language)
+  }
+
+  @Roles(UserRole.ADMINISTRATOR, UserRole.APPROVAL)
+  @Post(':id/approve')
+  async approve(@Param('id') id: string, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.approve(+id, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Template approved successfully',
+      errorCode: 0,
+      data: template,
+    })
+  }
+
+  @Roles(UserRole.ADMINISTRATOR, UserRole.APPROVAL)
+  @Post(':id/reject')
+  async reject(@Param('id') id: string, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.reject(+id, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Template rejected successfully',
+      errorCode: 0,
+      data: template,
+    })
   }
 }

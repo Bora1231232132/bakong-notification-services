@@ -207,6 +207,7 @@
                     />
                   </button>
                   <button
+                    v-if="showEdit"
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
                     title="Edit"
                     @click="$emit('edit', item)"
@@ -214,6 +215,7 @@
                     <img src="@/assets/image/edit.svg" alt="Edit" class="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   <button
+                    v-if="showDelete"
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
                     title="Delete"
                     @click="$emit('delete', item)"
@@ -312,6 +314,7 @@
                     />
                   </button>
                   <button
+                    v-if="showEdit"
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
                     title="Edit"
                     @click="$emit('edit', user)"
@@ -319,6 +322,7 @@
                     <img src="@/assets/image/edit.svg" alt="Edit" class="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                   <button
+                    v-if="showDelete"
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
                     title="Delete"
                     @click="$emit('delete', user)"
@@ -383,10 +387,14 @@ const props = withDefaults(
     mode: TableMode
     items: TableItem[]
     columns?: ColumnConfig[] // Optional column configuration for future extensibility
+    showEdit?: boolean
+    showDelete?: boolean
   }>(),
   {
     mode: 'notification',
     columns: undefined,
+    showEdit: true,
+    showDelete: true,
   },
 )
 

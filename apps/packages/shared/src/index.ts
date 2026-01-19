@@ -10,6 +10,7 @@ export * from './enums/bakong-app.enum'
 export { BakongApp } from './enums/bakong-app.enum'
 export { UserRole } from './enums/user-role.enum'
 export { UserStatus } from './enums/user-status.enum'
+export { ApprovalStatus } from './enums/approval-status.enum'
 export { ErrorCode, ResponseMessage, HttpStatus, Environment, LogLevel } from './enums/error.enums'
 
 export * from './dto/base-response.dto'

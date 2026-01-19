@@ -9,7 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm'
-import { SendType, NotificationType, BakongApp } from '@bakong/shared'
+import { SendType, NotificationType, BakongApp, ApprovalStatus } from '@bakong/shared'
 import { TemplateTranslation } from './template-translation.entity'
 import { CategoryType as CategoryTypeEntity } from './category-type.entity'
 
@@ -69,6 +69,15 @@ export class Template {
 
   @Column({ nullable: true })
   publishedBy?: string
+
+  @Column({ nullable: false, type: 'enum', enum: ApprovalStatus, default: ApprovalStatus.APPROVED })
+  approvalStatus?: ApprovalStatus
+
+  @Column({ nullable: true })
+  approvedBy?: string
+
+  @Column({ type: 'timestamptz', nullable: true })
+  approvedAt?: Date
 
   @Column({ type: 'integer', nullable: true, default: 1 })
   showPerDay?: number

@@ -19,7 +19,7 @@ export class NotificationController {
 
   @Post('send')
   @ApiKeyRequired()
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
   async sendNotification(@Body() dto: SentNotificationDto, @Req() req: any) {
     console.log('📤 /send API endpoint called with:', {
       templateId: dto.templateId,

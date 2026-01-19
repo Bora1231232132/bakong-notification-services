@@ -1,12 +1,17 @@
 <template>
   <div class="flex flex-col gap-3 w-full">
     <div
-      class="w-full h-[213px] border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-4 p-8 bg-white hover:border-[#001346] hover:bg-gray-50"
-      :class="{ 'border-[#001346] bg-gray-50': isDragOver }"
-      @click="triggerFileUploadHandler"
-      @dragover.prevent="handleDragOver"
-      @drop.prevent="handleFileDropHandler"
-      @dragleave="handleDragLeave"
+      class="w-full h-[213px] border-2 border-dashed border-gray-300 rounded-lg text-center transition-all duration-200 flex flex-col items-center justify-center gap-4 p-8 bg-white"
+      :class="{
+        'border-[#001346] bg-gray-50': isDragOver && !props.disabled,
+        'hover:border-[#001346] hover:bg-gray-50': !props.disabled,
+        'cursor-pointer': !props.disabled,
+        'cursor-not-allowed opacity-60': props.disabled,
+      }"
+      @click="!props.disabled && triggerFileUploadHandler()"
+      @dragover.prevent="!props.disabled && handleDragOver"
+      @drop.prevent="!props.disabled && handleFileDropHandler"
+      @dragleave="!props.disabled && handleDragLeave"
     >
       <div v-if="showUploadArea" class="flex flex-col items-center gap-4">
         <div class="w-[72px] h-[72px] flex items-center justify-center">
@@ -29,6 +34,7 @@
           class="w-full max-h-[200px] object-contain rounded-lg"
         />
         <button
+          v-if="!props.disabled"
           @click.stop="removeFile"
           class="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white border-none cursor-pointer flex items-center justify-center transition-black duration-200 hover:bg-red-600"
         >
@@ -92,6 +98,7 @@ import {
 } from '../../utils/helpers'
 
 interface Props {
+  disabled?: boolean
   acceptTypes?: string
   maxSize?: number
   formatText?: string
@@ -114,6 +121,7 @@ const props = withDefaults(defineProps<Props>(), {
   formatText: 'Supported format: PNG, JPG (2:1 W:H or 880:440)',
   sizeText: 'Maximum size: 2MB (will be auto-compressed)',
   validateAspectRatio: true,
+  disabled: false,
 })
 
 const emit = defineEmits<Emits>()
