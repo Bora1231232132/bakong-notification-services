@@ -78,6 +78,8 @@
             @refresh="fetchNotifications"
             @delete="handleDeleteNotification"
             @publish="handlePublishNotification"
+            @switch-tab="handleSwitchTab"
+            @update-notification="handleUpdateNotification"
           />
         </div>
       </div>
@@ -463,9 +465,13 @@ if (initialCache.notifications && initialCache.notifications.length > 0) {
         (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
     )
   } else if (activeTab.value === 'scheduled') {
-    // Scheduled tab shows all scheduled notifications, including pending ones
-    // Pending scheduled notifications will move to Pending tab when their scheduled time arrives
-    tempFiltered = tempFiltered.filter((notification) => notification.status === 'scheduled')
+    // Scheduled tab shows only APPROVED scheduled notifications
+    // PENDING scheduled notifications should appear in Pending tab, not Scheduled tab
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        notification.status === 'scheduled' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus), // Only approved or legacy (no approvalStatus)
+    )
   } else if (activeTab.value === 'draft') {
     // Draft tab shows:
     // 1. Drafts with no approvalStatus (not submitted yet)
@@ -724,9 +730,13 @@ const applyFilters = () => {
         (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
     )
   } else if (activeTab.value === 'scheduled') {
-    // Scheduled tab shows all scheduled notifications, including pending ones
-    // Pending scheduled notifications will move to Pending tab when their scheduled time arrives
-    filtered = filtered.filter((notification) => notification.status === 'scheduled')
+    // Scheduled tab shows only APPROVED scheduled notifications
+    // PENDING scheduled notifications should appear in Pending tab, not Scheduled tab
+    filtered = filtered.filter(
+      (notification) =>
+        notification.status === 'scheduled' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus), // Only approved or legacy (no approvalStatus)
+    )
   } else if (activeTab.value === 'draft') {
     // Draft tab shows:
     // 1. Drafts with no approvalStatus (not submitted yet)
@@ -837,6 +847,32 @@ const handleDeleteNotification = async (notificationId: number | string) => {
 }
 
 const publishingNotifications = new Set<number | string>()
+
+const handleSwitchTab = (tab: 'published' | 'scheduled' | 'draft' | 'pending') => {
+  activeTab.value = tab
+  applyFilters()
+}
+
+const handleUpdateNotification = (updatedNotification: Notification) => {
+  // Find and update the notification in the local state immediately
+  const index = notifications.value.findIndex(
+    (n) => (n.templateId || n.id) === (updatedNotification.templateId || updatedNotification.id)
+  )
+  
+  if (index !== -1) {
+    // Update the notification with new approvalStatus
+    notifications.value[index] = {
+      ...notifications.value[index],
+      ...updatedNotification,
+    }
+    // Apply filters to update the displayed list
+    applyFilters()
+  } else {
+    // If not found, add it to the list (shouldn't happen, but just in case)
+    notifications.value.push(updatedNotification)
+    applyFilters()
+  }
+}
 
 const handlePublishNotification = async (notification: Notification) => {
   const notificationId = notification.templateId || notification.id

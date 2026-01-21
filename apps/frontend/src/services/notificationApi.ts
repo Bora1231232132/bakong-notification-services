@@ -585,12 +585,24 @@ export const notificationApi = {
     }
   },
 
-  async rejectTemplate(id: number): Promise<any> {
+  async rejectTemplate(id: number, reasonForRejection?: string): Promise<any> {
     try {
-      const response = await api.post(`/api/v1/template/${id}/reject`)
+      const response = await api.post(`/api/v1/template/${id}/reject`, {
+        reasonForRejection,
+      })
       return response.data
     } catch (error: any) {
       console.error('Error rejecting template:', error)
+      throw error
+    }
+  },
+
+  async submitTemplate(id: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/submit`)
+      return response.data
+    } catch (error: any) {
+      console.error('Error submitting template for approval:', error)
       throw error
     }
   },

@@ -317,7 +317,7 @@
               @click="handlePublishNow"
             />
             <Button
-              v-if="!isEditingPublished"
+              v-if="!isEditingPublished && !isEditingPending"
               text="Save draft"
               variant="secondary"
               size="medium"
@@ -445,6 +445,7 @@ const fromTab = computed(() => (route.query.fromTab as string) || '')
 const isEditingPublished = ref(false)
 const wasScheduled = ref(false)
 const isLoadingData = ref(false)
+const isEditingPending = ref(false) // Track if editing a PENDING template
 
 // Check if user is APPROVAL role (read-only access)
 const isApprovalRole = computed(() => authStore.user?.role === (UserRole.APPROVAL as any))
@@ -453,6 +454,10 @@ const isReadOnly = computed(() => isViewMode.value || isApprovalRole.value)
 
 // Dynamic button text based on context and user role
 const publishButtonText = computed(() => {
+  // If editing a PENDING template, show "Update now"
+  if (isEditingPending.value) {
+    return 'Update now'
+  }
   if (isEditingPublished.value) {
     return 'Update now'
   }
@@ -704,6 +709,9 @@ const loadNotificationData = async () => {
 
     // Check if editing a published notification (either from fromTab query or isSent status)
     isEditingPublished.value = fromTab.value === 'published' || template.isSent === true
+    
+    // Check if editing a PENDING template
+    isEditingPending.value = template.approvalStatus === 'PENDING'
 
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
@@ -1247,10 +1255,16 @@ const handlePublishNowInternal = async () => {
         } else {
           // User disabled schedule or no schedule
           sendType = SendType.SEND_NOW
-          // EDITOR submissions need approval first (not sent immediately)
-          // When submitting (not saving as draft), isSent should be true
-          isSent = true
-          redirectTab = isEditor ? 'pending' : 'published'
+          // If editing a PENDING template, keep it in Pending tab
+          if (isEditingPending.value) {
+            isSent = false // Keep as not sent to maintain PENDING status
+            redirectTab = 'pending'
+          } else {
+            // EDITOR submissions need approval first (not sent immediately)
+            // When submitting (not saving as draft), isSent should be true
+            isSent = true
+            redirectTab = isEditor ? 'pending' : 'published'
+          }
         }
       }
     } else {
@@ -1265,6 +1279,8 @@ const handlePublishNowInternal = async () => {
 
         sendType = SendType.SEND_SCHEDULE
         isSent = false
+        // For Editor, scheduled templates go to Pending tab (needs approval first)
+        // For Admin, scheduled templates go to Scheduled tab (auto-approved)
         redirectTab = isEditor ? 'pending' : 'scheduled'
       } else {
         // For non-scheduled new notifications, EDITOR goes to pending, others to published
@@ -1573,8 +1589,21 @@ const handlePublishNowInternal = async () => {
         const needsApproval =
           result?.data?.approvalStatus === 'PENDING' || (!isEditMode.value && isEditor)
 
+        // If editing a PENDING template, keep it in Pending tab
+        if (isEditingPending.value && isEditMode.value) {
+          const platformNameForUpdate = formatBakongApp(formData.platform)
+          ElNotification({
+            title: 'Success',
+            message: `Notification for <strong>${platformNameForUpdate}</strong> has been updated. It remains in the Pending tab.`,
+            type: 'success',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          redirectTab = 'pending'
+          // Skip the rest of the success/error handling - continue to navigation logic below
+        }
         // For EDITOR submitting for approval, show special message and skip message handling
-        if (needsApproval && !isEditMode.value) {
+        else if (needsApproval && !isEditMode.value) {
           const platformNameForSubmit = formatBakongApp(formData.platform)
           ElNotification({
             title: 'Success',
@@ -2047,8 +2076,13 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
     }
 
     // Determine redirect tab based on our finalized status
-    // If it's forced as draft or schedule is disabled, go to draft
-    const redirectTab = forceDraft || !useSchedule ? 'draft' : 'scheduled'
+    // If editing, preserve the original tab (fromTab) if it's draft, otherwise use calculated tab
+    let redirectTab = forceDraft || !useSchedule ? 'draft' : 'scheduled'
+    
+    // If editing a draft template, always redirect to draft tab
+    if (isEditMode.value && fromTab.value === 'draft') {
+      redirectTab = 'draft'
+    }
 
     if (isEditMode.value) {
       setTimeout(() => {

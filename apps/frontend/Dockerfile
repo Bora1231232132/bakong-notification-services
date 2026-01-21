@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy root package files for workspace setup
 COPY package*.json ./
-COPY package-lock.json ./
+COPY package-lock.json* ./
 
 # Copy root tsconfig.json (needed by shared package)
 COPY tsconfig.json ./

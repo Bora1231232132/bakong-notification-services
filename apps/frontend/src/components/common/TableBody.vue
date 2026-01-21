@@ -7,8 +7,8 @@
   >
     <div
       :class="[
-        'w-full h-full overflow-y-auto overflow-x-hidden',
-        mode === 'notification' ? 'absolute inset-0' : '',
+        'w-full h-full overflow-y-auto',
+        mode === 'notification' ? 'absolute inset-0 overflow-x-hidden' : 'overflow-x-auto',
       ]"
       :style="
         items && items.length > 6
@@ -18,10 +18,11 @@
     >
       <table
         :class="[
-          'w-full text-sm text-left text-[#001346] border-collapse',
-          mode === 'notification' ? 'min-w-[600px]' : 'min-w-[1247px]',
+          'text-sm text-left text-[#001346] border-collapse',
+          mode === 'notification' ? 'min-w-[600px]' : '',
+          mode === 'user' ? 'user-table-fixed' : '',
         ]"
-        :style="mode === 'user' ? 'width: 1280px' : ''"
+        :style="mode === 'user' ? 'width: 1280px !important; min-width: 1280px !important; table-layout: fixed !important; border-collapse: separate !important; border-spacing: 0 !important;' : 'width: 100%;'"
       >
         <!-- Table Header -->
         <thead
@@ -31,8 +32,8 @@
           <tr class="h-[62px]">
             <!-- First Column: Checkbox + ID/Icon -->
             <th
-              :class="['py-3 pl-4 sm:pl-8 pr-2 sm:pr-4 text-left', 'gap-2 bg-[#f2f2f4]']"
-              style="background-color: #f2f2f4 !important"
+              :class="['text-left', 'gap-2 bg-[#f2f2f4]']"
+              :style="mode === 'user' ? 'background-color: #f2f2f4 !important; width: 120px !important; min-width: 120px !important; max-width: 120px !important; padding: 12px 8px 12px 16px !important; box-sizing: border-box !important;' : 'background-color: #f2f2f4 !important;'"
             >
               <div
                 class="flex items-center justify-start gap-2"
@@ -72,8 +73,8 @@
             <!-- User Mode: Multiple Columns -->
             <template v-if="mode === 'user'">
               <th
-                class="py-3 px-2 sm:px-4 text-left align-middle cursor-pointer bg-[#f2f2f4]"
-                style="background-color: #f2f2f4 !important"
+                class="text-left align-middle cursor-pointer bg-[#f2f2f4]"
+                style="background-color: #f2f2f4 !important; width: 180px !important; min-width: 180px !important; max-width: 180px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
                 @click="handleNameSort"
               >
                 <div class="flex items-center justify-start gap-2">
@@ -92,26 +93,26 @@
                 </div>
               </th>
               <th
-                class="py-3 px-2 sm:px-4 text-left align-middle bg-[#f2f2f4]"
-                style="background-color: #f2f2f4 !important"
+                class="text-left align-middle bg-[#f2f2f4]"
+                style="background-color: #f2f2f4 !important; width: 220px !important; min-width: 220px !important; max-width: 220px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
               >
                 <div class="flex items-center justify-start gap-2">Email</div>
               </th>
               <th
-                class="py-3 px-2 sm:px-4 text-left align-middle bg-[#f2f2f4]"
-                style="background-color: #f2f2f4 !important"
+                class="text-left align-middle bg-[#f2f2f4]"
+                style="background-color: #f2f2f4 !important; width: 180px !important; min-width: 180px !important; max-width: 180px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
               >
                 <div class="flex items-center justify-start gap-2">Phone Number</div>
               </th>
               <th
-                class="py-3 px-2 sm:px-4 text-left align-middle bg-[#f2f2f4]"
-                style="background-color: #f2f2f4 !important"
+                class="text-left align-middle bg-[#f2f2f4]"
+                style="background-color: #f2f2f4 !important; width: 150px !important; min-width: 150px !important; max-width: 150px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
               >
                 <div class="flex items-center justify-start gap-2">Role</div>
               </th>
               <th
-                class="py-3 px-2 sm:px-4 text-left align-middle cursor-pointer bg-[#f2f2f4]"
-                style="background-color: #f2f2f4 !important"
+                class="text-left align-middle cursor-pointer bg-[#f2f2f4]"
+                style="background-color: #f2f2f4 !important; width: 150px !important; min-width: 150px !important; max-width: 150px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
                 @click="handleStatusSort"
               >
                 <div class="flex items-center justify-start gap-2">
@@ -134,10 +135,10 @@
             <!-- Actions Column -->
             <th
               :class="[
-                'py-3 px-2 sm:px-4 whitespace-nowrap w-[200px] bg-[#f2f2f4]',
+                'whitespace-nowrap bg-[#f2f2f4]',
                 mode === 'notification' ? 'text-center' : 'text-start',
               ]"
-              style="background-color: #f2f2f4 !important"
+              :style="mode === 'user' ? 'background-color: #f2f2f4 !important; width: 247px !important; min-width: 247px !important; max-width: 247px !important; padding: 12px 16px !important; box-sizing: border-box !important;' : 'background-color: #f2f2f4 !important;'"
             >
               {{ mode === 'notification' ? 'Actions' : 'Action' }}
             </th>
@@ -196,7 +197,7 @@
               >
                 <div class="flex justify-center items-center gap-1 sm:gap-2">
                   <button
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full border border-[#0013461A] text-[#001346] hover:bg-[#E9ECF8] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full border border-[#0013461A] text-[#001346] hover:bg-[#E9ECF8] transition-all duration-200 shrink-0"
                     title="View"
                     @click="$emit('view', item)"
                   >
@@ -208,7 +209,7 @@
                   </button>
                   <button
                     v-if="showEdit"
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 shrink-0"
                     title="Edit"
                     @click="$emit('edit', item)"
                   >
@@ -216,7 +217,7 @@
                   </button>
                   <button
                     v-if="showDelete"
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 shrink-0"
                     title="Delete"
                     @click="$emit('delete', item)"
                   >
@@ -244,21 +245,22 @@
               class="transition-all duration-150 h-[63px] bg-white hover:bg-[#F9FAFB]"
               style="position: relative; z-index: 1"
             >
-              <td class="py-3 pl-4 sm:pl-8 !pr-2 sm:pr-4 align-middle">
+              <td class="align-middle" style="width: 120px !important; min-width: 120px !important; max-width: 120px !important; padding: 12px 8px 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
                 <div
                   class="flex items-center justify-start gap-3"
-                  style="padding-left: 3px !important"
+                  style="padding-left: 0 !important; margin: 0 !important;"
                 >
                   <input
                     type="checkbox"
                     :checked="selectedItems.has(index)"
                     @change="handleSelectItem(index)"
-                    class="w-4 h-4 border border-[#001346] rounded bg-white focus:ring-0 focus:ring-offset-0"
+                    class="w-4 h-4 border border-[#001346] rounded bg-white focus:ring-0 focus:ring-offset-0 shrink-0"
+                    style="flex-shrink: 0 !important; margin: 0 !important;"
                   />
-                  <span class="text-[16px] font-medium text-[#001346]">{{ index + 1 }}</span>
+                  <span class="text-[16px] font-medium text-[#001346] whitespace-nowrap" style="margin: 0 !important;">{{ index + 1 }}</span>
                 </div>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[#001346] align-middle">
+              <td class="text-[#001346] align-middle" style="width: 180px !important; min-width: 180px !important; max-width: 180px !important; padding: 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
                 <span
                   style="
                     font-family: 'IBM Plex Sans', sans-serif;
@@ -267,21 +269,33 @@
                     font-size: 14px;
                     line-height: 150%;
                     letter-spacing: 0%;
+                    display: block;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    width: 100%;
                   "
+                  :title="user.name || user.displayName || user.username || `Prolos ${index + 2}`"
                 >
                   {{ user.name || user.displayName || user.username || `Prolos ${index + 2}` }}
                 </span>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-[#001346] align-middle">
-                {{ user.email || `Prolos ${index + 3}` }}
+              <td class="text-[16px] font-medium text-[#001346] align-middle" style="width: 220px !important; min-width: 220px !important; max-width: 220px !important; padding: 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
+                <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;" :title="user.email || `Prolos ${index + 3}`">
+                  {{ user.email || `Prolos ${index + 3}` }}
+                </span>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-[#001346] align-middle">
-                {{ user.phoneNumber || `Prolos ${index + 4}` }}
+              <td class="text-[16px] font-medium text-[#001346] align-middle" style="width: 180px !important; min-width: 180px !important; max-width: 180px !important; padding: 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
+                <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;" :title="user.phoneNumber || `Prolos ${index + 4}`">
+                  {{ user.phoneNumber || `Prolos ${index + 4}` }}
+                </span>
               </td>
-              <td class="py-3 px-2 sm:px-4 text-[16px] font-medium text-[#001346] align-middle">
-                {{ formatRole(user.role) }}
+              <td class="text-[16px] font-medium text-[#001346] align-middle" style="width: 150px !important; min-width: 150px !important; max-width: 150px !important; padding: 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
+                <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;" :title="formatRole(user.role)">
+                  {{ formatRole(user.role) }}
+                </span>
               </td>
-              <td class="py-3 px-2 sm:px-4 align-middle">
+              <td class="align-middle" style="width: 150px !important; min-width: 150px !important; max-width: 150px !important; padding: 12px 16px !important; overflow: hidden !important; box-sizing: border-box !important;">
                 <button
                   :class="[
                     'text-white text-[14px] font-medium flex items-center justify-center cursor-default',
@@ -294,16 +308,17 @@
                     borderRadius: '32px',
                     opacity: 1,
                     pointerEvents: 'none',
+                    margin: '0 auto',
                   }"
                   disabled
                 >
                   {{ user.status === 'Deactivate' ? 'Deactivate' : 'Active' }}
                 </button>
               </td>
-              <td class="py-3 px-2 sm:px-4 align-middle">
+              <td class="align-middle" style="width: 247px !important; min-width: 247px !important; max-width: 247px !important; padding: 12px 16px !important; overflow: visible !important; box-sizing: border-box !important;">
                 <div class="flex justify-start items-center gap-1 sm:gap-2">
                   <button
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full border border-[#0013461A] text-[#001346] hover:bg-[#E9ECF8] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full border border-[#0013461A] text-[#001346] hover:bg-[#E9ECF8] transition-all duration-200 shrink-0"
                     title="View"
                     @click="$emit('view', user)"
                   >
@@ -315,7 +330,7 @@
                   </button>
                   <button
                     v-if="showEdit"
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 shrink-0"
                     title="Edit"
                     @click="$emit('edit', user)"
                   >
@@ -323,7 +338,7 @@
                   </button>
                   <button
                     v-if="showDelete"
-                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 flex-shrink-0"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 shrink-0"
                     title="Delete"
                     @click="$emit('delete', user)"
                   >
@@ -555,42 +570,83 @@ const formatRole = (role?: string): string => {
 <style scoped>
 /* User table specific styles */
 table {
-  table-layout: fixed;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
 }
 
-/* Column width distribution for user mode */
-th:nth-child(1),
-td:nth-child(1) {
-  width: 120px;
+/* Ensure table cells don't collapse */
+th,
+td {
+  box-sizing: border-box !important;
+  word-wrap: break-word;
+  vertical-align: middle !important;
 }
 
-th:nth-child(2),
-td:nth-child(2) {
-  width: 180px;
+/* Column width distribution for user mode - using class selector */
+:deep(.user-table-fixed th:nth-child(1)),
+:deep(.user-table-fixed td:nth-child(1)) {
+  width: 120px !important;
+  min-width: 120px !important;
+  max-width: 120px !important;
+  padding: 12px 8px 12px 16px !important;
 }
 
-th:nth-child(3),
-td:nth-child(3) {
-  width: 220px;
+:deep(.user-table-fixed th:nth-child(2)),
+:deep(.user-table-fixed td:nth-child(2)) {
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+  padding: 12px 16px !important;
 }
 
-th:nth-child(4),
-td:nth-child(4) {
-  width: 180px;
+:deep(.user-table-fixed th:nth-child(3)),
+:deep(.user-table-fixed td:nth-child(3)) {
+  width: 220px !important;
+  min-width: 220px !important;
+  max-width: 220px !important;
+  padding: 12px 16px !important;
 }
 
-th:nth-child(5),
-td:nth-child(5) {
-  width: 150px;
+:deep(.user-table-fixed th:nth-child(4)),
+:deep(.user-table-fixed td:nth-child(4)) {
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+  padding: 12px 16px !important;
 }
 
-th:nth-child(6),
-td:nth-child(6) {
-  width: 150px;
+:deep(.user-table-fixed th:nth-child(5)),
+:deep(.user-table-fixed td:nth-child(5)) {
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+  padding: 12px 16px !important;
 }
 
-th:nth-child(7),
-td:nth-child(7) {
-  width: 247px;
+:deep(.user-table-fixed th:nth-child(6)),
+:deep(.user-table-fixed td:nth-child(6)) {
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+  padding: 12px 16px !important;
+}
+
+:deep(.user-table-fixed th:nth-child(7)),
+:deep(.user-table-fixed td:nth-child(7)) {
+  width: 247px !important;
+  min-width: 247px !important;
+  max-width: 247px !important;
+  padding: 12px 16px !important;
+}
+
+/* Prevent content overflow in cells */
+:deep(.user-table-fixed td) {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+:deep(.user-table-fixed td:last-child) {
+  overflow: visible !important;
 }
 </style>

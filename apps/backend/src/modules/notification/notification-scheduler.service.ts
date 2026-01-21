@@ -41,6 +41,8 @@ export class NotificationSchedulerService {
       const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000)
       const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000)
 
+      // CRITICAL: Only fetch scheduled templates that are APPROVED or legacy (no approvalStatus)
+      // NEVER fetch PENDING scheduled templates - they must be approved first
       const dueScheduledTemplates = await this.templateRepo
         .createQueryBuilder('template')
         .leftJoinAndSelect('template.translations', 'translations')
@@ -48,6 +50,10 @@ export class NotificationSchedulerService {
         .where('template.sendType = :sendType', { sendType: 'SEND_SCHEDULE' })
         .andWhere('template.isSent = :isSent', { isSent: false })
         .andWhere('template.sendSchedule <= :oneMinuteFromNow', { oneMinuteFromNow })
+        .andWhere(
+          '(template.approvalStatus IS NULL OR template.approvalStatus = :approvedStatus)',
+          { approvedStatus: ApprovalStatus.APPROVED },
+        )
         .andWhere('template.sendSchedule >= :fifteenMinutesAgo', { fifteenMinutesAgo })
         .getMany()
 
@@ -232,19 +238,29 @@ export class NotificationSchedulerService {
       })
 
       // Check if this scheduled notification requires approval
+      // If approvalStatus is PENDING, it's already in Pending tab - don't process here
+      // (Scheduled templates with PENDING status should stay in Pending tab until approved)
       if (freshTemplate.approvalStatus === ApprovalStatus.PENDING) {
-        // If approval is pending, DON'T send yet - just move to Pending tab
-        // Clear the schedule and change sendType to SEND_NOW so it appears as "ready to send"
         this.logger.log(
-          `⏸️ Template ${template.id} requires approval - moving to Pending tab instead of auto-sending`,
+          `⏸️ Template ${template.id} is PENDING approval - skipping scheduler processing. It will be processed after approval.`,
+        )
+        return // Don't process PENDING scheduled templates - they need approval first
+      }
+      
+      // If approvalStatus is null (DRAFT) - this shouldn't happen for scheduled templates created by Editor
+      // (They should be created with PENDING status), but handle it just in case
+      if (freshTemplate.approvalStatus === null || freshTemplate.approvalStatus === undefined) {
+        // Legacy case - set to PENDING and move to Pending tab
+        this.logger.log(
+          `⏸️ Template ${template.id} is DRAFT (null) - setting to PENDING and moving to Pending tab`,
         )
         const updateResult = await this.templateRepo
           .createQueryBuilder()
           .update(Template)
           .set({
-            sendType: SendType.SEND_NOW, // Change to SEND_NOW so it's ready to send after approval
-            sendSchedule: null, // Clear schedule since the scheduled time has arrived
-            // Keep isSent: false and approvalStatus: PENDING so it appears in Pending tab
+            approvalStatus: ApprovalStatus.PENDING,
+            sendType: SendType.SEND_NOW,
+            sendSchedule: null,
           })
           .where('id = :id', { id: template.id })
           .andWhere('isSent = :isSent', { isSent: false })
@@ -258,14 +274,41 @@ export class NotificationSchedulerService {
         }
 
         this.logger.log(
-          `✅ Template ${template.id} moved to Pending tab - awaiting approval before sending`,
+          `✅ Template ${template.id} moved to Pending tab (approvalStatus: PENDING) - awaiting approval before sending`,
         )
         return // Don't send the notification, just wait for approval
+      }
+
+      // Additional safety check: Only proceed if APPROVED
+      // Block REJECTED or any other unexpected status
+      // (PENDING and null were already checked above, this handles REJECTED and other cases)
+      const approvalStatus = freshTemplate.approvalStatus
+      if (
+        approvalStatus !== ApprovalStatus.APPROVED &&
+        approvalStatus !== null &&
+        approvalStatus !== undefined
+      ) {
+        // This should never happen due to query filter, but safety check
+        // Block REJECTED or any other unexpected status
+        this.logger.warn(
+          `🚫 SECURITY: Template ${template.id} has invalid approval status for sending: ${approvalStatus} - BLOCKING send. Only APPROVED templates can be sent automatically.`,
+        )
+        return // DO NOT send - invalid status
+      }
+      
+      // At this point, approvalStatus must be APPROVED (null/undefined already handled above)
+      // Double-check to be absolutely sure
+      if (approvalStatus !== ApprovalStatus.APPROVED) {
+        this.logger.error(
+          `🚫 CRITICAL: Template ${template.id} reached send logic with invalid status: ${approvalStatus} - This should never happen!`,
+        )
+        return // DO NOT send
       }
 
       // If approved or no approval status (legacy notifications), send immediately
       // When scheduled notification is sent, mark as published and clear schedule
       // This moves it from Scheduled tab to Published tab
+
       const updateResult = await this.templateRepo
         .createQueryBuilder()
         .update(Template)
@@ -286,6 +329,20 @@ export class NotificationSchedulerService {
       }
 
       this.logger.log(`🔒 Successfully claimed template ${template.id} for sending`)
+
+      // Final safety check before actually sending
+      const finalCheck = await this.templateRepo.findOne({
+        where: { id: template.id },
+        select: ['id', 'approvalStatus', 'isSent'],
+      })
+
+      if (finalCheck?.approvalStatus === ApprovalStatus.PENDING) {
+        this.logger.error(
+          `🚫 CRITICAL: Template ${template.id} is PENDING - REVERTING isSent flag. This should never happen!`,
+        )
+        await this.templateRepo.update(template.id, { isSent: false })
+        return // DO NOT send
+      }
 
       if (!template.translations || template.translations.length === 0) {
         this.logger.warn(`⚠️ Template ${template.id} has no translations, reloading...`)

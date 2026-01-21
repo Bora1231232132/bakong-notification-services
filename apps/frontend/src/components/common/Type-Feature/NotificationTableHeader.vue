@@ -2,21 +2,22 @@
   <div
     class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 pt-2 pb-0 min-h-14 w-full"
   >
-    <div class="flex items-center gap-2 w-full sm:w-auto">
-      <label class="text-[#001346] text-[16px] font-medium whitespace-nowrap underline">{{
+    <div class="flex items-center gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap" style="min-width: 0;">
+      <label class="text-[#001346] text-[16px] font-medium whitespace-nowrap underline shrink-0" style="flex-shrink: 0 !important;">{{
         labelText
       }}</label>
       <input
         v-model="searchValue"
         type="text"
         :placeholder="searchPlaceholder || getDefaultPlaceholder()"
-        class="flex-1 sm:flex-initial sm:w-[313px] h-[56px] px-4 border border-[#0013461A] focus:border-[#0013460D] outline-blue-500/50 rounded-[8px] text-[#001346] text-[14px]"
-        style="padding-left: 16px !important"
+        class="h-[56px] px-4 border border-[#0013461A] focus:border-[#0013460D] outline-blue-500/50 rounded-[8px] text-[#001346] text-[14px]"
+        style="padding-left: 16px !important; flex: 1 1 0; min-width: 200px; max-width: 313px; box-sizing: border-box;"
         @input="handleSearch"
       />
       <button
         v-if="showAddNew !== false"
-        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 w-[140px] px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap"
+        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0"
+        style="width: 140px; flex-shrink: 0 !important; box-sizing: border-box;"
         @click="$emit('addNew')"
         aria-label="Add new"
       >
@@ -25,7 +26,7 @@
       </button>
       <button
         v-if="showRefresh"
-        class="flex items-center justify-center text-[#001346] transition-all duration-200 shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap"
+        class="flex items-center justify-center text-[#001346] transition-all duration-200 shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0"
         style="
           width: 40px;
           height: 40px;
@@ -33,6 +34,8 @@
           border-radius: 22.86px;
           padding: 8.57px;
           opacity: 1;
+          flex-shrink: 0 !important;
+          box-sizing: border-box;
         "
         @click="$emit('refresh')"
         aria-label="Refresh table"

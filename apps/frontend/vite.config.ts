@@ -8,7 +8,9 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 // Use environment variables directly (Vite automatically loads .env files)
 // For Docker builds, these will come from process.env
 const frontendPort = parseInt(process.env.VITE_FRONTEND_PORT || '3000', 10)
-const apiBaseUrl = process.env.VITE_API_BASE_URL || 'http://localhost:4005'
+// For Docker dev: use backend service name (internal network)
+// For local dev: use localhost
+const apiBaseUrl = process.env.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL_DOCKER || 'http://localhost:4004'
 
 export default defineConfig({
   root: root,
@@ -28,7 +30,8 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: apiBaseUrl,
+        // Use Docker service name if available, otherwise use apiBaseUrl
+        target: process.env.VITE_API_BASE_URL_DOCKER || apiBaseUrl,
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {
@@ -44,7 +47,8 @@ export default defineConfig({
         },
       },
       '/images': {
-        target: apiBaseUrl,
+        // Use Docker service name if available, otherwise use apiBaseUrl
+        target: process.env.VITE_API_BASE_URL_DOCKER || apiBaseUrl,
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/images/, '/api/v1/image'),

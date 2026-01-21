@@ -18,7 +18,16 @@
           }"
         >
           <div class="card-content">
-            <p class="author-text">Posted by {{ notification.author }}</p>
+            <p class="author-text">
+              Posted by {{ notification.author }}
+              <span 
+                v-if="notification.approvalStatus && props.activeTab !== 'draft'" 
+                class="approval-badge-inline" 
+                :class="getApprovalBadgeClass(notification.approvalStatus)"
+              >
+                ({{ getApprovalStatusLabel(notification.approvalStatus) }})
+              </span>
+            </p>
             <h3 
               class="title-text"
               :class="{ 'lang-khmer': containsKhmer(notification.title) }"
@@ -52,15 +61,6 @@
             </p>
 
             <div class="button-container">
-              <!-- Approval Status Badge (hidden in Draft tab since drafts haven't been submitted for approval) -->
-              <div 
-                v-if="notification.approvalStatus && props.activeTab !== 'draft'" 
-                class="approval-badge" 
-                :class="getApprovalBadgeClass(notification.approvalStatus)"
-              >
-                {{ getApprovalStatusLabel(notification.approvalStatus) }}
-              </div>
-              
               <!-- View Details button for pending notifications (APPROVAL and ADMINISTRATOR roles) -->
               <button
                 v-if="canApprove && notification.approvalStatus === 'PENDING'"
@@ -88,13 +88,13 @@
                 </button>
               </template>
               
-              <!-- Publish button (only if approved or admin) -->
+              <!-- Submit/Publish button - Shows "Submit now" for Editors in Draft tab, "Publish now" for Admins -->
               <button
-                v-if="(notification.status === 'scheduled' || notification.status === 'draft') && (canPublish(notification) || isAdmin)"
-                class="publish-button"
-                @click="handlePublishClick(notification)"
+                v-if="(notification.status === 'scheduled' || notification.status === 'draft') && (canPublish(notification) || isAdmin || canSubmit(notification))"
+                :class="canSubmit(notification) ? 'submit-button' : 'publish-button'"
+                @click="canSubmit(notification) ? handleSubmitClick(notification) : handlePublishClick(notification)"
               >
-                <span>Publish now</span>
+                <span>{{ canSubmit(notification) ? 'Submit now' : 'Publish now' }}</span>
               </button>
               
               <!-- Edit button (hidden for APPROVAL role) -->
@@ -160,9 +160,11 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  refresh: []
-  delete: [id: number | string]
-  publish: [notification: Notification]
+  (e: 'refresh'): void
+  (e: 'delete', id: number | string): void
+  (e: 'publish', notification: Notification): void
+  (e: 'switch-tab', tab: 'published' | 'scheduled' | 'draft' | 'pending'): void
+  (e: 'update-notification', notification: Notification): void
 }>()
 
 const router = useRouter()
@@ -176,26 +178,43 @@ const { isVisible, options, handleConfirm, handleCancel, showDeleteDialog } =
 
 // Permission checks
 const canApprove = computed(() => {
-  const role = authStore.user?.role
+  const role = authStore.user?.role as any
   return role === UserRole.APPROVAL || role === UserRole.ADMINISTRATOR
 })
 
 const canEdit = computed(() => {
-  const role = authStore.user?.role
+  const role = authStore.user?.role as any
   return role !== UserRole.APPROVAL && role !== UserRole.VIEW_ONLY
 })
 
 const canDelete = computed(() => {
-  const role = authStore.user?.role
+  const role = authStore.user?.role as any
   return role !== UserRole.APPROVAL && role !== UserRole.VIEW_ONLY
 })
 
 const isAdmin = computed(() => {
-  return authStore.user?.role === UserRole.ADMINISTRATOR
+  return (authStore.user?.role as any) === UserRole.ADMINISTRATOR
+})
+
+const isEditor = computed(() => {
+  return (authStore.user?.role as any) === UserRole.EDITOR
 })
 
 const canPublish = (notification: Notification) => {
   return notification.approvalStatus === 'APPROVED' || !notification.approvalStatus
+}
+
+const canSubmit = (notification: Notification) => {
+  // Editor can submit if:
+  // 1. User is Editor role
+  // 2. Currently in Draft tab only (scheduled templates auto-move to Pending when time arrives)
+  // 3. Status is draft (not scheduled - scheduled templates are handled automatically by scheduler)
+  // 4. approvalStatus is null (DRAFT) or REJECTED (not PENDING or APPROVED)
+  if (!isEditor.value) return false
+  if (props.activeTab !== 'draft') return false // Only show Submit in Draft tab
+  if (notification.status !== 'draft') return false // Only for draft status, not scheduled
+  if (notification.approvalStatus === 'PENDING' || notification.approvalStatus === 'APPROVED') return false
+  return true
 }
 
 const getApprovalStatusLabel = (status: string) => {
@@ -310,6 +329,40 @@ const handleApproveClick = async (notification: Notification) => {
     ElNotification({
       title: 'Error',
       message: error.response?.data?.responseMessage || 'Failed to approve template',
+      type: 'error',
+      duration: 3000,
+    })
+  }
+}
+
+const handleSubmitClick = async (notification: Notification) => {
+  try {
+    const templateId = notification.templateId || notification.id
+    const response = await notificationApi.submitTemplate(Number(templateId))
+    
+    // Optimistically update the notification in the list
+    const updatedNotification = {
+      ...notification,
+      approvalStatus: 'PENDING' as const,
+    }
+    
+    ElNotification({
+      title: 'Success',
+      message: 'Notification has been submitted for approval. It will appear in the Pending tab.',
+      type: 'success',
+      duration: 3000,
+    })
+    
+    // Emit update event with the updated notification for immediate UI update
+    emit('update-notification', updatedNotification)
+    // Switch to Pending tab to show the submitted template
+    emit('switch-tab', 'pending')
+    // Refresh in background to get the latest data from server
+    emit('refresh')
+  } catch (error: any) {
+    ElNotification({
+      title: 'Error',
+      message: error.response?.data?.responseMessage || 'Failed to submit template for approval',
       type: 'error',
       duration: 3000,
     })
@@ -636,6 +689,35 @@ const handleRejectClick = async (notification: Notification) => {
   background: #0d3bc7;
 }
 
+.submit-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+
+  min-width: 123px;
+  height: 56px;
+  flex: 0 0 auto;
+
+  background: #0f4aea;
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+
+  order: 0;
+
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.submit-button:hover {
+  background: #0d3bc7;
+}
+
 .edit-button {
   display: flex;
   flex-direction: row;
@@ -702,6 +784,25 @@ const handleRejectClick = async (notification: Notification) => {
   font-size: 12px;
   font-weight: 500;
   height: 24px;
+}
+
+.approval-badge-inline {
+  display: inline;
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.approval-badge-inline.badge-pending {
+  color: #92400e;
+}
+
+.approval-badge-inline.badge-approved {
+  color: #065f46;
+}
+
+.approval-badge-inline.badge-rejected {
+  color: #991b1b;
 }
 
 .badge-pending {
@@ -823,6 +924,7 @@ const handleRejectClick = async (notification: Notification) => {
   }
 
   .publish-button,
+  .submit-button,
   .edit-button,
   .delete-button {
     min-width: 0;
@@ -843,6 +945,7 @@ const handleRejectClick = async (notification: Notification) => {
   }
 
   .publish-button,
+  .submit-button,
   .edit-button,
   .delete-button {
     flex: 1;

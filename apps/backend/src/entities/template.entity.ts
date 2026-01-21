@@ -70,7 +70,7 @@ export class Template {
   @Column({ nullable: true })
   publishedBy?: string
 
-  @Column({ nullable: false, type: 'enum', enum: ApprovalStatus, default: ApprovalStatus.APPROVED })
+  @Column({ nullable: true, type: 'enum', enum: ApprovalStatus })
   approvalStatus?: ApprovalStatus
 
   @Column({ nullable: true })
@@ -84,6 +84,9 @@ export class Template {
 
   @Column({ type: 'integer', nullable: true, default: 1 })
   maxDayShowing?: number
+
+  @Column({ type: 'text', nullable: true })
+  reasonForRejection?: string
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date

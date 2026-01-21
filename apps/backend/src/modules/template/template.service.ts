@@ -21,6 +21,7 @@ import { TemplateTranslation } from 'src/entities/template-translation.entity'
 import { User } from 'src/entities/user.entity'
 import { UpdateTemplateDto } from './dto/update-template.dto'
 import { CreateTemplateDto } from './dto/create-template.dto'
+import { RejectTemplateDto } from './dto/reject-template.dto'
 import { ImageService } from '../image/image.service'
 import { PaginationUtils } from '@bakong/shared'
 import {
@@ -208,19 +209,17 @@ export class TemplateService implements OnModuleInit {
     const normalizedPlatforms = ValidationHelper.parsePlatforms(dto.platforms)
 
     // Set approval status based on user role and template status
-    // EDITOR creates templates that need approval ONLY when they're being submitted for sending
-    // Drafts (isSent: false, sendType: SEND_NOW, no schedule) are auto-approved since they're not sent yet
-    // Scheduled templates (sendType: SEND_SCHEDULE) need approval from EDITOR
-    let approvalStatus: ApprovalStatus
+    // EDITOR creates templates in DRAFT state (null) - they must submit for approval
+    // ADMINISTRATOR creates templates that are auto-approved
+    let approvalStatus: ApprovalStatus | null
 
     if (currentUser?.role === UserRole.EDITOR) {
-      // EDITOR submitting for immediate send or scheduling - requires approval
-      if (initialIsSent || dto.sendType === SendType.SEND_SCHEDULE) {
+      // EDITOR creates in DRAFT state (null) for non-scheduled templates
+      // For scheduled templates, set to PENDING so it goes to Pending tab immediately
+      if (dto.sendType === SendType.SEND_SCHEDULE && dto.sendSchedule) {
         approvalStatus = ApprovalStatus.PENDING
       } else {
-        // Draft (isSent: false, sendType: SEND_NOW, no schedule) - auto-approved
-        // Drafts don't need approval workflow since they're not being sent
-        approvalStatus = ApprovalStatus.APPROVED
+        approvalStatus = null // DRAFT for non-scheduled templates
       }
     } else {
       // ADMINISTRATOR - auto-approved
@@ -699,6 +698,18 @@ export class TemplateService implements OnModuleInit {
     } = dto
     const template = await this.findOneRaw(id)
 
+    // Strict check: Cannot edit if PUBLISHED (APPROVED)
+    // Allow editing PENDING templates - editing will reset to DRAFT
+    if (template.approvalStatus === ApprovalStatus.APPROVED) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: 'Cannot edit a published notification',
+        }),
+      )
+    }
+
     // If template is already sent, handle it as editing published notification
     // This includes scheduled notifications that have already been sent
     if (template.isSent) {
@@ -803,13 +814,34 @@ export class TemplateService implements OnModuleInit {
         updateFields.updatedBy = currentUser.username
       }
 
-      // If EDITOR edits an approved template, reset approval status to PENDING
+      // If EDITOR edits a template, reset approval status based on current status
       if (currentUser?.role === UserRole.EDITOR) {
         const existingTemplate = await this.repo.findOne({ where: { id } })
-        if (existingTemplate && existingTemplate.approvalStatus === ApprovalStatus.APPROVED) {
-          updateFields.approvalStatus = ApprovalStatus.PENDING
-          updateFields.approvedBy = null
-          updateFields.approvedAt = null
+        if (existingTemplate) {
+          // If editing a DRAFT template (null), keep it as DRAFT (null) - preserve draft status
+          if (existingTemplate.approvalStatus === null || existingTemplate.approvalStatus === undefined) {
+            // Keep approvalStatus as null (DRAFT) - don't change it
+            // Clear any rejection reason if it exists
+            updateFields.reasonForRejection = null
+          }
+          // If editing a PENDING template, keep it as PENDING (don't reset to DRAFT)
+          // This allows editor to update pending templates without needing to resubmit
+          else if (existingTemplate.approvalStatus === ApprovalStatus.PENDING) {
+            // Keep approvalStatus as PENDING - don't change it
+            // Just clear rejection reason if it exists
+            updateFields.reasonForRejection = null
+          }
+          // If editing an APPROVED template, reset to PENDING
+          else if (existingTemplate.approvalStatus === ApprovalStatus.APPROVED) {
+            updateFields.approvalStatus = ApprovalStatus.PENDING
+            updateFields.approvedBy = null
+            updateFields.approvedAt = null
+          }
+          // If editing a REJECTED template, keep it as REJECTED (can be edited and resubmitted)
+          else if (existingTemplate.approvalStatus === ApprovalStatus.REJECTED) {
+            // Keep approvalStatus as REJECTED - don't change it
+            // Editor can edit and resubmit later
+          }
         }
       }
 
@@ -1148,6 +1180,51 @@ export class TemplateService implements OnModuleInit {
     }
   }
 
+  async submitForApproval(id: number, currentUser?: any): Promise<Template> {
+    const template = await this.repo.findOne({ where: { id } })
+    if (!template) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.RECORD_NOT_FOUND,
+          responseMessage: 'Template not found',
+        }),
+      )
+    }
+
+    // Only allow submission if in DRAFT (null) or REJECTED state
+    if (template.approvalStatus === ApprovalStatus.PENDING) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: 'Notification is already pending approval',
+        }),
+      )
+    }
+
+    if (template.approvalStatus === ApprovalStatus.APPROVED) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: 'Notification is already published',
+        }),
+      )
+    }
+
+    // Allow submission if approvalStatus is null (DRAFT) or REJECTED
+    // No need to check for null explicitly - if it's not PENDING or APPROVED, it's allowed
+
+    await this.repo.update(id, {
+      approvalStatus: ApprovalStatus.PENDING,
+      updatedBy: currentUser?.username,
+      reasonForRejection: null, // Clear any previous rejection reason
+    })
+
+    return await this.findOneRaw(id)
+  }
+
   async approve(id: number, currentUser?: any): Promise<Template> {
     const template = await this.repo.findOne({ where: { id } })
     if (!template) {
@@ -1160,39 +1237,65 @@ export class TemplateService implements OnModuleInit {
       )
     }
 
+    // Only allow approval of PENDING status
+    if (template.approvalStatus !== ApprovalStatus.PENDING) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: `Cannot approve notification with status: ${template.approvalStatus}. Only PENDING notifications can be approved.`,
+        }),
+      )
+    }
+
+    // First, update approval status
     await this.repo.update(id, {
       approvalStatus: ApprovalStatus.APPROVED,
       approvedBy: currentUser?.username,
       approvedAt: new Date(),
     })
 
-    // Check if this is a scheduled notification that's ready to send
-    // (sendType is SEND_NOW and sendSchedule is null, meaning the scheduled time has arrived)
-    // If so, automatically send it after approval
+    // Check if this is a scheduled notification
+    // If it has a schedule, don't send yet - keep it in Scheduled tab until scheduled time
     const updatedTemplate = await this.findOneRaw(id)
-    if (
+    
+    if (updatedTemplate.sendSchedule && updatedTemplate.sendType === SendType.SEND_SCHEDULE) {
+      // Scheduled notification - don't send immediately, keep in Scheduled tab
+      // The scheduler will handle sending when the scheduled time arrives
+      this.logger.log(
+        `📅 [APPROVE] Template ${id} is scheduled for ${updatedTemplate.sendSchedule.toISOString()} - keeping in Scheduled tab until scheduled time`,
+      )
+      // Keep isSent: false so it stays in Scheduled tab
+      // approvalStatus is already set to APPROVED above
+    } else if (
       updatedTemplate.sendType === SendType.SEND_NOW &&
       !updatedTemplate.sendSchedule &&
       !updatedTemplate.isSent
     ) {
+      // Non-scheduled notification - send immediately after approval
       this.logger.log(
         `📤 [APPROVE] Template ${id} is ready to send after approval - sending automatically`,
       )
       try {
-        await this.sendWithTemplate(updatedTemplate, currentUser)
+        await this.notificationService.sendWithTemplate(updatedTemplate)
         // Mark as sent after successful send
         await this.repo.update(id, { isSent: true })
         this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully`)
       } catch (error) {
         this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
         // Don't throw error - approval was successful, just log the send failure
+        // Still mark as published (isSent: true) even if send failed
+        await this.repo.update(id, { isSent: true })
       }
+    } else {
+      // Already sent or other cases
+      await this.repo.update(id, { isSent: true })
     }
 
     return await this.findOneRaw(id)
   }
 
-  async reject(id: number, currentUser?: any): Promise<Template> {
+  async reject(id: number, dto: RejectTemplateDto, currentUser?: any): Promise<Template> {
     const template = await this.repo.findOne({ where: { id } })
     if (!template) {
       throw new BadRequestException(
@@ -1204,10 +1307,22 @@ export class TemplateService implements OnModuleInit {
       )
     }
 
+    // Only allow rejection of PENDING status
+    if (template.approvalStatus !== ApprovalStatus.PENDING) {
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.VALIDATION_FAILED,
+          responseMessage: `Cannot reject notification with status: ${template.approvalStatus}. Only PENDING notifications can be rejected.`,
+        }),
+      )
+    }
+
     await this.repo.update(id, {
       approvalStatus: ApprovalStatus.REJECTED,
       approvedBy: currentUser?.username,
       approvedAt: new Date(),
+      reasonForRejection: dto.reasonForRejection,
     })
 
     return await this.findOneRaw(id)

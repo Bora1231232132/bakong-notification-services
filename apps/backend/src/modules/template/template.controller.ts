@@ -5,6 +5,7 @@ import { BaseResponseDto } from 'src/common/base-response.dto'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { CreateTemplateDto } from './dto/create-template.dto'
 import { UpdateTemplateDto } from './dto/update-template.dto'
+import { RejectTemplateDto } from './dto/reject-template.dto'
 import { TemplateService } from './template.service'
 
 @Controller('template')
@@ -77,6 +78,19 @@ export class TemplateController {
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: `Update ${template.notificationType} successfully`,
+      errorCode: 0,
+      data: template,
+    })
+  }
+
+  @Roles(UserRole.EDITOR)
+  @Post(':id/submit')
+  async submitForApproval(@Param('id') id: string, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.submitForApproval(+id, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Notification submitted for approval successfully',
       errorCode: 0,
       data: template,
     })
@@ -158,9 +172,9 @@ export class TemplateController {
 
   @Roles(UserRole.ADMINISTRATOR, UserRole.APPROVAL)
   @Post(':id/reject')
-  async reject(@Param('id') id: string, @Req() req: any) {
+  async reject(@Param('id') id: string, @Body() dto: RejectTemplateDto, @Req() req: any) {
     const currentUser = req.user
-    const template = await this.templateService.reject(+id, currentUser)
+    const template = await this.templateService.reject(+id, dto, currentUser)
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: 'Template rejected successfully',
