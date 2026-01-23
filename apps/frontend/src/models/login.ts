@@ -1,5 +1,5 @@
 export interface IRequestLogin {
-  Username: string
+  Email: string
   Password: string
 }
 
@@ -14,6 +14,6 @@ export interface ILoginResponse {
 }
 
 export interface ILoginFormData {
-  Username: string
+  Email: string
   Password: string
 }

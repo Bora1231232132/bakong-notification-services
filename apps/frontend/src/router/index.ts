@@ -254,6 +254,21 @@ router.beforeEach(async (to, from, next) => {
 
   const isAuthenticated = authStore.isAuthenticated
 
+  // Enforce mandatory password change
+  if (isAuthenticated && authStore.user?.mustChangePassword) {
+    // Only allow access to the 'change-password' route
+    if (to.name !== 'change-password') {
+      next({ name: 'change-password' })
+      return
+    }
+  }
+
+  // Prevent accessing change-password if not required
+  if (isAuthenticated && !authStore.user?.mustChangePassword && to.name === 'change-password') {
+    next('/')
+    return
+  }
+
   // Check if route requires auth (check current route and all matched parent routes)
   const requiresAuth =
     to.meta.requiresAuth || to.matched.some((route) => route.meta.requiresAuth === true)
@@ -291,7 +306,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if ((to.name === 'login' || to.name === 'register') && isAuthenticated) {
-    next('/')
+    // If they were trying to go to login while authenticated but must change password, 
+    // the first block above already handled it, but let's be safe:
+    if (authStore.user?.mustChangePassword) {
+      next({ name: 'change-password' })
+    } else {
+      next('/')
+    }
     return
   }
 

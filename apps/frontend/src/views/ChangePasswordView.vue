@@ -11,7 +11,10 @@
         <div class="version-text">Notification Center version 1.3</div>
         <div class="title-section">
           <h1 class="main-title">Change password</h1>
-          <p class="main-description">You can change your password to the new one here.</p>
+          <p class="main-description">
+            This is your first login. For security reasons, you must change your temporary password 
+            before accessing the system.
+          </p>
         </div>
         <form
           ref="changePasswordFormRef"
@@ -97,8 +100,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { View, Hide, ArrowRight } from '@element-plus/icons-vue'
 import { userApi } from '@/services/userApi'
@@ -115,6 +118,8 @@ const formData = ref({
 const showNewPassword = ref(false)
 const showConfirmPassword = ref(false)
 const isLoading = ref(false)
+const passwordChangeComplete = ref(false)
+const isHandlingNavigation = ref(false) // Flag to prevent duplicate notifications
 
 const changePasswordFormRef = ref()
 
@@ -136,6 +141,40 @@ const toggleNewPasswordVisibility = () => {
 const toggleConfirmPasswordVisibility = () => {
   showConfirmPassword.value = !showConfirmPassword.value
 }
+
+// Centralized logout and redirect function is now inlined in the guard for better performance
+
+// Handle browser back button and other navigation attempts - logout and redirect to login
+onBeforeRouteLeave((to, from, next) => {
+  // If password change is complete, allow normal navigation
+  if (passwordChangeComplete.value) {
+    next()
+    return
+  }
+
+  // If already handling navigation, don't trigger again
+  if (isHandlingNavigation.value) {
+    next() // Allow the redirect to /login that we initiated
+    return
+  }
+
+  // Set flag to prevent loop
+  isHandlingNavigation.value = true
+
+  // Logout user immediately
+  authStore.logout()
+  
+  // Show notification
+  ElNotification({
+    title: 'Password Change Required',
+    message: 'You have been logged out. You can login again with your temporary password, but you must change it to access the system.',
+    type: 'warning',
+    duration: 5000,
+  })
+  
+  // Redirect to login immediately using replace to avoid history pollution
+  next({ name: 'login', replace: true })
+})
 
 const handleChangePassword = async () => {
   errors.value.newPassword = ''
@@ -184,6 +223,24 @@ const handleChangePassword = async () => {
     )
 
     if (result.success) {
+      // Mark password change as complete to allow navigation
+      passwordChangeComplete.value = true
+      
+      // Update auth store with new token and user data if available
+      // This allows immediate access without re-login
+      if (result.data && result.data.accessToken) {
+        authStore.token = result.data.accessToken
+        if (result.data.user) {
+          authStore.user = result.data.user
+        }
+        localStorage.setItem('auth_token', result.data.accessToken)
+      } else {
+        // Fallback: If no new token is returned, we must still update the state
+        if (authStore.user) {
+          authStore.user.mustChangePassword = false
+        }
+      }
+      
       ElNotification({
         title: 'Success',
         message: result.message || 'Password set successfully!',
@@ -197,7 +254,7 @@ const handleChangePassword = async () => {
       showConfirmPassword.value = false
 
       setTimeout(() => {
-        router.push('/')
+        router.replace('/')
       }, 2000)
     } else {
       ElNotification({

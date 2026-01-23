@@ -3,8 +3,9 @@ import { UserRole } from '@bakong/shared'
 
 export interface User {
   id: number
+  username: string // Backend returns 'username'
   name: string // Backend returns 'name' (mapped from displayName)
-  email: string // Backend returns 'email' (mapped from username)
+  email: string // Backend returns 'email'
   phoneNumber: string
   role: UserRole
   status: string
@@ -31,15 +32,14 @@ export interface PaginatedResponse<T> {
 export interface CreateUserData {
   username: string
   email: string
-  displayName: string
   password: string
   role: UserRole
   phoneNumber: string
 }
 
 export interface UpdateUserData {
+  username?: string
   email?: string
-  displayName?: string
   password?: string
   role?: UserRole
   phoneNumber?: string
@@ -266,7 +266,7 @@ export const userApi = {
     userId: number,
     newPassword: string,
     confirmNewPassword: string,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; data?: any }> {
     try {
       const response = await api.post('/api/v1/auth/setup-initial-password', {
         userId,
@@ -278,6 +278,7 @@ export const userApi = {
         return {
           success: true,
           message: response.data.responseMessage || 'Password set successfully',
+          data: response.data.data, // Include data (accessToken, user)
         }
       }
 

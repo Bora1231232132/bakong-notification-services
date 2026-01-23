@@ -113,7 +113,7 @@ export class TemplateController {
     return this.templateService.getCronJob()
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get('all')
   async getAll(@Query('language') language?: string) {
     return this.templateService.all(language)

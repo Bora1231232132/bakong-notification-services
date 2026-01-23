@@ -5,9 +5,7 @@ export class CreateUserDto {
   @IsNotEmpty()
   @IsString()
   @Length(3, 255)
-  @Matches(/^[a-z0-9_@.]+$/, {
-    message: 'Username must be lowercase with no spaces.',
-  })
+  @Length(3, 255, { message: 'Username must be between 3 and 255 characters' })
   username: string
 
   @IsNotEmpty()

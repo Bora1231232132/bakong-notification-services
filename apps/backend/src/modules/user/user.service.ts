@@ -144,6 +144,82 @@ export class UserService {
     return user
   }
 
+  async findByEmail(email: string) {
+    try {
+      // Normalize email to lowercase for case-insensitive lookup
+      const normalizedEmail = email.toLowerCase().trim()
+
+      // Use QueryBuilder to explicitly select columns
+      const user = await this.repo
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.email',
+          'user.displayName',
+          'user.role',
+          'user.phoneNumber',
+          'user.imageId',
+          'user.mustChangePassword',
+          'user.syncStatus',
+          'user.createdAt',
+          'user.updatedAt',
+        ])
+        .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+        .andWhere('user.deletedAt IS NULL')
+        .getOne()
+
+      return user
+    } catch (error: any) {
+      // If email or imageId column doesn't exist yet, query without it
+      if (
+        error.message?.includes('email') ||
+        error.message?.includes('imageId') ||
+        error.message?.includes('column')
+      ) {
+        const normalizedEmail = email.toLowerCase().trim()
+        const user = await this.repo
+          .createQueryBuilder('user')
+          .select([
+            'user.id',
+            'user.username',
+            'user.displayName',
+            'user.role',
+            'user.phoneNumber',
+            'user.mustChangePassword',
+            'user.syncStatus',
+            'user.createdAt',
+            'user.updatedAt',
+          ])
+          .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+          .andWhere('user.deletedAt IS NULL')
+          .getOne()
+
+        return user
+      }
+      throw error
+    }
+  }
+
+  async findByEmailWithPassword(email: string) {
+    // Explicitly fetch user with password field for authentication
+    // Normalize email to lowercase for case-insensitive lookup
+    const normalizedEmail = email.toLowerCase().trim()
+
+    // Must use addSelect to include password field despite @Exclude() decorator
+    const user = await this.repo
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .addSelect('user.mustChangePassword')
+      .addSelect('user.syncStatus')
+      .addSelect('user.status')
+      .where('LOWER(user.email) = LOWER(:email)', { email: normalizedEmail })
+      .andWhere('user.deletedAt IS NULL')
+      .getOne()
+
+    return user
+  }
+
   /**
    * Create a new user
    * @param dto - User creation data (password is required - Administrator must provide it)
@@ -186,6 +262,7 @@ export class UserService {
       failLoginAttempt?: number
       login_at?: string | null
       changePassword_count?: number
+      tempPasswordLoginAttempts?: number
     },
   ) {
     // Get current syncStatus or use defaults
@@ -194,6 +271,7 @@ export class UserService {
       failLoginAttempt: 0,
       login_at: null,
       changePassword_count: 0,
+      tempPasswordLoginAttempts: 0,
     }
 
     // Merge updates with current values
@@ -208,6 +286,10 @@ export class UserService {
         updates.changePassword_count !== undefined
           ? updates.changePassword_count
           : currentSyncStatus.changePassword_count ?? 0,
+      tempPasswordLoginAttempts:
+        updates.tempPasswordLoginAttempts !== undefined
+          ? updates.tempPasswordLoginAttempts
+          : currentSyncStatus.tempPasswordLoginAttempts ?? 0,
     }
 
     // Update using save for proper JSONB handling
@@ -381,7 +463,7 @@ export class UserService {
       const userResponses: GetUserResponseDto[] = users.map((user) => ({
         id: user.id,
         role: user.role,
-        name: user.displayName,
+        name: user.displayName || user.username || '',
         email: user.email || user.username,
         phoneNumber: user.phoneNumber,
         status: user.status,
@@ -468,7 +550,7 @@ export class UserService {
         const userResponses: GetUserResponseDto[] = users.map((user) => ({
           id: user.id,
           role: user.role,
-          name: user.displayName,
+          name: user.displayName || user.username || '',
           email: user.email || user.username,
           phoneNumber: user.phoneNumber,
           status: user.status,
@@ -653,7 +735,29 @@ export class UserService {
       })
     }
 
+    // Check username uniqueness if username is being changed
+    if (dto.username && dto.username !== user.username) {
+        const existingUser = await this.repo.createQueryBuilder('user')
+            .where('LOWER(user.username) = LOWER(:username)', { username: dto.username })
+            .getOne()
+            
+        if (existingUser && existingUser.id !== id) {
+            throw new BaseResponseDto({
+                responseCode: 1,
+                errorCode: ErrorCode.VALIDATION_FAILED,
+                responseMessage: 'Username already exists',
+            })
+        }
+    }
+
     // Map DTO fields to entity fields and update only provided fields
+    if (dto.username !== undefined) {
+      user.username = dto.username
+      // Also update displayName to match username (Full Name) unless displayName is explicitly provided
+      if (dto.displayName === undefined) {
+         user.displayName = dto.username
+      }
+    }
     if (dto.displayName !== undefined) {
       user.displayName = dto.displayName
     }

@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 const frontendPort = parseInt(process.env.VITE_FRONTEND_PORT || '3000', 10)
 // For Docker dev: use backend service name (internal network)
 // For local dev: use localhost
-const apiBaseUrl = process.env.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL_DOCKER || 'http://localhost:4004'
+const apiBaseUrl = process.env.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL_DOCKER || 'http://localhost:4005'
 
 export default defineConfig({
   root: root,

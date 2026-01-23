@@ -84,6 +84,7 @@ public
 # Temporary folders
 tmp/
 temp/
+z/
 
 # Editor directories and files
 .vscode/

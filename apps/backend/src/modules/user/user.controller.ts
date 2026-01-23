@@ -46,26 +46,34 @@ export class UserController {
   @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Get()
   async findAll(@Query() query: GetUsersQueryDto): Promise<BaseResponseDto<GetUsersResponseDto>> {
-    const { page = 1, size = 10 } = query
+    try {
+      const { page = 1, size = 10 } = query
 
-    const { users, totalCount } = await this.userService.findAllPaginated(query)
+      const { users, totalCount } = await this.userService.findAllPaginated(query)
 
-    const paginationMeta = PaginationUtils.calculatePaginationMeta(
-      page,
-      size,
-      totalCount,
-      users.length,
-    )
+      const paginationMeta = PaginationUtils.calculatePaginationMeta(
+        page,
+        size,
+        totalCount,
+        users.length,
+      )
 
-    const response: GetUsersResponseDto = {
-      users,
-      pagination: paginationMeta,
+      const response: GetUsersResponseDto = {
+        users,
+        pagination: paginationMeta,
+      }
+
+      return BaseResponseDto.success({
+        data: response,
+        message: 'Users retrieved successfully',
+      })
+    } catch (error: any) {
+      console.error('Error in findAll users:', error)
+      return BaseResponseDto.error({
+        message: error.message || 'Failed to retrieve users',
+        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+      })
     }
-
-    return BaseResponseDto.success({
-      data: response,
-      message: 'Users retrieved successfully',
-    })
   }
 
   @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
@@ -86,7 +94,7 @@ export class UserController {
     const userResponse: GetUserResponseDto = {
       id: user.id,
       role: user.role,
-      name: user.username,
+      name: user.displayName || user.username || '',
       email: user.email || user.username,
       phoneNumber: user.phoneNumber,
       status: user.status,
@@ -114,7 +122,7 @@ export class UserController {
       const userResponse: GetUserResponseDto = {
         id: user.id,
         role: user.role,
-        name: user.displayName,
+        name: user.displayName || user.username || '',
         email: user.email || user.username,
         phoneNumber: user.phoneNumber,
         status: user.status,

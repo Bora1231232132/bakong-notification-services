@@ -6,13 +6,18 @@ export class UpdateUserDto {
   @IsEnum(UserRole)
   role?: UserRole
 
+  @IsOptional()
+  @IsString()
+  @Length(3, 255, { message: 'Username must be between 3 and 255 characters' })
+  username?: string
+
   @IsNotEmpty()
   @IsEnum(UserStatus)
   status: UserStatus
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  displayName: string
+  displayName?: string
 
   @IsNotEmpty()
   @IsString()

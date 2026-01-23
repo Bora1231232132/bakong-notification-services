@@ -42,17 +42,19 @@
           />
         </div>
 
-        <div class="field-input w-full max-w-[603px]" key="displayName-field">
+        <div class="field-input w-full max-w-[603px]" key="username-field">
           <div class="flex items-center gap-1 mb-1!">
-            <span class="text-sm leading-snug text-[#001346] label-text">Name</span>
+            <span class="text-sm leading-snug text-[#001346] label-text">Full name</span>
+            <span class="text-red-500 text-sm">*</span>
           </div>
           <FormField
-            v-model="form.displayName"
+            v-model="form.username"
             type="input"
-            prop="displayName"
+            prop="username"
             label=""
-            placeholder="Full name"
-            :disabled="loading"
+            placeholder="User full name"
+            required
+            :disabled="loading || mode === 'edit'"
             :readonly="mode === 'view'"
           />
         </div>
@@ -64,15 +66,15 @@
           >. They will be forced to change it on first login.
         </p>
 
-        <div class="field-input w-full max-w-[603px]" key="username-field">
+        <div class="field-input w-full max-w-[603px]" key="email-field">
           <div class="flex items-center gap-1 mb-1!">
             <span class="text-sm leading-snug text-[#001346] label-text">Email</span>
             <span class="text-red-500 text-sm">*</span>
           </div>
           <FormField
-            v-model="form.username"
+            v-model="form.email"
             type="input"
-            prop="username"
+            prop="email"
             label=""
             placeholder="firstname.lastname.nbc.gov.kh"
             required
@@ -154,7 +156,6 @@ const loading = ref(false)
 
 const form = reactive({
   role: UserRole.VIEW_ONLY,
-  displayName: '',
   username: '',
   email: '', // Separate email field for backend
   phoneNumber: '',
@@ -181,8 +182,10 @@ const rules = computed<FormRules>(() => {
     return {}
   }
   return {
-    displayName: [{ required: false }], // Optional field
     username: [
+      { required: true, message: 'Full name is required', trigger: 'blur' },
+    ],
+    email: [
       { required: true, message: 'Email is required', trigger: 'blur' },
       { type: 'email', message: 'Invalid email', trigger: ['blur', 'change'] },
     ],
@@ -201,7 +204,6 @@ const resetForm = () => {
   form.role = UserRole.VIEW_ONLY
   form.username = ''
   form.email = ''
-  form.displayName = ''
   form.phoneNumber = ''
   formRef.value?.clearValidate()
   clearError()
@@ -218,17 +220,17 @@ const handleSubmit = () => {
       if (mode.value === 'edit' && userId.value) {
         // Edit mode - update existing user
         // Convert email to lowercase (backend requirement)
-        const lowercaseEmail = form.username.trim().toLowerCase()
+        const lowercaseEmail = form.email.trim().toLowerCase()
 
         // Map form status (Active/Deactivate) to backend status (ACTIVE/DEACTIVATED)
         const backendStatus = form.status === 'Deactivate' ? 'DEACTIVATED' : 'ACTIVE'
 
         const success = await userApi.updateUser(userId.value, {
-          email: lowercaseEmail, // Backend expects 'email' not 'username'
-          displayName: form.displayName.trim(),
+          username: form.username.trim(), // Include full name update
+          email: lowercaseEmail,
           role: form.role as UserRole,
           phoneNumber: form.phoneNumber.trim(),
-          status: backendStatus, // Backend requires status field
+          status: backendStatus,
         })
 
         if (success) {
@@ -239,13 +241,15 @@ const handleSubmit = () => {
         }
       } else {
         // Create mode - create new user
-        // Convert username to lowercase (backend requirement)
-        const lowercaseUsername = form.username.trim().toLowerCase()
+        // Use username as-is (allow full names/spaces), email to lowercase
+        const username = form.username.trim()
+        const lowercaseEmail = form.email.trim().toLowerCase()
 
-        const success = await userApi.createUser({
-          username: lowercaseUsername,
-          email: lowercaseUsername, // Use same value for email (user enters email in username field)
-          displayName: form.displayName.trim(),
+        let success = false
+        // Just call the API. If it throws, the outer catch block handles it.
+        success = await userApi.createUser({
+          username: username,
+          email: lowercaseEmail,
           password: form.password,
           role: form.role as UserRole,
           phoneNumber: form.phoneNumber.trim(),
@@ -321,10 +325,10 @@ onMounted(async () => {
 
       if (user) {
         // Map API response to form fields
-        // Backend returns: { id, name, email, phoneNumber, role, status, ... }
+        // Backend returns: { id, username, name, email, phoneNumber, role, status, ... }
         form.role = user.role as UserRole
-        form.displayName = user.name || '' // Backend returns 'name' (mapped from displayName)
-        form.username = user.email || '' // Backend returns 'email' (mapped from username)
+        form.username = user.name || user.username || ''
+        form.email = user.email || ''
         form.phoneNumber = user.phoneNumber || ''
 
         // Map backend status (ACTIVE/DEACTIVATED) to form status (Active/Deactivate)

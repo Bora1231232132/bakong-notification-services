@@ -74,6 +74,7 @@ export class User {
     failLoginAttempt: number
     login_at: string | null
     changePassword_count: number
+    tempPasswordLoginAttempts?: number
   }
 
   @CreateDateColumn({ type: 'timestamp' })

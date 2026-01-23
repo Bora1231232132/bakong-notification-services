@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { authApi } from '@/services/api'
-import { handleApiError, getApiErrorMessage, showSuccess } from '@/services/errorHandler'
+import { handleApiError, showSuccess, getApiErrorMessage } from '@/services/errorHandler'
+import { getPermissions } from '@/utils/permissions'
 import { ErrorCode } from '@bakong/shared'
 
 export enum UserRole {
-  ADMIN_USER = 'ADMIN_USER',
-  NORMAL_USER = 'NORMAL_USER',
-  API_USER = 'API_USER',
+  ADMINISTRATOR = 'ADMINISTRATOR',
+  APPROVAL = 'APPROVAL',
+  EDITOR = 'EDITOR',
+  VIEW_ONLY = 'VIEW_ONLY',
 }
 
 export interface User {
@@ -17,10 +19,11 @@ export interface User {
   displayName: string
   role: UserRole
   image?: string | null
+  mustChangePassword?: boolean
 }
 
 export interface LoginCredentials {
-  username: string
+  email: string
   password: string
 }
 
@@ -98,8 +101,17 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authApi.login(credentials)
 
+      // DEBUG: Log API response
+      console.log('🔍 API Response:', response.data)
+
       if (response.data.responseCode === 0) {
         const { accessToken, user: userData, mustChangePassword } = response.data.data
+
+        // DEBUG: Log extracted values
+        console.log('🔍 Extracted from API:')
+        console.log('  - accessToken:', !!accessToken)
+        console.log('  - userData:', userData)
+        console.log('  - mustChangePassword:', mustChangePassword)
 
         token.value = accessToken
         user.value = userData
@@ -124,27 +136,26 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.setItem('auth_token', accessToken)
 
         // Propagate mustChangePassword flag so caller can redirect user
-        return { success: true, mustChangePassword: !!mustChangePassword }
+        const returnValue = { success: true, mustChangePassword: !!mustChangePassword }
+        console.log('🔍 Returning from login():', returnValue)
+        return returnValue
       } else {
-        // Use error handler to get the correct message based on errorCode (without showing notification)
+        // Handle failed login response from API
         const apiError = {
           responseCode: response.data.responseCode ?? 1,
           responseMessage: response.data.responseMessage ?? 'Unknown error',
           errorCode: response.data.errorCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
           data: response.data.data,
         }
-        const errorMessage = getApiErrorMessage(
-          { response: { data: apiError } },
-          { operation: 'login', component: 'AuthStore' },
-        )
+        
+        // Get error message without showing notification (view will handle notification)
+        const errorMessage = getApiErrorMessage(apiError, { operation: 'login', component: 'AuthStore' })
         error.value = errorMessage
         return { success: false, error: errorMessage }
       }
     } catch (err: any) {
-      const errorMessage = handleApiError(err, {
-        operation: 'login',
-        component: 'AuthStore',
-      })
+      // Handle network errors or other unexpected errors
+      const errorMessage = getApiErrorMessage(err, { operation: 'login', component: 'AuthStore' })
       error.value = errorMessage
       return { success: false, error: errorMessage }
     } finally {
@@ -264,6 +275,7 @@ export const useAuthStore = defineStore('auth', () => {
           role: payload.role,
           displayName: payload.username,
           image: storedAvatar || null,
+          mustChangePassword: payload.mustChangePassword || false,
         }
         token.value = storedToken
         if (storedAvatar) {
@@ -288,7 +300,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Permission helpers
   const permissions = computed(() => {
-    const { getPermissions } = require('@/utils/permissions')
     return getPermissions(user.value?.role)
   })
 

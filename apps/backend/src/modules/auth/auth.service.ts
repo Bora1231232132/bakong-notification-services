@@ -51,6 +51,24 @@ export class AuthService implements OnModuleInit {
 
   async login(user: User, req?: any) {
     try {
+      // Check if user has temporary password and has exceeded login attempts
+      if (user.mustChangePassword) {
+        const tempPasswordAttempts = user.syncStatus?.tempPasswordLoginAttempts ?? 0
+        
+        if (tempPasswordAttempts >= 3) {
+          throw new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.ACCOUNT_TIMEOUT,
+            responseMessage: 'You have exceeded the maximum number of login attempts with the temporary password. Your account has been locked. Please contact an administrator to reset your password.',
+          })
+        }
+        
+        // Increment temporary password login attempts
+        await this.userService.updateSyncStatus(user.id, {
+          tempPasswordLoginAttempts: tempPasswordAttempts + 1,
+        })
+      }
+      
       // Reset failed login attempts on successful login
       await this.userService.resetFailLoginAttempt(user.id)
       // Update login_at timestamp
@@ -79,6 +97,7 @@ export class AuthService implements OnModuleInit {
         role: user.role,
         sub: user.id,
         exp: Math.floor(expireAt / 1000),
+        mustChangePassword: user.mustChangePassword || false,
       }
 
       // Build image path from imageId
@@ -96,9 +115,9 @@ export class AuthService implements OnModuleInit {
             id: user.id,
             username: user.username,
             role: user.role,
-            phoneNumber: user.phoneNumber,
             displayName: user.displayName,
-            image: image,
+            image: null,
+            mustChangePassword: user.mustChangePassword || false,
           },
         },
       })
@@ -117,27 +136,37 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  async validateUserLogin(username: string, password: string) {
-    // Normalize username so login is more flexible:
+  async validateUserLogin(email: string, password: string) {
+    // Normalize email so login is more flexible:
     // - trim spaces
     // - make lookup case-insensitive
-    const normalizedUsername = username.trim()
-    if (!normalizedUsername) {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) {
       throw new BaseResponseDto({
         responseCode: 1,
         errorCode: ErrorCode.VALIDATION_FAILED,
-        responseMessage: 'Username is required.',
+        responseMessage: 'Email is required.',
       })
     }
 
-    // Use findByUsernameWithPassword to ensure we get fresh password data from database
-    const user = await this.userService.findByUsernameWithPassword(normalizedUsername)
-    if (!user) {
-      // User not found - throw specific error
+    // Validate email format
+    const emailRegex = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i
+    if (!emailRegex.test(normalizedEmail)) {
       throw new BaseResponseDto({
         responseCode: 1,
-        errorCode: ErrorCode.USER_NOT_FOUND,
-        responseMessage: ResponseMessage.USER_NOT_FOUND,
+        errorCode: ErrorCode.VALIDATION_FAILED,
+        responseMessage: 'Please enter a valid email address.',
+      })
+    }
+
+    // Use findByEmailWithPassword to ensure we get fresh password data from database
+    const user = await this.userService.findByEmailWithPassword(normalizedEmail)
+    if (!user) {
+      // User not found - throw generic error to prevent email enumeration
+      throw new BaseResponseDto({
+        responseCode: 1,
+        errorCode: ErrorCode.INVALID_USERNAME_OR_PASSWORD,
+        responseMessage: 'Invalid email or password. Please check your credentials and try again.',
       })
     }
 
@@ -175,7 +204,7 @@ export class AuthService implements OnModuleInit {
     await this.userService.increementFailLoginAttempt(user.id)
 
     // Get updated user to check current attempt count
-    const updatedUser = await this.userService.findByUsername(normalizedUsername)
+    const updatedUser = await this.userService.findByEmail(normalizedEmail)
     const updatedFailAttempts = updatedUser?.syncStatus?.failLoginAttempt ?? 0
     const remainingAttempts = 6 - updatedFailAttempts
 
@@ -343,10 +372,9 @@ export class AuthService implements OnModuleInit {
       changePassword_count: currentCount + 1,
     })
 
-    return {
-      responseCode: 0,
-      responseMessage: 'Password changed successfully',
-    }
+    return BaseResponseDto.success({
+      message: 'Password changed successfully',
+    })
   }
 
   async uploadAndUpdateAvatar(
@@ -482,11 +510,39 @@ export class AuthService implements OnModuleInit {
     // Update password and set mustChangePassword to false
     await this.userService.updatePassword(userId, newPassword)
     await this.userService.updateMustChangePassword(userId, false)
+    
+    // Reset temporary password login attempts counter
+    await this.userService.updateSyncStatus(userId, {
+      tempPasswordLoginAttempts: 0,
+    })
+
+    // Fetch updated user to generate new token
+    const updatedUser = await this.userService.findById(userId)
+    const expireAt = moment().add(24, 'hours').valueOf()
+    const payload = {
+      username: updatedUser.username,
+      role: updatedUser.role,
+      sub: updatedUser.id,
+      exp: Math.floor(expireAt / 1000),
+      mustChangePassword: false,
+    }
+    const accessToken = this.jwtService.sign(payload)
 
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: 'Password changed successfully. You can now access the system.',
-      data: { passwordChanged: true },
+      data: {
+        passwordChanged: true,
+        accessToken,
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          role: updatedUser.role,
+          displayName: updatedUser.displayName,
+          mustChangePassword: false,
+          image: null,
+        },
+      },
     })
   }
 }

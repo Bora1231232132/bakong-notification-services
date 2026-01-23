@@ -20,23 +20,23 @@
         >
           <div class="form-field">
             <div class="field-label">
-              <span class="label-text">Username</span>
+              <span class="label-text">Email</span>
               <span class="required-asterisk">*</span>
             </div>
             <div class="input-container">
               <input
-                type="text"
-                v-model="loginFormData.Username"
+                type="email"
+                v-model="loginFormData.Email"
                 class="form-input"
-                :class="{ error: errors.username }"
-                placeholder="ADMIN"
-                autocomplete="username"
+                :class="{ error: errors.email }"
+                placeholder="admin@bakong.local"
+                autocomplete="email"
                 autofocus
-                @input="validateUsernameOnInput"
+                @input="validateEmailOnInput"
               />
             </div>
-            <div v-if="errors.username" class="error-message">
-              {{ errors.username }}
+            <div v-if="errors.email" class="error-message">
+              {{ errors.email }}
             </div>
           </div>
           <div class="form-field">
@@ -111,7 +111,7 @@ const togglePasswordVisibility = () => {
 }
 
 const errors = ref({
-  username: '',
+  email: '',
   password: '',
 })
 
@@ -121,50 +121,50 @@ const clearFieldError = (field: string) => {
   }
 }
 
-const validateUsernameOnInput = () => {
+const validateEmailOnInput = () => {
   // Clear error first
-  errors.value.username = ''
+  errors.value.email = ''
 
-  // Only validate if username is not empty
-  if (loginFormData.Username) {
-    // Normalize username: convert to lowercase and remove spaces
-    const normalizedUsername = loginFormData.Username.toLowerCase().replace(/\s+/g, '')
+  // Only validate if email is not empty
+  if (loginFormData.Email) {
+    // Normalize email: convert to lowercase and trim spaces
+    const normalizedEmail = loginFormData.Email.toLowerCase().trim()
 
-    // Update the form data with normalized username (auto-correct as user types)
-    if (loginFormData.Username !== normalizedUsername) {
-      loginFormData.Username = normalizedUsername
+    // Update the form data with normalized email (auto-correct as user types)
+    if (loginFormData.Email !== normalizedEmail) {
+      loginFormData.Email = normalizedEmail
     }
 
-    // Validate normalized username format
-    const usernameValidation = ValidationUtils.validateUsername(normalizedUsername, false)
-    if (usernameValidation !== true) {
-      errors.value.username = usernameValidation as string
+    // Validate email format
+    const emailValidation = ValidationUtils.validateEmail(normalizedEmail, false)
+    if (emailValidation !== true) {
+      errors.value.email = emailValidation as string
     }
   }
 }
 
 const handleSubmitLogin = async (formRef: any) => {
-  errors.value.username = ''
+  errors.value.email = ''
   errors.value.password = ''
 
   let hasErrors = false
 
-  if (!loginFormData.Username) {
-    errors.value.username = 'Please enter your username'
+  if (!loginFormData.Email) {
+    errors.value.email = 'Please enter your email'
     hasErrors = true
   } else {
-    // Normalize username: convert to lowercase and remove spaces
-    const normalizedUsername = loginFormData.Username.toLowerCase().replace(/\s+/g, '')
+    // Normalize email: convert to lowercase and trim
+    const normalizedEmail = loginFormData.Email.toLowerCase().trim()
 
-    // Validate normalized username format
-    const usernameValidation = ValidationUtils.validateUsername(normalizedUsername, true)
-    if (usernameValidation !== true) {
-      errors.value.username = usernameValidation as string
+    // Validate email format
+    const emailValidation = ValidationUtils.validateEmail(normalizedEmail, true)
+    if (emailValidation !== true) {
+      errors.value.email = emailValidation as string
       hasErrors = true
     } else {
-      // Update the form data with normalized username (for display feedback)
-      if (loginFormData.Username !== normalizedUsername) {
-        loginFormData.Username = normalizedUsername
+      // Update the form data with normalized email (for display feedback)
+      if (loginFormData.Email !== normalizedEmail) {
+        loginFormData.Email = normalizedEmail
       }
     }
   }
@@ -180,28 +180,46 @@ const handleSubmitLogin = async (formRef: any) => {
 
   try {
     const result = await appStore.proceedLogin({
-      Username: loginFormData.Username,
+      Email: loginFormData.Email,
       Password: loginFormData.Password,
     })
 
+    // DEBUG: Log the full result to see mustChangePassword flag
+    console.log('🔍 Login Result:', result)
+    console.log('🔍 mustChangePassword:', 'mustChangePassword' in (result || {}) ? (result as any).mustChangePassword : undefined)
+
     if (result?.success) {
-      ElNotification({
-        title: 'Success',
-        message: loginFormData.Username
-          ? `Welcome back, ${loginFormData.Username}!`
-          : 'Login successful!',
-        type: 'success',
-        duration: 2000,
-      })
+      const mustChange = 'mustChangePassword' in result && result.mustChangePassword
+
+      if (mustChange) {
+        ElNotification({
+          title: 'Password Change Required',
+          message: 'You must change your temporary password first before accessing the system.',
+          type: 'warning',
+          duration: 5000,
+        })
+      } else {
+        ElNotification({
+          title: 'Success',
+          message: loginFormData.Email
+            ? `Welcome back!`
+            : 'Login successful!',
+          type: 'success',
+          duration: 2000,
+        })
+      }
 
       await new Promise((resolve) => setTimeout(resolve, 200))
 
       // If backend indicates this is a temporary/default password,
       // send user directly to change-password screen.
-      const targetRoute = result.mustChangePassword ? '/change-password' : '/'
+      // Use 'in' operator or optional chaining to safely check property
+      const targetRoute = mustChange ? '/change-password' : '/'
+      console.log('🔍 Target Route:', targetRoute, 'mustChangePassword:', mustChange)
       router.replace(targetRoute)
     } else {
-      const errorMessage = result?.error || 'Login failed. Please try again.'
+      // Safely access error property
+      const errorMessage = ('error' in (result || {}) ? (result as any).error : null) || 'Login failed. Please try again.'
 
       // Check if account is suspended
       const isAccountSuspended =

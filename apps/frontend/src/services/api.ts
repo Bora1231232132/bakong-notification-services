@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.DEV
   ? ''
   : import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== null
     ? import.meta.env.VITE_API_BASE_URL
-    : 'http://localhost:4004'
+    : 'http://localhost:4005'
 
 // Helper function to clear auth state (both localStorage and store)
 const clearAuthState = () => {
@@ -45,7 +45,17 @@ const addAuthInterceptor = (axiosInstance: typeof api) => {
       ) {
         config.headers['x-api-key'] = 'BAKONG'
       }
-      if (!config.url?.includes('/auth/login') && !config.url?.includes('/auth/register')) {
+      
+      // Public endpoints that don't require authentication
+      const publicEndpoints = [
+        '/auth/login',
+        '/auth/register',
+        '/auth/setup-initial-password', // Allow password setup without auth token
+      ]
+      
+      const isPublicEndpoint = publicEndpoints.some(endpoint => config.url?.includes(endpoint))
+      
+      if (!isPublicEndpoint) {
         const token = localStorage.getItem('auth_token')
         if (token && token.trim() !== '') {
           const tokenParts = token.split('.')
@@ -178,9 +188,9 @@ addResponseInterceptor(api)
 addResponseInterceptor(uploadApi)
 
 export const authApi = {
-  login: (credentials: { username: string; password: string }) => {
+  login: (credentials: { email: string; password: string }) => {
     const formData = new URLSearchParams()
-    formData.append('username', credentials.username)
+    formData.append('email', credentials.email)
     formData.append('password', credentials.password)
     const requestConfig = {
       headers: {

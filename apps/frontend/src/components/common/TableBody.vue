@@ -2,7 +2,7 @@
   <div
     :class="[
       'w-full opacity-100 overflow-hidden',
-      mode === 'notification' ? 'relative h-[441px]' : 'max-w-[1280px] max-h-[434px]',
+      mode === 'notification' ? 'relative h-[441px]' : 'max-w-[1280px] h-[434px]',
     ]"
   >
     <div
@@ -115,7 +115,7 @@
                 style="background-color: #f2f2f4 !important; width: 150px !important; min-width: 150px !important; max-width: 150px !important; padding: 12px 16px !important; box-sizing: border-box !important;"
                 @click="handleStatusSort"
               >
-                <div class="flex items-center justify-start gap-2">
+                <div class="flex items-center justify-center gap-2">
                   Status
                   <img
                     src="@/assets/image/Vector.svg"
