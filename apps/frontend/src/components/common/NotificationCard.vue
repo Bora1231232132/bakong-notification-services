@@ -6,7 +6,16 @@
           <div class="loading-text">Loading notifications...</div>
         </div>
         <div v-else-if="filteredNotifications.length === 0" class="empty-state">
-          <div class="empty-text">No {{ props.activeTab }} notifications found</div>
+          <div class="empty-state-container">
+            <img
+              :src="emptyStateImage"
+              alt="Empty State"
+              class="image-empty-state"
+            />
+            <div class="empty-message text-center text-gray-500 text-sm">
+              Jom Reab Sur, it is empty!
+            </div>
+          </div>
         </div>
         <div
           v-else
@@ -21,11 +30,11 @@
             <p class="author-text">
               Posted by {{ notification.author }}
               <span 
-                v-if="notification.approvalStatus && props.activeTab !== 'draft'" 
-                class="approval-badge-inline" 
-                :class="getApprovalBadgeClass(notification.approvalStatus)"
+                v-if="shouldShowBadge(notification)" 
+                class="approval-badge-tag" 
+                :class="getApprovalBadgeClass(notification.approvalStatus || 'APPROVED')"
               >
-                ({{ getApprovalStatusLabel(notification.approvalStatus) }})
+                {{ getBadgeLabel(notification) }}
               </span>
             </p>
             <h3 
@@ -57,30 +66,38 @@
 
           <div class="card-footer">
             <p class="date-text">
-              {{ notification.date }}
+              {{ formatDateWithScheduledTime(notification) }}
             </p>
 
             <div class="button-container">
-              <!-- View Details button for pending notifications (APPROVAL and ADMINISTRATOR roles) -->
+              <!-- View button - Hidden for approver role in pending approval tab -->
               <button
-                v-if="canApprove && notification.approvalStatus === 'PENDING'"
-                class="view-details-button"
-                @click="handleViewDetailsClick(notification)"
+                v-if="!(isApprover && props.activeTab === 'pending')"
+                class="view-button"
+                @click="handleViewClick(notification)"
               >
-                <span>View Details</span>
+                <span>View</span>
+                <img src="@/assets/image/view_16.svg" alt="View" class="button-icon" />
               </button>
               
-              <!-- Approval/Reject buttons for APPROVAL and ADMINISTRATOR roles -->
-              <template v-if="canApprove">
+              <!-- Approval Now button for Approver in Pending tab -->
+              <button
+                v-if="canShowApprovalNow(notification)"
+                class="approval-now-button"
+                @click="handleApprovalNowClick(notification)"
+              >
+                <span>Approval Now</span>
+              </button>
+              
+              <!-- Approval/Reject buttons for APPROVAL role in Pending tab (if not using Approval Now) -->
+              <template v-if="isApprover && props.activeTab === 'pending' && notification.approvalStatus === 'PENDING' && !canShowApprovalNow(notification)">
                 <button
-                  v-if="notification.approvalStatus === 'PENDING'"
                   class="approve-button"
                   @click="handleApproveClick(notification)"
                 >
                   <span>Approve</span>
                 </button>
                 <button
-                  v-if="notification.approvalStatus === 'PENDING'"
                   class="reject-button"
                   @click="handleRejectClick(notification)"
                 >
@@ -88,33 +105,47 @@
                 </button>
               </template>
               
-              <!-- Submit/Publish button - Shows "Submit now" for Editors in Draft tab, "Publish now" for Admins -->
+              <!-- Publish Now button for Approver in Scheduled/Pending tabs -->
               <button
-                v-if="(notification.status === 'scheduled' || notification.status === 'draft') && (canPublish(notification) || isAdmin || canSubmit(notification))"
-                :class="canSubmit(notification) ? 'submit-button' : 'publish-button'"
-                @click="canSubmit(notification) ? handleSubmitClick(notification) : handlePublishClick(notification)"
+                v-if="canPublishNow(notification)"
+                class="publish-now-button"
+                @click="handlePublishNowClick(notification)"
               >
-                <span>{{ canSubmit(notification) ? 'Submit now' : 'Publish now' }}</span>
+                <span>Publish Now</span>
               </button>
               
-              <!-- Edit button (hidden for APPROVAL role) -->
-              <button v-if="canEdit" class="edit-button" @click="handleEditClick(notification)">
+              <!-- Submit Now button for Admin/Editor in Draft tab -->
+              <button
+                v-if="canSubmitNotification(notification)"
+                class="submit-button"
+                @click="handleSubmitClick(notification)"
+              >
+                <span>Submit Now</span>
+              </button>
+              
+              <!-- Edit button - Based on role and tab -->
+              <button 
+                v-if="canEditNotification(notification)" 
+                class="edit-button" 
+                @click="handleEditClick(notification)"
+              >
                 <span>Edit</span>
                 <img :src="editIcon" alt="Edit" class="button-icon" />
               </button>
               
-              <!-- Delete button (hidden for APPROVAL role) -->
-              <button v-if="canDelete" class="delete-button" @click="handleDeleteClick(notification)">
+              <!-- Delete button - Always visible but disabled when not allowed -->
+              <button 
+                class="delete-button" 
+                :class="{ 'disabled': !canDeleteNotification(notification) }"
+                :disabled="!canDeleteNotification(notification)"
+                @click="canDeleteNotification(notification) ? handleDeleteClick(notification) : null"
+              >
                 <span>Delete</span>
                 <img :src="deleteIcon" alt="Delete" class="button-icon" />
               </button>
             </div>
           </div>
         </div>
-      </div>
-
-      <div v-if="filteredNotifications.length === 0" class="empty-state">
-        <p class="empty-text">No notifications found</p>
       </div>
     </div>
   </div>
@@ -126,7 +157,8 @@
     :confirm-text="options.confirmText"
     :cancel-text="options.cancelText"
     :type="options.type"
-    @confirm="handleConfirm"
+    :show-reason-input="options.showReasonInput"
+    @confirm="(reason?: string) => handleConfirm(reason)"
     @cancel="handleCancel"
   />
 </template>
@@ -143,6 +175,7 @@ import { useAuthStore } from '@/stores/auth'
 import { UserRole } from '@bakong/shared'
 import { notificationApi } from '@/services/notificationApi'
 import { ElNotification } from 'element-plus'
+import emptyStateImage from '@/assets/image/jomreadsur.png'
 
 const editIcon = new URL('@/assets/image/edit.png', import.meta.url).href
 const deleteIcon = new URL('@/assets/image/trash-can.png', import.meta.url).href
@@ -160,7 +193,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  (e: 'refresh'): void
+  (e: 'refresh', forceRefresh?: boolean): void
   (e: 'delete', id: number | string): void
   (e: 'publish', notification: Notification): void
   (e: 'switch-tab', tab: 'published' | 'scheduled' | 'draft' | 'pending'): void
@@ -173,7 +206,7 @@ const authStore = useAuthStore()
 const searchQuery = ref('')
 const selectedFilter = ref('ALL')
 
-const { isVisible, options, handleConfirm, handleCancel, showDeleteDialog } =
+const { isVisible, options, handleConfirm, handleCancel, showDeleteDialog, showRejectDialog } =
   useConfirmationDialog()
 
 // Permission checks
@@ -190,6 +223,76 @@ const canEdit = computed(() => {
 const canDelete = computed(() => {
   const role = authStore.user?.role as any
   return role !== UserRole.APPROVAL && role !== UserRole.VIEW_ONLY
+})
+
+const isApprover = computed(() => {
+  return (authStore.user?.role as any) === UserRole.APPROVAL
+})
+
+// Check if delete button should be enabled based on role and tab
+const canDeleteNotification = (notification: Notification) => {
+  const role = authStore.user?.role as any
+  
+  // Approver can delete in Published, Scheduled, Pending, and Draft tabs
+  if (role === UserRole.APPROVAL) {
+    return props.activeTab === 'published' || props.activeTab === 'scheduled' || props.activeTab === 'pending' || props.activeTab === 'draft'
+  }
+  
+  // Admin and Editor can delete in Draft tab only (remove after all code done kept only draft tab)
+  if (role === UserRole.ADMINISTRATOR || role === UserRole.EDITOR) {
+    return props.activeTab === 'draft' || props.activeTab === 'published' || props.activeTab === 'scheduled' || props.activeTab === 'pending'
+  }
+
+  return false
+}
+
+// Check if edit button should be enabled based on role and tab
+const canEditNotification = (notification: Notification) => {
+  const role = authStore.user?.role as any
+  
+  // Approver cannot edit in any tab
+  if (role === UserRole.APPROVAL) {
+    return false
+  }
+  
+  // Viewer cannot edit
+  if (role === UserRole.VIEW_ONLY) {
+    return false
+  }
+  
+  // Admin and Editor can edit in Published, Scheduled, Pending, Draft tabs
+  return props.activeTab === 'published' || props.activeTab === 'scheduled' || props.activeTab === 'pending' || props.activeTab === 'draft'
+}
+
+// Check if submit button should be enabled
+const canSubmitNotification = (notification: Notification) => {
+  const role = authStore.user?.role as any
+  
+  // Only Admin and Editor can submit in Draft tab
+  if (props.activeTab !== 'draft') return false
+  if (role !== UserRole.ADMINISTRATOR && role !== UserRole.EDITOR) return false
+  if (notification.status !== 'draft') return false
+  if (notification.approvalStatus === 'PENDING' || notification.approvalStatus === 'APPROVED') return false
+  
+  return true
+}
+
+// Check if publish now button should be shown for Approver
+const canPublishNow = (notification: Notification) => {
+  const role = authStore.user?.role as any
+  if (role !== UserRole.APPROVAL) return false
+  return props.activeTab === 'scheduled' || props.activeTab === 'pending'
+}
+
+// Check if approval now button should be shown for Approver in Pending tab
+const canShowApprovalNow = (notification: Notification) => {
+  const role = authStore.user?.role as any
+  if (role !== UserRole.APPROVAL) return false
+  return props.activeTab === 'pending' && notification.approvalStatus === 'PENDING'
+}
+
+const isViewOnly = computed(() => {
+  return (authStore.user?.role as any) === UserRole.VIEW_ONLY
 })
 
 const isAdmin = computed(() => {
@@ -225,9 +328,71 @@ const getApprovalStatusLabel = (status: string) => {
       return 'Approved'
     case 'REJECTED':
       return 'Rejected'
+    case 'EXPIRED':
+      return 'Expired Time'
     default:
       return ''
   }
+}
+
+// Format date with "(scheduled time)" suffix for scheduled notifications in Published tab only
+const formatDateWithScheduledTime = (notification: Notification): string => {
+  const baseDate = notification.date || ''
+  
+  // Only add "(scheduled time)" for scheduled notifications that are in Published tab
+  // Check if it was sent via schedule (sendType === 'SEND_SCHEDULE' and isSent === true)
+  // AND it's currently in the Published tab (not Scheduled or other tabs)
+  const isScheduledNotification = 
+    notification.sendType === 'SEND_SCHEDULE' && 
+    notification.isSent === true &&
+    props.activeTab === 'published'
+  
+  if (isScheduledNotification) {
+    return `${baseDate} (scheduled time)`
+  }
+  
+  return baseDate
+}
+
+// Badge display logic per tab
+const shouldShowBadge = (notification: Notification) => {
+  // Published tab: No badge (remove "(approved)")
+  if (props.activeTab === 'published') {
+    return false
+  }
+  
+  // Scheduled tab: Show "(approved)" badge
+  if (props.activeTab === 'scheduled') {
+    return notification.approvalStatus === 'APPROVED' || !notification.approvalStatus
+  }
+  
+  // Pending tab: Show "(pending approve)" badge
+  if (props.activeTab === 'pending') {
+    return notification.approvalStatus === 'PENDING'
+  }
+  
+  // Draft tab: Show "(rejected)" or "(expired time)" badge if rejected/expired, otherwise no badge
+  if (props.activeTab === 'draft') {
+    return notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED'
+  }
+  
+  return false
+}
+
+const getBadgeLabel = (notification: Notification) => {
+  if (props.activeTab === 'scheduled') {
+    return 'Approved'
+  }
+  if (props.activeTab === 'pending') {
+    return 'Pending Approval'
+  }
+  if (props.activeTab === 'draft' && notification.approvalStatus === 'REJECTED') {
+    return 'Rejected'
+  }
+  if (props.activeTab === 'draft' && notification.approvalStatus === 'EXPIRED') {
+    return 'Expired Time'
+  }
+  return getApprovalStatusLabel(notification.approvalStatus || '')
 }
 
 const getApprovalBadgeClass = (status: string) => {
@@ -238,6 +403,8 @@ const getApprovalBadgeClass = (status: string) => {
       return 'badge-approved'
     case 'REJECTED':
       return 'badge-rejected'
+    case 'EXPIRED':
+      return 'badge-expired'
     default:
       return ''
   }
@@ -301,43 +468,314 @@ const handleEditClick = (notification: Notification) => {
   router.push(`/notifications/edit/${editId}?fromTab=${props.activeTab}`)
 }
 
-const handleViewDetailsClick = (notification: Notification) => {
+const handleViewClick = (notification: Notification) => {
   const viewId = notification.templateId || notification.id
-  // Navigate to view page (read-only mode for APPROVAL role)
+  // Navigate to view page (read-only mode)
   router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
 }
 
+const handleApprovalNowClick = async (notification: Notification) => {
+  const templateId = notification.templateId || notification.id
+  const viewId = templateId
+  
+  console.log('🔵 [APPROVAL NOW CLICK] Starting approval check for template:', {
+    templateId,
+    notificationId: notification.id,
+    activeTab: props.activeTab,
+    sendType: notification.sendType,
+    scheduledTime: notification.scheduledTime,
+  })
+  
+  // Check if this is a scheduled notification that might be expired
+  if (notification.sendType === 'SEND_SCHEDULE' && notification.scheduledTime) {
+    try {
+      // Fetch full template to check scheduled time
+      const { api } = await import('@/services/api')
+      const fullTemplateResponse = await api.get(`/api/v1/template/${templateId}`)
+      const template = fullTemplateResponse.data?.data || fullTemplateResponse.data
+      
+      console.log('🔵 [APPROVAL NOW CLICK] Fetched template:', {
+        templateId,
+        sendSchedule: template?.sendSchedule,
+        sendType: template?.sendType,
+        approvalStatus: template?.approvalStatus,
+      })
+      
+      if (template?.sendSchedule) {
+        // Parse scheduled time
+        const scheduledTime = new Date(template.sendSchedule)
+        const now = new Date()
+        
+        // Check if scheduled time has passed (with 1 minute grace period)
+        const oneMinuteAgo = new Date(now.getTime() - 60 * 1000)
+        
+        console.log('⏰ [APPROVAL NOW CLICK] Checking scheduled time:', {
+          scheduledTimeUTC: scheduledTime.toISOString(),
+          currentTimeUTC: now.toISOString(),
+          scheduledTimeLocal: scheduledTime.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+          currentTimeLocal: now.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+          hasPassed: scheduledTime < oneMinuteAgo,
+        })
+        
+        if (scheduledTime < oneMinuteAgo) {
+          // Scheduled time has passed - auto-expire it
+          console.warn('⏰ [APPROVAL NOW CLICK] Scheduled time has passed - auto-expiring template')
+          
+          try {
+            // Call approve API - backend will auto-expire it
+            await notificationApi.approveTemplate(Number(templateId))
+          } catch (error: any) {
+            // Check if this is an auto-expiration response
+            const isAutoExpired = error.response?.data?.data?.autoExpired === true
+            const expiredReason = error.response?.data?.responseMessage || error.response?.data?.data?.expiredReason || 'Scheduled time has passed. Please contact team member to update the schedule first.'
+            
+            if (isAutoExpired) {
+              console.log('✅ [APPROVAL NOW CLICK] Template auto-expired successfully')
+              ElNotification({
+                title: 'Notification Expired',
+                message: `<strong>Scheduled time has expired</strong>. Please contact <strong>team member</strong> to update the schedule first.`,
+                type: 'warning',
+                duration: 5000,
+                dangerouslyUseHTMLString: true,
+              })
+              
+              // Redirect to Draft tab
+              emit('switch-tab', 'draft')
+              setTimeout(() => {
+                emit('refresh', true) // Force refresh to show updated status
+              }, 500)
+              return
+            } else {
+              // Unexpected error - still show message and redirect
+              console.error('❌ [APPROVAL NOW CLICK] Unexpected error during auto-expiration:', error)
+              ElNotification({
+                title: 'Error',
+                message: 'Failed to process expired notification. Please try again.',
+                type: 'error',
+                duration: 5000,
+              })
+              emit('switch-tab', 'draft')
+              setTimeout(() => {
+                emit('refresh', true)
+              }, 500)
+              return
+            }
+          }
+        } else {
+          // Scheduled time is still valid - proceed to view page
+          console.log('✅ [APPROVAL NOW CLICK] Scheduled time is valid - navigating to view page')
+          router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
+        }
+      } else {
+        // No schedule - proceed normally
+        console.log('✅ [APPROVAL NOW CLICK] No schedule - navigating to view page')
+        router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
+      }
+    } catch (error) {
+      console.error('❌ [APPROVAL NOW CLICK] Error checking template:', error)
+      // On error, still navigate to view page (fallback)
+      router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
+    }
+  } else {
+    // Not a scheduled notification - proceed normally
+    console.log('✅ [APPROVAL NOW CLICK] Not scheduled - navigating to view page')
+    router.push(`/notifications/view/${viewId}?fromTab=${props.activeTab}`)
+  }
+}
+
 const handleApproveClick = async (notification: Notification) => {
+  const templateId = notification.templateId || notification.id
+  
+  console.log('🔵 [APPROVE CLICK] Starting approval for template:', {
+    templateId,
+    notificationId: notification.id,
+    activeTab: props.activeTab,
+    sendType: notification.sendType,
+    scheduledTime: notification.scheduledTime,
+  })
+  
   try {
-    const templateId = notification.templateId || notification.id
-    await notificationApi.approveTemplate(Number(templateId))
+    // Fetch full template to validate and check schedule status
+    const { api } = await import('@/services/api')
+    const fullTemplate = await api.get(`/api/v1/template/${templateId}`)
+    const template = fullTemplate.data?.data || fullTemplate.data
     
-    // Determine if this notification will be auto-published or scheduled
-    const isScheduled = notification.status === 'scheduled'
+    console.log('🔵 [APPROVE CLICK] Fetched template:', {
+      templateId,
+      sendSchedule: template?.sendSchedule,
+      sendType: template?.sendType,
+      approvalStatus: template?.approvalStatus,
+      isSent: template?.isSent,
+    })
+    
+    // If approving from draft tab, validate required data first
+    if (props.activeTab === 'draft') {
+      // Validate that draft has enough data to send (both title and content required)
+      const translations = template?.translations || []
+      let hasValidData = false
+
+      for (const translation of translations) {
+        const hasTitle = translation?.title && translation.title.trim() !== ''
+        const hasContent = translation?.content && translation.content.trim() !== ''
+
+        if (hasTitle && hasContent) {
+          hasValidData = true
+          break
+        }
+      }
+
+      if (!hasValidData) {
+        ElNotification({
+          title: 'Error',
+          message: 'Please check data again. This template is missing required fields (title or content).',
+          type: 'error',
+          duration: 4000,
+          dangerouslyUseHTMLString: true,
+        })
+        return
+      }
+    }
+    
+    console.log('📤 [APPROVE CLICK] Calling approve API for template:', templateId)
+    const result = await notificationApi.approveTemplate(Number(templateId))
+    console.log('✅ [APPROVE CLICK] Approval API call successful:', result)
+    
+    // Fetch updated template after approval to get the latest status
+    const updatedTemplateResponse = await api.get(`/api/v1/template/${templateId}`)
+    const updatedTemplate = updatedTemplateResponse.data?.data || updatedTemplateResponse.data
+    
+    console.log('📥 [APPROVE CLICK] Fetched updated template:', {
+      templateId,
+      sendType: updatedTemplate?.sendType,
+      sendSchedule: updatedTemplate?.sendSchedule,
+      isSent: updatedTemplate?.isSent,
+      approvalStatus: updatedTemplate?.approvalStatus,
+    })
+    
+    // Determine redirect tab based on sendType and isSent status
+    // If scheduled and not yet sent, it should stay in Scheduled tab
+    const isScheduled = 
+      (updatedTemplate?.sendType === 'SEND_SCHEDULE' || updatedTemplate?.sendSchedule !== null) &&
+      updatedTemplate?.isSent === false
+    
+    const redirectTab = isScheduled ? 'scheduled' : 'published'
+    
     const message = isScheduled 
-      ? 'Notification approved successfully! It will be sent at the scheduled time.'
-      : 'Notification approved and published successfully! Users will receive it shortly.'
+      ? '<strong>Notification approved successfully!</strong> It will be sent at the scheduled time and moved to Published tab automatically.'
+      : '<strong>Notification approved and published successfully!</strong> Users will receive it shortly.'
     
     ElNotification({
       title: 'Success',
       message: message,
       type: 'success',
       duration: 3000,
+      dangerouslyUseHTMLString: true,
     })
+    
+    // Redirect to appropriate tab
+    emit('switch-tab', redirectTab)
     emit('refresh')
   } catch (error: any) {
-    ElNotification({
-      title: 'Error',
-      message: error.response?.data?.responseMessage || 'Failed to approve template',
-      type: 'error',
-      duration: 3000,
+    console.log('❌ [APPROVE CLICK] Error caught:', {
+      error: error,
+      response: error.response,
+      responseData: error.response?.data,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
     })
+    
+    // Check if this is an auto-expiration or auto-rejection due to passed scheduled time
+    const isAutoExpired = error.response?.data?.data?.autoExpired === true
+    const isAutoRejected = error.response?.data?.data?.autoRejected === true
+    const expiredReason = error.response?.data?.responseMessage || error.response?.data?.data?.expiredReason || 'Scheduled time has passed. Please contact team member to update the schedule first.'
+    const rejectionReason = error.response?.data?.responseMessage || error.response?.data?.data?.rejectionReason || 'Failed to approve template'
+    
+    console.log('🔍 [APPROVE CLICK] Error analysis:', {
+      isAutoExpired,
+      isAutoRejected,
+      expiredReason,
+      rejectionReason,
+      errorResponseData: error.response?.data,
+    })
+    
+    if (isAutoExpired) {
+      // Auto-expired due to passed scheduled time - redirect to Draft tab
+      console.log('⏰ [APPROVE CLICK] Template auto-expired - redirecting to Draft tab')
+      ElNotification({
+        title: 'Notification Expired',
+        message: `<strong>Scheduled time has expired</strong>. Please contact <strong>team member</strong> to update the schedule first.`,
+        type: 'warning',
+        duration: 5000,
+        dangerouslyUseHTMLString: true,
+      })
+      
+      // Redirect to Draft tab and refresh after a short delay to ensure backend has processed
+      console.log('🔄 [APPROVE CLICK] Switching to Draft tab and refreshing')
+      emit('switch-tab', 'draft')
+      setTimeout(() => {
+        emit('refresh', true) // Force refresh to show updated status
+      }, 500) // Small delay to ensure backend has updated
+    } else if (isAutoRejected) {
+      // Auto-rejected due to passed scheduled time - redirect to Draft tab
+      ElNotification({
+        title: 'Notification Rejected',
+        message: rejectionReason,
+        type: 'warning',
+        duration: 5000,
+      })
+      
+      // Redirect to Draft tab and refresh
+      emit('switch-tab', 'draft')
+      emit('refresh', true) // Force refresh to show updated status
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: rejectionReason,
+        type: 'error',
+        duration: 3000,
+      })
+    }
   }
 }
 
 const handleSubmitClick = async (notification: Notification) => {
   try {
     const templateId = notification.templateId || notification.id
+    
+    // Validate all required fields before submitting
+    const { api } = await import('@/services/api')
+    const fullTemplate = await api.get(`/api/v1/template/${templateId}`)
+    const template = fullTemplate.data?.data || fullTemplate.data
+    
+    // Validate that all required fields are filled
+    const translations = template?.translations || []
+    let hasAllRequiredData = true
+    const missingFields: string[] = []
+
+    for (const translation of translations) {
+      const hasTitle = translation?.title && translation.title.trim() !== ''
+      const hasContent = translation?.content && translation.content.trim() !== ''
+
+      if (!hasTitle) {
+        hasAllRequiredData = false
+        missingFields.push(`Title (${translation.language})`)
+      }
+      if (!hasContent) {
+        hasAllRequiredData = false
+        missingFields.push(`Content (${translation.language})`)
+      }
+    }
+
+    if (!hasAllRequiredData) {
+      ElNotification({
+        title: 'Error',
+        message: 'Please check data, fill data missing on required field.',
+        type: 'error',
+        duration: 4000,
+      })
+      return
+    }
+    
     const response = await notificationApi.submitTemplate(Number(templateId))
     
     // Optimistically update the notification in the list
@@ -348,7 +786,7 @@ const handleSubmitClick = async (notification: Notification) => {
     
     ElNotification({
       title: 'Success',
-      message: 'Notification has been submitted for approval. It will appear in the Pending tab.',
+      message: 'Notification has been submitted for approval. It will appear in the Pending Approval tab.',
       type: 'success',
       duration: 3000,
     })
@@ -369,19 +807,150 @@ const handleSubmitClick = async (notification: Notification) => {
   }
 }
 
+const handlePublishNowClick = async (notification: Notification) => {
+  // Show loading notification immediately
+  const loadingNotification = ElNotification({
+    title: 'Sending Notification',
+    message: 'Please wait while we send the notification to all users. This may take a moment if there are many recipients...',
+    type: 'info',
+    duration: 0, // Keep it open until we close it manually
+  })
+
+  try {
+    const templateId = notification.templateId || notification.id
+    
+    // Fetch full template to get all data FIRST
+    const { api } = await import('@/services/api')
+    const fullTemplate = await api.get(`/api/v1/template/${templateId}`)
+    const template = fullTemplate.data?.data || fullTemplate.data
+    
+    // Prepare update payload - keep all original data, just set isSent=true to send immediately
+    // Don't change sendType, sendSchedule, or any other fields - keep as submitted
+    const updatePayload: any = {
+      isSent: true, // Only change this - send immediately
+      // Keep original sendType (could be SEND_NOW, SEND_SCHEDULE, etc.)
+      sendType: template?.sendType || 'SEND_NOW',
+      // Keep original sendSchedule if it exists
+      sendSchedule: template?.sendSchedule || null,
+      // Keep all other original data
+      platforms: template?.platforms || [], 
+      bakongPlatform: template?.bakongPlatform,
+      notificationType: template?.notificationType,
+      categoryTypeId: template?.categoryTypeId,
+      translations: template?.translations?.map((t: any) => ({
+        language: t.language,
+        title: t.title,
+        content: t.content,
+        image: t.image?.fileId || t.imageId || t.image?.id || '',
+        linkPreview: t.linkPreview || undefined,
+      })) || [],
+    }
+    
+    // Call API and WAIT for it to complete BEFORE redirecting
+    // This ensures the template is updated in the database before we show it
+    const result = await notificationApi.updateTemplate(Number(templateId), updatePayload)
+    
+    // Close loading notification
+    loadingNotification.close()
+    
+    // Extract response data - handle different response structures
+    const responseData = result?.data?.data || result?.data || result
+    const successfulCount = responseData?.successfulCount || 0
+    const failedCount = responseData?.failedCount || 0
+    const isSent = responseData?.isSent === true
+    const approvalStatus = responseData?.approvalStatus
+    
+    // NOW redirect to Published tab AFTER API completes successfully
+    // This ensures the template will appear immediately with correct status
+    emit('switch-tab', 'published')
+    
+    // Force refresh immediately after redirect to show the updated template
+    // Use small delay to ensure tab switch completes
+    await new Promise(resolve => setTimeout(resolve, 50))
+    emit('refresh', true) // Pass true to force refresh (bypass cache)
+    
+    // Show success message with send results
+    if (isSent || approvalStatus === 'APPROVED') {
+      if (successfulCount > 0) {
+        ElNotification({
+          title: 'Success',
+          // it will remove this message in the future
+          message: `Notification published and sent to ${successfulCount} user(s) immediately.${failedCount > 0 ? ` (${failedCount} failed)` : ''}`,
+          type: 'success',
+          duration: 3000,
+        })
+      } else {
+        ElNotification({
+          title: 'Success',
+          message: 'Notification published successfully.',
+          type: 'success',
+          duration: 3000,
+        })
+      }
+    } else {
+      // Fallback: if response doesn't show isSent/APPROVED, fetch template to verify
+      const verifyTemplate = await api.get(`/api/v1/template/${templateId}`)
+      const verifiedData = verifyTemplate.data?.data || verifyTemplate.data
+      
+      if (verifiedData?.isSent === true || verifiedData?.approvalStatus === 'APPROVED') {
+        ElNotification({
+          title: 'Success',
+          message: `Notification published and sent to users immediately.`,
+          type: 'success',
+          duration: 3000,
+        })
+      } else {
+        ElNotification({
+          title: 'Warning',
+          message: 'Notification was updated but may not have been sent. Please check the notification status.',
+          type: 'warning',
+          duration: 5000,
+        })
+      }
+    }
+  } catch (error: any) {
+    // Close loading notification on error
+    loadingNotification.close()
+    
+    ElNotification({
+      title: 'Error',
+      message: error.response?.data?.responseMessage || 'Failed to publish notification',
+      type: 'error',
+      duration: 3000,
+    })
+    // On error, still refresh to show current state
+    emit('refresh', true)
+  }
+}
+
 const handleRejectClick = async (notification: Notification) => {
-  const confirmed = await showDeleteDialog('reject')
-  if (confirmed) {
+  const result = await showRejectDialog()
+  if (result.confirmed && result.reason) {
     try {
       const templateId = notification.templateId || notification.id
-      await notificationApi.rejectTemplate(Number(templateId))
+      await notificationApi.rejectTemplate(Number(templateId), result.reason)
+      
       ElNotification({
         title: 'Success',
-        message: 'Template rejected successfully',
+        message: 'Template rejected successfully and moved to Draft tab',
         type: 'success',
         duration: 2000,
       })
-      emit('refresh')
+      
+      // Set localStorage immediately to ensure tab switches instantly
+      try {
+        localStorage.setItem('notification_active_tab', 'draft')
+        // Clear cache to force immediate refresh
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+      } catch (error) {
+        console.warn('Failed to update localStorage:', error)
+      }
+      
+      // Redirect to draft tab and force refresh
+      emit('switch-tab', 'draft')
+      // Force refresh immediately with cache cleared
+      emit('refresh', true)
     } catch (error: any) {
       ElNotification({
         title: 'Error',
@@ -772,8 +1341,23 @@ const handleRejectClick = async (notification: Notification) => {
   transition: background-color 0.15s ease-in-out;
 }
 
-.delete-button:hover {
+.delete-button:hover:not(:disabled) {
   background: #e03e3e;
+}
+
+.delete-button.disabled,
+.delete-button:disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.delete-button.disabled:hover,
+.delete-button:disabled:hover {
+  background: #9ca3af !important;
+  opacity: 0.6;
 }
 
 .approval-badge {
@@ -786,51 +1370,89 @@ const handleRejectClick = async (notification: Notification) => {
   height: 24px;
 }
 
-.approval-badge-inline {
-  display: inline;
-  font-size: 13px;
+.approval-badge-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
   font-weight: 500;
   margin-left: 8px;
+  height: 24px;
+  white-space: nowrap;
 }
 
-.approval-badge-inline.badge-pending {
-  color: #92400e;
-}
-
-.approval-badge-inline.badge-approved {
-  color: #065f46;
-}
-
-.approval-badge-inline.badge-rejected {
-  color: #991b1b;
-}
-
-.badge-pending {
+.approval-badge-tag.badge-pending {
   background-color: #fef3c7;
   color: #92400e;
 }
 
-.badge-approved {
+.approval-badge-tag.badge-approved {
   background-color: #d1fae5;
   color: #065f46;
 }
 
-.badge-rejected {
+.approval-badge-tag.badge-rejected {
   background-color: #fee2e2;
   color: #991b1b;
 }
 
-.view-details-button {
+.approval-badge-tag.badge-expired {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.view-button {
   display: flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
   padding: 8px 12px;
   gap: 6px;
-  min-width: 120px;
+  min-width: 93px;
   height: 56px;
   flex: 0 0 auto;
-  background: #3b82f6;
+  background: rgba(0, 19, 70, 0.05);
+  backdrop-filter: blur(64px);
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+  color: #001346;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.view-button:hover:not(:disabled) {
+  background: rgba(0, 19, 70, 0.1);
+}
+
+.view-button:disabled,
+.view-button.disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.view-button:disabled:hover,
+.view-button.disabled:hover {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+}
+
+.approval-now-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+  min-width: 130px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: #10b981;
   border-radius: 32px;
   border: none;
   cursor: pointer;
@@ -840,8 +1462,60 @@ const handleRejectClick = async (notification: Notification) => {
   transition: background-color 0.15s ease-in-out;
 }
 
-.view-details-button:hover {
-  background: #2563eb;
+.approval-now-button:hover:not(:disabled) {
+  background: #059669;
+}
+
+.approval-now-button:disabled,
+.approval-now-button.disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.approval-now-button:disabled:hover,
+.approval-now-button.disabled:hover {
+  background: #9ca3af !important;
+}
+
+.publish-now-button {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 6px;
+  min-width: 130px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: #0f4aea;
+  border-radius: 32px;
+  border: none;
+  cursor: pointer;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.publish-now-button:hover:not(:disabled) {
+  background: #0d3bc7;
+}
+
+.publish-now-button:disabled,
+.publish-now-button.disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.publish-now-button:disabled:hover,
+.publish-now-button.disabled:hover {
+  background: #9ca3af !important;
 }
 
 .approve-button {
@@ -864,8 +1538,22 @@ const handleRejectClick = async (notification: Notification) => {
   transition: background-color 0.15s ease-in-out;
 }
 
-.approve-button:hover {
+.approve-button:hover:not(:disabled) {
   background: #059669;
+}
+
+.approve-button:disabled,
+.approve-button.disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.approve-button:disabled:hover,
+.approve-button.disabled:hover {
+  background: #9ca3af !important;
 }
 
 .reject-button {
@@ -888,8 +1576,22 @@ const handleRejectClick = async (notification: Notification) => {
   transition: background-color 0.15s ease-in-out;
 }
 
-.reject-button:hover {
+.reject-button:hover:not(:disabled) {
   background: #dc2626;
+}
+
+.reject-button:disabled,
+.reject-button.disabled {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.reject-button:disabled:hover,
+.reject-button.disabled:hover {
+  background: #9ca3af !important;
 }
 
 .button-icon {
@@ -898,13 +1600,37 @@ const handleRejectClick = async (notification: Notification) => {
 }
 
 .empty-state {
-  text-align: center;
-  padding: 3rem 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  grid-column: 1 / -1;
+  padding-top: 80px;
 }
 
-.empty-text {
-  color: #6b7280;
-  margin: 0;
+.empty-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 24px;
+  width: 241px;
+  height: 391.87px;
+}
+
+.image-empty-state {
+  width: 191.96px;
+  height: 337.87px;
+  display: flex;
+}
+
+.empty-message {
+  color: #000000;
+  font-size: 20px;
+  font-weight: 600;
+  font-family: 'IBM Plex Sans';
 }
 
 @media (max-width: 1400px) {
@@ -953,8 +1679,7 @@ const handleRejectClick = async (notification: Notification) => {
   }
 }
 
-.loading-state,
-.empty-state {
+.loading-state {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -963,10 +1688,36 @@ const handleRejectClick = async (notification: Notification) => {
   grid-column: 1 / -1;
 }
 
-.loading-text,
-.empty-text {
+.loading-text {
   color: #7a8190;
   font-size: 16px;
   font-weight: 500;
+}
+
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  grid-column: 1 / -1;
+  padding-top: 80px;
+}
+
+.empty-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 24px;
+  width: 241px;
+  height: 391.87px;
+}
+
+.image-empty-state {
+  width: 191.96px;
+  height: 337.87px;
+  display: flex;
 }
 </style>

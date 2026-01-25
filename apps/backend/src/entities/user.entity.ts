@@ -21,9 +21,9 @@ export class User {
   @PrimaryGeneratedColumn()
   id: number
 
-  @Column({ nullable: false, length: 255, unique: true })
+  @Column()
   username: string
-
+  
   @Column({ nullable: false, length: 255, unique: true })
   @Index()
   @IsNotEmpty()

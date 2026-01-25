@@ -7,6 +7,12 @@ export interface ConfirmationDialogOptions {
   cancelText?: string
   type?: 'danger' | 'warning' | 'info' | 'success'
   confirmButtonType?: 'primary' | 'danger' | 'warning' | 'info' | 'success'
+  showReasonInput?: boolean
+}
+
+export interface ConfirmationResult {
+  confirmed: boolean
+  reason?: string
 }
 
 export function useConfirmationDialog() {
@@ -28,9 +34,20 @@ export function useConfirmationDialog() {
     })
   }
 
-  const handleConfirm = () => {
+  const showDialogWithReason = (dialogOptions: ConfirmationDialogOptions): Promise<ConfirmationResult> => {
+    return new Promise((resolve) => {
+      options.value = { ...options.value, ...dialogOptions, showReasonInput: true }
+      isVisible.value = true
+      ;(window as any).__dialogResolveWithReason = resolve
+    })
+  }
+
+  const handleConfirm = (reason?: string) => {
     isVisible.value = false
-    if ((window as any).__dialogResolve) {
+    if ((window as any).__dialogResolveWithReason) {
+      ;(window as any).__dialogResolveWithReason({ confirmed: true, reason })
+      ;(window as any).__dialogResolveWithReason = null
+    } else if ((window as any).__dialogResolve) {
       ;(window as any).__dialogResolve(true)
       ;(window as any).__dialogResolve = null
     }
@@ -38,7 +55,10 @@ export function useConfirmationDialog() {
 
   const handleCancel = () => {
     isVisible.value = false
-    if ((window as any).__dialogResolve) {
+    if ((window as any).__dialogResolveWithReason) {
+      ;(window as any).__dialogResolveWithReason({ confirmed: false })
+      ;(window as any).__dialogResolveWithReason = null
+    } else if ((window as any).__dialogResolve) {
       ;(window as any).__dialogResolve(false)
       ;(window as any).__dialogResolve = null
     }
@@ -64,6 +84,17 @@ export function useConfirmationDialog() {
       cancelText: 'Cancel',
       type: 'danger',
       confirmButtonType: 'primary',
+    })
+  }
+
+  const showRejectDialog = () => {
+    return showDialogWithReason({
+      title: 'Reject Notification?',
+      message: 'Please provide a reason for rejecting this notification. It will be moved back to Draft tab.',
+      confirmText: 'Reject',
+      cancelText: 'Cancel',
+      type: 'warning',
+      confirmButtonType: 'danger',
     })
   }
 
@@ -93,10 +124,12 @@ export function useConfirmationDialog() {
     isVisible,
     options,
     showDialog,
+    showDialogWithReason,
     handleConfirm,
     handleCancel,
     showLogoutDialog,
     showDeleteDialog,
+    showRejectDialog,
     showPublishDialog,
     showSaveDialog,
   }

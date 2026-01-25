@@ -61,7 +61,7 @@
           <div v-else-if="filteredNotifications.length === 0" class="empty-state">
             <div class="empty-state-container">
               <img
-                src="/src/assets/image/jomreadsur.png"
+                :src="emptyStateImage"
                 alt="Empty State"
                 class="image-empty-state"
               />
@@ -75,7 +75,7 @@
             :active-tab="activeTab"
             :notifications="filteredNotifications"
             :loading="loading"
-            @refresh="fetchNotifications"
+            @refresh="(forceRefresh) => fetchNotifications(forceRefresh || false)"
             @delete="handleDeleteNotification"
             @publish="handlePublishNotification"
             @switch-tab="handleSwitchTab"
@@ -97,6 +97,7 @@ import { Tabs } from '@/components/common'
 import { notificationApi } from '@/services/notificationApi'
 import type { Notification } from '@/types/notification'
 import { ElNotification } from 'element-plus'
+import emptyStateImage from '@/assets/image/jomreadsur.png'
 import {
   NotificationType,
   SendType,
@@ -119,8 +120,20 @@ const authStore = useAuthStore()
 // Helper function to correct notification status based on isSent flag
 const correctNotificationStatus = (notification: Notification): Notification => {
   let status = notification.status
-  if (notification.isSent === true) {
+  // Don't override status for rejected/expired notifications - they should appear in Draft tab
+  if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {  
     status = 'published'
+  }
+  // For rejected/expired notifications, ensure they can appear in Draft tab
+  // If status is "published" or "scheduled" but approvalStatus is "REJECTED" or "EXPIRED", change status to "draft"
+  if ((notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') && 
+      (status === 'published' || status === 'scheduled')) {
+    status = 'draft'
+  }
+  // For scheduled notifications that are still drafts (approvalStatus is null), change status to "draft"
+  // This ensures drafts with schedule enabled appear in Draft tab, not Scheduled tab
+  if (status === 'scheduled' && (notification.approvalStatus === null || notification.approvalStatus === undefined)) {
+    status = 'draft'
   }
   return {
     ...notification,
@@ -128,7 +141,29 @@ const correctNotificationStatus = (notification: Notification): Notification => 
   }
 }
 
-const activeTab = ref<'published' | 'scheduled' | 'draft' | 'pending'>('published')
+// Load active tab from localStorage or default to 'published'
+const getStoredTab = (): 'published' | 'scheduled' | 'draft' | 'pending' => {
+  try {
+    const stored = localStorage.getItem('notification_active_tab')
+    if (stored && ['published', 'scheduled', 'draft', 'pending'].includes(stored)) {
+      return stored as 'published' | 'scheduled' | 'draft' | 'pending'
+    }
+  } catch (error) {
+    console.warn('Failed to read active tab from localStorage:', error)
+  }
+  return 'published'
+}
+
+const activeTab = ref<'published' | 'scheduled' | 'draft' | 'pending'>(getStoredTab())
+
+// Save active tab to localStorage whenever it changes
+watch(activeTab, (newTab) => {
+  try {
+    localStorage.setItem('notification_active_tab', newTab)
+  } catch (error) {
+    console.warn('Failed to save active tab to localStorage:', error)
+  }
+}, { immediate: false })
 const selectedFilter = ref('ALL')
 const searchQuery = ref('')
 const loading = ref(false)
@@ -138,7 +173,7 @@ const filteredNotifications = ref<Notification[]>([])
 const filterTabs = [
   { value: 'published', label: 'Published' },
   { value: 'scheduled', label: 'Scheduled' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending', label: 'Pending Approval' },
   { value: 'draft', label: 'Draft' },
 ]
 
@@ -475,12 +510,18 @@ if (initialCache.notifications && initialCache.notifications.length > 0) {
   } else if (activeTab.value === 'draft') {
     // Draft tab shows:
     // 1. Drafts with no approvalStatus (not submitted yet)
-    // 2. Drafts that are not pending (approved/rejected drafts can still be in draft status)
-    // 3. Exclude pending notifications (they're awaiting approval in Pending tab)
+    // 2. Drafts that are not pending (approved/rejected/expired drafts can still be in draft status)
+    // 3. Rejected notifications (regardless of status - they should be editable in Draft)
+    // 4. Expired notifications (regardless of status - they should be editable in Draft)
+    // 5. Scheduled notifications that are still drafts (approvalStatus is null) - these are drafts with schedule enabled
+    // 6. Exclude pending notifications (they're awaiting approval in Pending tab)
     tempFiltered = tempFiltered.filter(
       (notification) =>
-        notification.status === 'draft' &&
-        notification.approvalStatus !== 'PENDING',
+        // Drafts with no approvalStatus (null) - includes both status='draft' and status='scheduled' with approvalStatus=null
+        (notification.approvalStatus === null || notification.approvalStatus === undefined) ||
+        // Rejected or expired notifications (regardless of status)
+        notification.approvalStatus === 'REJECTED' ||
+        notification.approvalStatus === 'EXPIRED',
   )
   }
   if (selectedFilter.value !== 'ALL') {
@@ -577,6 +618,14 @@ const fetchNotifications = async (forceRefresh = false) => {
     clearTimeout(fetchNotificationTimeout)
     fetchNotificationTimeout = null
   }
+  
+  // If forceRefresh is true, clear cache immediately to ensure fresh data
+  if (forceRefresh) {
+    cachedNotifications = null
+    cacheTimestamp = 0
+    clearCacheFromStorage()
+  }
+  
   if (isFetching) {
     return
   }
@@ -592,6 +641,10 @@ const fetchNotifications = async (forceRefresh = false) => {
   if (!forceRefresh && cachedNotifications && now - cacheTimestamp < cacheDuration) {
     if (checkForDueScheduledNotifications()) {
       forceRefresh = true
+      // Clear cache when forcing refresh due to due notifications
+      cachedNotifications = null
+      cacheTimestamp = 0
+      clearCacheFromStorage()
     } else {
       // Apply isSent check to cached notifications before using them
       const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
@@ -623,11 +676,17 @@ const fetchNotifications = async (forceRefresh = false) => {
 
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      const mappedMockNotifications = mockNotifications.map((notification) => {
+      const mappedMockNotifications = mockNotifications.map((notification: any) => {
         // Determine status: if isSent is true, it's always published regardless of status field
+        // But don't override for rejected/expired notifications - they should appear in Draft tab
         let status = mapBackendStatusToFrontend(notification.status)
-        if (notification.isSent === true) {
+        if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {
           status = 'published'
+        }
+        // For rejected/expired notifications, ensure they appear in Draft tab
+        // Convert any status (published, scheduled, etc.) to draft for rejected/expired
+        if (notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') {
+          status = 'draft'
         }
 
         return {
@@ -657,11 +716,31 @@ const fetchNotifications = async (forceRefresh = false) => {
         language: 'KM',
       })
 
-      const mappedNotifications = response.data.map((notification) => {
+      const mappedNotifications = response.data.map((notification: any) => {
         // Determine status: if isSent is true, it's always published regardless of status field
+        // But don't override for rejected/expired notifications - they should appear in Draft tab
         let status = mapBackendStatusToFrontend(notification.status)
-        if (notification.isSent === true) {
+        if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {
           status = 'published'
+        }
+        // For rejected/expired notifications, ensure they appear in Draft tab
+        // Convert any status (published, scheduled, etc.) to draft for rejected/expired
+        if (notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') {
+          status = 'draft'
+        }
+
+        // Log date field for debugging (especially for template 305)
+        if (notification.templateId === 305 || notification.id === 305) {
+          console.log('📅 [API] Template 305 date field:', {
+            templateId: notification.templateId,
+            id: notification.id,
+            date: notification.date,
+            scheduledTime: notification.scheduledTime,
+            sendSchedule: notification.sendSchedule,
+            approvalStatus: notification.approvalStatus,
+            status: status,
+            isSent: notification.isSent,
+          })
         }
 
         const corrected = correctNotificationStatus({
@@ -673,14 +752,25 @@ const fetchNotifications = async (forceRefresh = false) => {
           image: notification.image || '',
           date: notification.date,
           // Preserve approvalStatus and related fields
-          approvalStatus: notification.approvalStatus,
-          approvedBy: notification.approvedBy,
-          approvedAt: notification.approvedAt,
+          approvalStatus: (notification as any).approvalStatus,
+          approvedBy: (notification as any).approvedBy,
+          approvedAt: (notification as any).approvedAt,
         })
 
         // Debug logging for status correction
         if (notification.isSent === true && corrected.status !== 'published') {
           console.warn(`⚠️ [Status Correction] Notification ${corrected.id} has isSent=true but status=${corrected.status}`)
+        }
+
+        // Log final corrected date for template 305
+        if (corrected.templateId === 305 || corrected.id === 305) {
+          console.log('📅 [API] Template 305 corrected date:', {
+            templateId: corrected.templateId,
+            id: corrected.id,
+            date: corrected.date,
+            status: corrected.status,
+            approvalStatus: corrected.approvalStatus,
+          })
         }
 
         return corrected
@@ -739,13 +829,19 @@ const applyFilters = () => {
     )
   } else if (activeTab.value === 'draft') {
     // Draft tab shows:
-    // 1. Drafts with no approvalStatus (not submitted yet)
-    // 2. Drafts that are not pending (approved/rejected drafts can still be in draft status)
-    // 3. Exclude pending notifications (they're awaiting approval in Pending tab)
+    // 1. Drafts with no approvalStatus (not submitted yet) - regardless of status (draft or scheduled)
+    // 2. Drafts that are not pending (approved/rejected/expired drafts can still be in draft status)
+    // 3. Rejected notifications (regardless of status - they should be editable in Draft)
+    // 4. Expired notifications (regardless of status - they should be editable in Draft)
+    // 5. Scheduled notifications that are still drafts (approvalStatus is null) - these are drafts with schedule enabled
+    // 6. Exclude pending notifications (they're awaiting approval in Pending tab)
     filtered = filtered.filter(
       (notification) =>
-        notification.status === 'draft' &&
-        notification.approvalStatus !== 'PENDING',
+        // Drafts with no approvalStatus (null) - includes both status='draft' and status='scheduled' with approvalStatus=null
+        (notification.approvalStatus === null || notification.approvalStatus === undefined) ||
+        // Rejected or expired notifications (regardless of status)
+        notification.approvalStatus === 'REJECTED' ||
+        notification.approvalStatus === 'EXPIRED',
     )
   }
 
@@ -850,7 +946,24 @@ const publishingNotifications = new Set<number | string>()
 
 const handleSwitchTab = (tab: 'published' | 'scheduled' | 'draft' | 'pending') => {
   activeTab.value = tab
-  applyFilters()
+  // Save to localStorage when tab is switched
+  try {
+    localStorage.setItem('notification_active_tab', tab)
+    // Clear cache to force immediate refresh when switching tabs from actions
+    localStorage.removeItem('notifications_cache')
+    localStorage.removeItem('notifications_cache_timestamp')
+    cachedNotifications = null
+    cacheTimestamp = 0
+  } catch (error) {
+    console.warn('Failed to save active tab to localStorage:', error)
+  }
+  // Force refresh to get latest data immediately
+  fetchNotifications(true).then(() => {
+    applyFilters()
+  }).catch(() => {
+    // If fetch fails, still apply filters with existing data
+    applyFilters()
+  })
 }
 
 const handleUpdateNotification = (updatedNotification: Notification) => {
@@ -890,6 +1003,9 @@ const handlePublishNotification = async (notification: Notification) => {
   }
 
   publishingNotifications.add(key)
+
+  // Declare loadingNotification at function scope so it's accessible in catch block
+  let loadingNotification: any = null
 
   try {
     if (USE_MOCK_DATA) {
@@ -969,6 +1085,14 @@ const handlePublishNotification = async (notification: Notification) => {
           return
         }
 
+        // Show loading notification immediately
+        loadingNotification = ElNotification({
+          title: 'Sending Notification',
+          message: 'Please wait while we send the notification to all users. This may take a moment if there are many recipients...',
+          type: 'info',
+          duration: 0, // Keep it open until we close it manually
+        })
+
         // Prepare update payload with existing template data
         const updatePayload: any = {
           sendType: SendType.SEND_NOW,
@@ -1004,6 +1128,9 @@ const handlePublishNotification = async (notification: Notification) => {
         }
 
         const result = await notificationApi.updateTemplate(Number(notificationId), updatePayload)
+        
+        // Close loading notification
+        loadingNotification.close()
 
         // Check if error response (no users found or approval required)
         if (result?.responseCode !== 0 || result?.errorCode !== 0) {
@@ -1262,11 +1389,25 @@ const handlePublishNotification = async (notification: Notification) => {
         await fetchNotifications(true)
         applyFilters()
       } catch (updateError: any) {
+        // Close loading notification on error
+        if (loadingNotification) {
+          loadingNotification.close()
+        }
         // If updateTemplate fails, throw to be caught by outer catch block
         throw updateError
       }
     }
   } catch (error: any) {
+    // Close loading notification on error (if it exists)
+    // Note: loadingNotification might not be defined if error occurred before it was created
+    try {
+      if (typeof loadingNotification !== 'undefined' && loadingNotification) {
+        loadingNotification.close()
+      }
+    } catch (e) {
+      // Ignore errors when closing notification
+    }
+    
     console.error('Failed to publish notification:', error)
     const errorMessage =
       error?.response?.data?.responseMessage ||
@@ -1351,11 +1492,48 @@ onMounted(async () => {
   isMounted = true
 
   let tabChanged = false
-  if (route.query?.tab && ['published', 'scheduled', 'draft', 'pending'].includes(route.query.tab as string)) {
-    const queryTab = route.query.tab as 'published' | 'scheduled' | 'draft' | 'pending'
+  // Priority: route query param with _refresh (explicit redirect) > localStorage (user's last choice) > route query param > default
+  // On page refresh, localStorage should take precedence to preserve user's last selected tab
+  // Route query params with _refresh are used when explicitly navigating (e.g., after creating/updating/approving notification)
+  const storedTab = getStoredTab()
+  const queryTab = route.query?.tab && ['published', 'scheduled', 'draft', 'pending'].includes(route.query.tab as string)
+    ? (route.query.tab as 'published' | 'scheduled' | 'draft' | 'pending')
+    : null
+  const hasRefreshQueryParam = route.query?._refresh !== undefined
+  
+  // activeTab is already initialized from getStoredTab() in the ref declaration
+  // If _refresh param exists, prioritize query tab (explicit redirect from action)
+  // Otherwise, prioritize localStorage (user's last choice) over route query param on refresh
+  if (hasRefreshQueryParam && queryTab) {
+    // Explicit redirect with cache-busting - use query tab immediately
     if (activeTab.value !== queryTab) {
       activeTab.value = queryTab
       tabChanged = true
+      // Save to localStorage when set from route query
+      try {
+        localStorage.setItem('notification_active_tab', queryTab)
+      } catch (error) {
+        console.warn('Failed to save active tab to localStorage:', error)
+      }
+    }
+  } else if (storedTab !== 'published' || !queryTab) {
+    // User has explicitly chosen a tab (not default), or no query param - use stored tab
+    // This ensures refresh preserves user's last choice
+    if (activeTab.value !== storedTab) {
+      activeTab.value = storedTab
+      tabChanged = true
+    }
+  } else if (queryTab && storedTab === 'published') {
+    // No explicit user choice (default 'published'), so use route query param (likely from redirect)
+    if (activeTab.value !== queryTab) {
+      activeTab.value = queryTab
+      tabChanged = true
+      // Save to localStorage when set from route query
+      try {
+        localStorage.setItem('notification_active_tab', queryTab)
+      } catch (error) {
+        console.warn('Failed to save active tab to localStorage:', error)
+      }
     }
   }
   if (notifications.value.length > 0 && (tabChanged || filteredNotifications.value.length === 0)) {
@@ -1369,7 +1547,23 @@ onMounted(async () => {
 
   // Check if cache was recently cleared - force refresh
   const cacheWasCleared = !localStorage.getItem('notifications_cache_timestamp')
-  const shouldForceRefresh = cacheWasCleared || tabChanged
+  // Check for cache-busting query parameter (added after updates)
+  // hasRefreshQueryParam is already defined above
+  const shouldForceRefresh = cacheWasCleared || tabChanged || hasRefreshQueryParam
+
+  if (hasRefreshQueryParam) {
+    console.log('🔄 [Mount] Cache-busting parameter detected - forcing fresh fetch')
+    // Clear cache when refresh parameter is present
+    try {
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+      cachedNotifications = null
+      cacheTimestamp = 0
+      console.log('✅ [Mount] Cache cleared due to refresh parameter')
+    } catch (error) {
+      console.warn('⚠️ [Mount] Failed to clear cache:', error)
+    }
+  }
 
   // Use appropriate cache duration based on active tab
   const cacheDuration =
@@ -1378,6 +1572,16 @@ onMounted(async () => {
       : activeTab.value === 'published'
         ? PUBLISHED_TAB_CACHE_DURATION
         : DATA_CACHE_DURATION
+
+  console.log('📊 [Mount] Cache check:', {
+    hasCachedNotifications: !!cachedNotifications,
+    cacheTimestamp,
+    cacheWasCleared,
+    hasRefreshParam: hasRefreshQueryParam,
+    tabChanged,
+    shouldForceRefresh,
+    activeTab: activeTab.value,
+  })
 
   // Only fetch once on mount - avoid duplicate fetches
   if (cachedNotifications && cacheTimestamp && !shouldForceRefresh) {
@@ -1725,20 +1929,19 @@ onUnmounted(() => {
 .empty-state {
   display: flex;
   justify-content: center;
-  align-items: center;
-  height: 200px;
-  margin-right: 40px;
+  align-items: flex-start;
   width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding-top: 80px;
 }
 
 .empty-state-container {
+  display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  top: 123px;
+  justify-content: flex-start;
   gap: 24px;
-  display: flex;
-  position: relative;
   width: 241px;
   height: 391.87px;
 }

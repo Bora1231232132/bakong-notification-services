@@ -306,16 +306,18 @@ export class NotificationSchedulerService {
       }
 
       // If approved or no approval status (legacy notifications), send immediately
-      // When scheduled notification is sent, mark as published and clear schedule
-      // This moves it from Scheduled tab to Published tab
+      // When scheduled notification is sent, mark as published but preserve original data
+      // Keep sendType as SEND_SCHEDULE and sendSchedule to preserve the original scheduled time
+      // This allows the notification to show "(scheduled time)" in the Published tab
 
       const updateResult = await this.templateRepo
         .createQueryBuilder()
         .update(Template)
         .set({
           isSent: true,
-          sendType: SendType.SEND_NOW, // Change to SEND_NOW so it appears in Published tab
-          sendSchedule: null, // Clear schedule since it's been sent
+          // Preserve sendType as SEND_SCHEDULE (don't change to SEND_NOW)
+          // Preserve sendSchedule to keep the original scheduled date/time
+          // Only set isSent to true to mark it as published
         })
         .where('id = :id', { id: template.id })
         .andWhere('isSent = :isSent', { isSent: false })

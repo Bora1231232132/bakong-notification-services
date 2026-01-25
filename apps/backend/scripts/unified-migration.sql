@@ -1140,3 +1140,17 @@ WHERE schemaname = 'public';
 \echo '📋 For quick reference, see: apps/backend/scripts/QUICK_REFERENCE.md'
 \echo ''
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'user_username_key'
+      AND conrelid = 'public."user"'::regclass
+  ) THEN
+    ALTER TABLE public."user" DROP CONSTRAINT user_username_key;
+    RAISE NOTICE '✅ Dropped UNIQUE constraint: user_username_key (username)';
+  ELSE
+    RAISE NOTICE 'ℹ️ username UNIQUE constraint already removed';
+  END IF;
+END $$;

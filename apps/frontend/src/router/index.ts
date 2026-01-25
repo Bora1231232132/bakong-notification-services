@@ -53,15 +53,26 @@ const router = createRouter({
           },
         },
         {
-          path: 'templates',
-          name: 'templates',
+          path: 'types',
+          name: 'types',
           component: () => import('../views/TypeView.vue'),
-          meta: { breadcrumb: { label: 'Templates' } },
+          meta: { breadcrumb: { label: 'Types' } },
+        },
+        {
+          path: 'types/create',
+          name: 'create-type',
+          component: () => import('../views/CreateNewType.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Create Type',
+              parent: { name: 'types', label: 'Types' },
+            },
+          },
         },
         {
           path: 'templates/create',
           name: 'create-template',
-          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          component: () => import('../views/CreateNewType.vue'),
           meta: {
             breadcrumb: {
               label: 'Create Template',
@@ -72,18 +83,18 @@ const router = createRouter({
         {
           path: 'templates/view/:id',
           name: 'view-template',
-          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          component: () => import('../views/CreateNewType.vue'),
           meta: {
             breadcrumb: {
               label: 'View Template',
-              parent: { name: 'templates', label: 'Templates' },
+              parent: { name: 'templates', label: 'Types' },
             },
           },
         },
         {
           path: 'templates/edit/:id',
           name: 'edit-template',
-          component: () => import('../views/AddNewNotificationTypeView.vue'),
+          component: () => import('../views/CreateNewType.vue'),
           meta: {
             breadcrumb: {
               label: 'Edit Template',
@@ -217,15 +228,15 @@ const router = createRouter({
             },
           },
         },
-        {
-          path: 'test',
-          name: 'test',
-          component: () => import('../views/TestView.vue'),
-          meta: {
-            breadcrumb: { label: 'Testing Tools' },
-            devOnly: true, // Only available in development environment
-          },
-        },
+        // {
+        //   path: 'test',
+        //   name: 'test',
+        //   component: () => import('../views/TestView.vue'),
+        //   meta: {
+        //     breadcrumb: { label: 'Testing Tools' },
+        //     devOnly: true, // Only available in development environment
+        //   },
+        // },
       ],
     },
   ],

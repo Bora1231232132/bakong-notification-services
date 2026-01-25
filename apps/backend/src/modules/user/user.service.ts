@@ -712,18 +712,18 @@ export class UserService {
     }
 
     // Check email uniqueness if email is being changed
-    if (dto.email && dto.email !== user.email) {
-      const existingUser = await this.repo.findOne({
-        where: { email: dto.email.toLowerCase() },
-      })
-      if (existingUser && existingUser.id !== id) {
-        throw new BaseResponseDto({
-          responseCode: 1,
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'Email already exists',
-        })
-      }
-    }
+    // if (dto.email && dto.email !== user.email) {
+    //   const existingUser = await this.repo.findOne({
+    //     where: { email: dto.email.toLowerCase() },
+    //   })
+    //   if (existingUser && existingUser.id !== id) {
+    //     throw new BaseResponseDto({
+    //       responseCode: 1,
+    //       errorCode: ErrorCode.VALIDATION_FAILED,
+    //       responseMessage: 'Email already exists',
+    //     })
+    //   }
+    // }
 
     // Prevent deactivating ADMINISTRATOR users
     if (dto.status === UserStatus.DEACTIVATED && user.role === UserRole.ADMINISTRATOR) {
@@ -733,21 +733,6 @@ export class UserService {
         responseMessage:
           'Cannot deactivate ADMINISTRATOR account. Please change role first if needed.',
       })
-    }
-
-    // Check username uniqueness if username is being changed
-    if (dto.username && dto.username !== user.username) {
-        const existingUser = await this.repo.createQueryBuilder('user')
-            .where('LOWER(user.username) = LOWER(:username)', { username: dto.username })
-            .getOne()
-            
-        if (existingUser && existingUser.id !== id) {
-            throw new BaseResponseDto({
-                responseCode: 1,
-                errorCode: ErrorCode.VALIDATION_FAILED,
-                responseMessage: 'Username already exists',
-            })
-        }
     }
 
     // Map DTO fields to entity fields and update only provided fields
@@ -761,9 +746,9 @@ export class UserService {
     if (dto.displayName !== undefined) {
       user.displayName = dto.displayName
     }
-    if (dto.email !== undefined) {
-      user.email = dto.email.toLowerCase() // Normalize email to lowercase
-    }
+    // if (dto.email !== undefined) {
+    //   user.email = dto.email.toLowerCase() // Normalize email to lowercase
+    // }
     if (dto.phoneNumber !== undefined) {
       user.phoneNumber = dto.phoneNumber
     }

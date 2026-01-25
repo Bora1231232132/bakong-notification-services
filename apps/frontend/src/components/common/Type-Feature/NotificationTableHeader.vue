@@ -3,9 +3,13 @@
     class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 pt-2 pb-0 min-h-14 w-full"
   >
     <div class="flex items-center gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap" style="min-width: 0;">
-      <label class="text-[#001346] text-[16px] font-medium whitespace-nowrap underline shrink-0" style="flex-shrink: 0 !important;">{{
-        labelText
-      }}</label>
+      <label
+        class="text-[#001346] text-[16px] font-medium whitespace-nowrap underline shrink-0"
+        style="flex-shrink: 0 !important;"
+      >
+        {{ labelText }}
+      </label>
+
       <input
         v-model="searchValue"
         type="text"
@@ -14,16 +18,19 @@
         style="padding-left: 16px !important; flex: 1 1 0; min-width: 200px; max-width: 313px; box-sizing: border-box;"
         @input="handleSearch"
       />
+
       <button
         v-if="showAddNew !== false"
-        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0"
+        :disabled="adminOnlyAdd && !isAdmin"
+        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
         style="width: 140px; flex-shrink: 0 !important; box-sizing: border-box;"
-        @click="$emit('addNew')"
+        @click="handleAddNew"
         aria-label="Add new"
       >
         <span>Add new</span>
         <img src="@/assets/image/add--alt.svg" alt="Add" class="w-5 h-5" />
       </button>
+
       <button
         v-if="showRefresh"
         class="flex items-center justify-center text-[#001346] transition-all duration-200 shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0"
@@ -43,6 +50,7 @@
         <img src="@/assets/image/rotate--360.svg" alt="Refresh" class="w-full h-full" />
       </button>
     </div>
+
     <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
       <button
         class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-[56px] w-[110px] px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)]"
@@ -57,19 +65,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useAuthStore, UserRole } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === UserRole.ADMINISTRATOR)
 
 const props = withDefaults(
   defineProps<{
     modelValue?: string
     showRefresh?: boolean
     showAddNew?: boolean
+    adminOnlyAdd?: boolean
     labelText?: string
     searchPlaceholder?: string
   }>(),
   {
     showRefresh: true,
     showAddNew: true,
+    adminOnlyAdd: false,
     labelText: 'Category type',
     searchPlaceholder: '',
   },
@@ -88,32 +102,25 @@ const searchValue = ref(props.modelValue || '')
 let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
 const getDefaultPlaceholder = () => {
-  // If labelText is "User", show username/email placeholder
-  if (props.labelText?.toLowerCase() === 'user') {
-    return 'Search by username or email...'
-  }
-  // Default placeholder for other types
+  if (props.labelText?.toLowerCase() === 'user') return 'Search by username or email...'
   return 'Search by name...'
 }
 
 const handleSearch = () => {
   emit('update:modelValue', searchValue.value)
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => emit('search', searchValue.value), 300)
+}
 
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-
-  searchTimeout = setTimeout(() => {
-    emit('search', searchValue.value)
-  }, 300)
+const handleAddNew = () => {
+  if (props.adminOnlyAdd && !isAdmin.value) return
+  emit('addNew')
 }
 
 watch(
   () => props.modelValue,
   (newValue) => {
-    if (newValue !== searchValue.value) {
-      searchValue.value = newValue || ''
-    }
+    if (newValue !== searchValue.value) searchValue.value = newValue || ''
   },
 )
 </script>

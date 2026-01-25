@@ -6,6 +6,14 @@ export class UpdateCategoryTypeDto {
   name?: string
 
   @IsOptional()
+  @IsString()
+  namekh?: string
+
+  @IsOptional()
+  @IsString()
+  namejp?: string
+
+  @IsOptional()
   icon?: Buffer
 
   @IsOptional()

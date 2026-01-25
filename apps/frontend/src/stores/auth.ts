@@ -151,13 +151,32 @@ export const useAuthStore = defineStore('auth', () => {
         // Get error message without showing notification (view will handle notification)
         const errorMessage = getApiErrorMessage(apiError, { operation: 'login', component: 'AuthStore' })
         error.value = errorMessage
-        return { success: false, error: errorMessage }
+        return {
+          success: false,
+          error: errorMessage, // mapped fallback
+          errorCode: apiError.errorCode,
+          responseMessage: apiError.responseMessage, // ✅ backend message
+        }
+        
       }
     } catch (err: any) {
       // Handle network errors or other unexpected errors
       const errorMessage = getApiErrorMessage(err, { operation: 'login', component: 'AuthStore' })
       error.value = errorMessage
-      return { success: false, error: errorMessage }
+
+      const apiResponseMessage =
+        typeof err?.response?.data?.responseMessage === 'string' ? err.response.data.responseMessage : ''
+
+      const apiErrorCode =
+        typeof err?.response?.data?.errorCode === 'number' ? err.response.data.errorCode : ErrorCode.INTERNAL_SERVER_ERROR
+
+      return {
+        success: false,
+        error: errorMessage,               // mapped fallback
+        errorCode: apiErrorCode,
+        responseMessage: apiResponseMessage, // ✅ backend message (if any)
+      }
+
     } finally {
       loading.value = false
     }
@@ -293,7 +312,7 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.role === role
   }
 
-  const isAdmin = computed(() => hasRole(UserRole.ADMINISTRATOR))
+  const isAdmin = computed(() => user.value?.role === 'ADMINISTRATOR')
   const isApproval = computed(() => hasRole(UserRole.APPROVAL))
   const isEditor = computed(() => hasRole(UserRole.EDITOR))
   const isViewOnly = computed(() => hasRole(UserRole.VIEW_ONLY))

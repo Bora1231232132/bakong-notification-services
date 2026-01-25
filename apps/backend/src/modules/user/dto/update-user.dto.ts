@@ -21,11 +21,6 @@ export class UpdateUserDto {
 
   @IsNotEmpty()
   @IsString()
-  @IsEmail({}, { message: 'Email must be a valid email address' })
-  email: string
-
-  @IsNotEmpty()
-  @IsString()
   @Length(10, 20)
   @Matches(/^[+]?[0-9\s\-().]{10,20}$/, {
     message: 'Phone number must be in a valid format',

@@ -112,24 +112,32 @@ export class CategoryTypeService implements OnModuleInit {
     const defaultCategoryTypes = [
       {
         name: 'News',
+        namekh: 'ព័ត៌មាន',
+        namejp: 'ニュース',
         mimeType: 'image/png',
         originalFileName: 'News.png',
         iconFileName: 'News.png', // You can add this file later
       },
       {
         name: 'Product & Feature',
+        namekh: 'ផលិតផល និងលក្ខណៈពិសេស',
+        namejp: '製品・機能',
         mimeType: 'image/png',
         originalFileName: 'ProductAndFeature.png',
         iconFileName: 'ProductAndFeature.png', // Use actual PNG file
       },
       {
         name: 'Other',
+        namekh: 'ផ្សេងៗ',
+        namejp: 'その他',
         mimeType: 'image/png',
         originalFileName: 'Other.png',
         iconFileName: 'Other.png', // You can add this file later
       },
       {
         name: 'Event',
+        namekh: 'ព្រឹត្តិការណ៍',
+        namejp: 'イベント',
         mimeType: 'image/png',
         originalFileName: 'Event.png',
         iconFileName: 'Event.png', // You can add this file later
@@ -146,6 +154,8 @@ export class CategoryTypeService implements OnModuleInit {
           const iconBuffer = loadIconBuffer(categoryType.iconFileName)
           const newCategoryType = this.repo.create({
             name: categoryType.name,
+            namekh: categoryType.namekh,
+            namejp: categoryType.namejp,
             icon: iconBuffer,
             mimeType: categoryType.mimeType,
             originalFileName: categoryType.originalFileName,
@@ -183,7 +193,7 @@ export class CategoryTypeService implements OnModuleInit {
     if (this.categoryTypesCache) {
       // Add new category type to cached list and sort by name
       const updatedList = [...this.categoryTypesCache.data, newCategoryType].sort((a, b) =>
-        a.name.localeCompare(b.name),
+        a.name.localeCompare(b.name) || (a.namekh || '').localeCompare(b.namekh || '') || (a.namejp || '').localeCompare(b.namejp || ''),
       )
       this.categoryTypesCache = {
         data: updatedList,
@@ -206,7 +216,7 @@ export class CategoryTypeService implements OnModuleInit {
         ct.id === updatedCategoryType.id ? updatedCategoryType : ct,
       )
       // Sort by name to maintain order
-      updatedList.sort((a, b) => a.name.localeCompare(b.name))
+      updatedList.sort((a, b) => a.name.localeCompare(b.name) || (a.namekh || '').localeCompare(b.namekh || '') || (a.namejp || '').localeCompare(b.namejp || ''))
       this.categoryTypesCache = {
         data: updatedList,
         timestamp: Date.now(),
@@ -231,6 +241,8 @@ export class CategoryTypeService implements OnModuleInit {
     if (this.categoryTypesCache) {
       // Remove deleted category type from cached list
       const updatedList = this.categoryTypesCache.data.filter((ct) => ct.id !== deletedId)
+      // Sort by name to maintain order
+      updatedList.sort((a, b) => a.name.localeCompare(b.name) || (a.namekh || '').localeCompare(b.namekh || '') || (a.namejp || '').localeCompare(b.namejp || ''))
       this.categoryTypesCache = {
         data: updatedList,
         timestamp: Date.now(),
@@ -268,6 +280,8 @@ export class CategoryTypeService implements OnModuleInit {
     return {
       id: categoryType.id,
       name: categoryType.name,
+      namekh: categoryType.namekh,
+      namejp: categoryType.namejp,
       icon: categoryType.icon
         ? this.iconToBase64(categoryType.icon, categoryType.mimeType)
         : undefined,
@@ -288,7 +302,7 @@ export class CategoryTypeService implements OnModuleInit {
 
     // Cache miss or expired - fetch from database
     const categoryTypes = await this.repo.find({
-      order: { name: 'ASC' },
+      order: { name: 'ASC', namekh: 'ASC', namejp: 'ASC' },
     })
 
     // Update cache

@@ -8,6 +8,8 @@ export interface CategoryType {
   originalFileName?: string
   createdAt: string
   updatedAt?: string
+  namekh?: string
+  namejp?: string 
 }
 
 export interface CategoryTypeResponse {
@@ -55,10 +57,12 @@ export const categoryTypeApi = {
     }
   },
 
-  async create(name: string, iconFile: File): Promise<CategoryType> {
+  async create(name: string, namekh: string, namejp: string, iconFile: File): Promise<CategoryType> {
     try {
       const formData = new FormData()
       formData.append('name', name)
+      formData.append('namekh', namekh)
+      formData.append('namejp', namejp)
       formData.append('icon', iconFile)
 
       const response = await uploadApi.post<{
@@ -74,11 +78,17 @@ export const categoryTypeApi = {
     }
   },
 
-  async update(id: number, name?: string, iconFile?: File): Promise<CategoryType> {
+  async update(id: number, name?: string, namekh?: string, namejp?: string, iconFile?: File): Promise<CategoryType> {
     try {
       const formData = new FormData()
       if (name) {
         formData.append('name', name)
+      }
+      if (namekh) {
+        formData.append('namekh', namekh)
+      }
+      if (namejp) {
+        formData.append('namejp', namejp)
       }
       if (iconFile) {
         formData.append('icon', iconFile)

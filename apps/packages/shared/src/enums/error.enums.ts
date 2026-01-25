@@ -31,7 +31,8 @@ export enum ErrorCode {
   TEMPLATE_SEND_SCHEDULE_IN_PAST = 29,
   TEMPLATE_SEND_INTERVAL_INVAILD_DURATION = 30,
   NO_USERS_FOR_BAKONG_PLATFORM = 31,
-}
+  DATABASE_INVALID_INPUT_SYNTAX = 32,
+  }
 
 export enum ResponseMessage {
   REQUEST_SUCCESS = 'Request successfully',
@@ -70,6 +71,7 @@ export enum ResponseMessage {
   TEMPLATE_SEND_SCHEDULE_IN_PAST = 'Template schedule cannot be in the past',
   TEMPLATE_SEND_INTERVAL_INVAILD_DURATION = 'Template send interval duration is invalid',
   NO_USERS_FOR_BAKONG_PLATFORM = 'No users found for this Bakong platform. Please ensure there are registered users for this platform before sending notifications.',
+  DATABASE_INVALID_INPUT_SYNTAX = 'Invalid input format. Please check your values.',
 }
 
 export enum HttpStatus {

@@ -130,7 +130,7 @@ export class ErrorHandler {
       ]
 
       if (useApiMessageDirectly.includes(errorCode)) {
-        return responseMessage
+        return this.getUserMessage(apiError)
       }
     }
 
@@ -180,8 +180,8 @@ export class ErrorHandler {
         return 'File not found.'
 
       case ErrorCode.DATABASE_UNIQUE_CONSTRAINT_VIOLATION:
-        return 'This item already exists. Please use a different value.'
-
+        return apiError?.responseMessage || 'Email already exists. Please use a different email.'
+        
       case ErrorCode.DATABASE_FOREIGN_KEY_VIOLATION:
         return 'Cannot delete this item as it is being used elsewhere.'
 
@@ -307,6 +307,26 @@ export class ErrorHandler {
     return 5000
   }
 
+  private getUniqueConstraintMessage(apiError: ApiError): string {
+    const constraint = String(apiError?.data?.constraint || '').toLowerCase()
+    const detail = String(apiError?.data?.detail || '').toLowerCase()
+  
+    // User table
+    if (constraint.includes('user_email') || detail.includes('(email)=(')) {
+      return 'Email already exists. Please use another email.'
+    }
+    if (constraint.includes('user_username') || detail.includes('(username)=(')) {
+      return 'Username already exists. Please use another username.'
+    }
+    if (constraint.includes('user_phonenumber') || detail.includes('(phonenumber)=(')) {
+      return 'Phone number already exists. Please use another phone number.'
+    }
+  
+    // fallback
+    return 'This value already exists. Please use a different one.'
+  }
+  
+
   getErrorLogs(): Array<{ error: any; context: ErrorContext; timestamp: Date }> {
     return [...this.errorLog]
   }
@@ -341,6 +361,32 @@ export class ErrorHandler {
       duration: 2000,
     })
   }
+
+  private getUserMessage(apiError: { errorCode: number; responseMessage?: string | null }): string {
+    const responseMessage = apiError?.responseMessage?.trim()
+  
+    // ✅ ALWAYS prefer backend message if available
+    if (responseMessage && responseMessage !== 'Unknown error') {
+      return responseMessage
+    }
+  
+    const errorCode = apiError?.errorCode
+  
+    // ✅ fallback messages only when backend message is missing
+    switch (errorCode) {
+      case ErrorCode.NO_PERMISSION:
+        return 'You do not have permission to perform this action.'
+      case ErrorCode.ACCOUNT_DEACTIVATED:
+        return 'Your account has been deactivated. Please contact administrator to reactivate your account.'
+      case ErrorCode.VALIDATION_FAILED:
+        return 'Please check your input and try again.'
+      case ErrorCode.USER_NOT_FOUND:
+        return 'User not found.'
+      default:
+        return 'An unexpected error occurred. Please try again later.'
+    }
+  }
+  
 }
 
 export const errorHandler = ErrorHandler.getInstance()

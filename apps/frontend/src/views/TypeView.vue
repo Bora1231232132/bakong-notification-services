@@ -5,7 +5,7 @@
         <NotificationTableHeader
           v-model="searchQuery"
           :show-refresh="false"
-          :show-add-new="canManageCategoryTypes"
+          :admin-only-add="true"
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
@@ -16,8 +16,7 @@
         <TableBody
           mode="notification"
           :items="displayItems"
-          :show-edit="canManageCategoryTypes"
-          :show-delete="canManageCategoryTypes"
+          :admin-only-actions="true"
           @view="viewItem"
           @edit="editItem"
           @delete="deleteItem"
@@ -42,7 +41,7 @@
     title="You want to delete?"
     message="This action cannot be undone. This will permanently delete category and remove data from our servers."
     confirm-text="Continue"
-    cancel-text="Cancel"
+    cancel-text="Cancel now"
     type="warning"
     confirm-button-type="primary"
     @confirm="handleDeleteConfirm"
@@ -61,21 +60,18 @@ import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { ElMessage, ElNotification } from 'element-plus'
 import { mockCategoryTypes } from '../../Data/mockCategoryTypes'
-import { useAuthStore } from '@/stores/auth'
 import { UserRole } from '@bakong/shared'
+import { useAuthStore } from '@/stores/auth'
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === UserRole.ADMINISTRATOR)
+
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
 
 // Initialize with empty array, will be populated by fetchCategoryTypes
 const categoryTypes = ref<CategoryType[]>([])
 const loading = ref(false)
-
-// Permission check for category type management
-const canManageCategoryTypes = computed(() => {
-  return authStore.user?.role === UserRole.ADMINISTRATOR
-})
 
 const page = ref(1)
 const perPage = ref(10)
@@ -93,11 +89,13 @@ const filteredItems = computed(() => {
     name: ct.name,
     icon: ct.icon || '', // Icon is now included in the main response as base64
     categoryType: ct,
+    namekh: ct.namekh || '',
+    namejp: ct.namejp || '',
   }))
 
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
-    items = items.filter((item) => item.name.toLowerCase().includes(query))
+    items = items.filter((item) => item.name.toLowerCase().includes(query) || item.namekh.toLowerCase().includes(query) || item.namejp.toLowerCase().includes(query))
   }
 
   return items
@@ -139,22 +137,22 @@ const handlePerPageChange = (newPerPage: number) => {
 }
 
 const addNew = () => {
-  if (canManageCategoryTypes.value) {
-    router.push('/notification-type/create')
-  } else {
-    ElNotification({
-      title: 'Permission Denied',
-      message: 'You do not have permission to create category types',
-      type: 'error',
-      duration: 3000,
-    })
-  }
+  // Commented out: Add Category feature - coming soon
+  router.push('/templates/create')
+
+  // Show notification that feature is coming soon
+  // ElNotification({
+  //   title: 'Coming Soon',
+  //   message: 'This feature is coming soon!',
+  //   type: 'info',
+  //   duration: 3000,
+  // })
 }
 
 const filter = () => {
   ElNotification({
     title: 'Coming Soon',
-    message: 'Filter functionality coming soon',
+    message: 'This feature is coming soon',
     type: 'info',
     duration: 3000,
   })
@@ -182,6 +180,7 @@ const fetchCategoryTypes = async () => {
     console.error('❌ [TypeView] API failed, falling back to mock data:', error)
     // Silently fall back to mock data for better UX as requested
     categoryTypes.value = [...mockCategoryTypes]
+    categoryTypes.value = [...categoryTypes.value]
     // Optional: show a small info notification about using offline/mock data
     /*
     ElMessage({
@@ -222,7 +221,7 @@ const handleDeleteConfirm = async () => {
 
   try {
     // Simulate API call with mock data
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await categoryTypeApi.delete(categoryToDelete.value.id)
 
     // Remove from local mock data
     const index = categoryTypes.value.findIndex((ct) => ct.id === categoryToDelete.value!.id)

@@ -3,7 +3,6 @@
 # Local Testing Script
 # ============================================================================
 # Test database migration and verification scripts locally
-# Aligned with deploy-sit-server.sh for consistency
 # Usage: bash test-local.sh
 # ============================================================================
 
@@ -63,6 +62,8 @@ echo ""
 echo "📋 Step 2: Checking Docker containers..."
 echo "----------------------------------------"
 
+DB_RUNNING=false
+
 # Check if database container exists and is running
 if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
     echo "✅ Database container is running"
@@ -72,7 +73,7 @@ elif docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
     docker start "$DB_CONTAINER"
     echo "   ⏳ Waiting for database to be ready (15 seconds)..."
     sleep 15
-    
+
     # Wait for healthcheck
     for i in {1..10}; do
         if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" -p 5432 > /dev/null 2>&1; then
@@ -83,7 +84,7 @@ elif docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
         echo "   ⏳ Waiting... ($i/10)"
         sleep 2
     done
-    
+
     if [ "$DB_RUNNING" != "true" ]; then
         echo "   ⚠️  Database healthcheck timeout - continuing anyway"
         DB_RUNNING=true
@@ -93,7 +94,7 @@ else
     docker compose -f "$COMPOSE_FILE" up -d db
     echo "   ⏳ Waiting for database to start (15 seconds)..."
     sleep 15
-    
+
     # Wait for healthcheck
     for i in {1..10}; do
         if docker exec "$DB_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" -p 5432 > /dev/null 2>&1; then
@@ -104,7 +105,7 @@ else
         echo "   ⏳ Waiting... ($i/10)"
         sleep 2
     done
-    
+
     if [ "$DB_RUNNING" != "true" ]; then
         echo "   ⚠️  Database healthcheck timeout - continuing anyway"
         DB_RUNNING=true
@@ -116,8 +117,7 @@ if [ "$DB_RUNNING" = true ]; then
     echo ""
     echo "📋 Step 3: Testing Database Connection..."
     echo "----------------------------------------"
-    
-    # Test database connection first
+
     echo "Testing database connection..."
     export PGPASSWORD="$DB_PASSWORD"
     if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
@@ -131,79 +131,73 @@ if [ "$DB_RUNNING" = true ]; then
         exit 1
     fi
     unset PGPASSWORD
-    
+
     echo ""
     echo "📋 Step 4: Testing Migration Script..."
     echo "----------------------------------------"
-    
+
     echo "   Running unified migration from: $MIGRATION_FILE"
     echo "   Database: $DB_NAME"
     echo "   User: $DB_USER"
     echo ""
-    
-    # Get database password
+
     DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
-    
-    # Run migration directly (capture output for better error handling)
     export PGPASSWORD="$DB_PASSWORD"
+
     echo "   ⏳ Running migration (this may take a minute or two)..."
-    MIGRATION_OUTPUT=$(docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1)
+
+    # IMPORTANT: with set -e, we temporarily disable it to capture exit code safely
+    set +e
+    MIGRATION_OUTPUT=$(docker exec -i "$DB_CONTAINER" \
+      psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1)
     MIGRATION_EXIT_CODE=$?
-    
-    # Check for critical errors (not just warnings)
-    # Ignore "already exists" messages as they're expected for idempotent migrations
-    if echo "$MIGRATION_OUTPUT" | grep -qi "ERROR\|FATAL\|syntax error" && ! echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|already NOT NULL\|already has"; then
+    set -e
+
+    if [ $MIGRATION_EXIT_CODE -ne 0 ]; then
         echo ""
-        echo "   ❌ Migration failed with errors:"
-        echo "$MIGRATION_OUTPUT" | grep -i "ERROR\|FATAL" | head -5
-        echo ""
-        echo "   ⚠️  Please check the full migration output above"
+        echo "   ❌ Migration failed:"
+        echo "$MIGRATION_OUTPUT" | tail -80
         unset PGPASSWORD
         exit 1
-    elif [ $MIGRATION_EXIT_CODE -eq 0 ] || echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|already NOT NULL\|already has"; then
-        echo ""
-        echo "   ✅ Migration completed successfully!"
-        
-        # Run migration verification    
-        if [ -f "$VERIFY_MIGRATION_FILE" ]; then
-            echo "   Running migration verification..."
-            if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_MIGRATION_FILE" > /dev/null 2>&1; then
-                echo "   ✅ Migration verification passed"
-            else
-                echo "   ⚠️  Verification had warnings (check manually if needed)"
-            fi
-        fi
-        
-        # Quick verification - check critical columns
-        if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
-            echo "   ✅ Verified: categoryTypeId column exists"
+    fi
+
+    echo ""
+    echo "   ✅ Migration completed successfully!"
+
+    # Run migration verification
+    if [ -f "$VERIFY_MIGRATION_FILE" ]; then
+        echo "   Running migration verification..."
+        set +e
+        docker exec -i "$DB_CONTAINER" \
+          psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_MIGRATION_FILE" > /dev/null 2>&1
+        VERIFY_EXIT_CODE=$?
+        set -e
+
+        if [ $VERIFY_EXIT_CODE -eq 0 ]; then
+            echo "   ✅ Migration verification passed"
         else
-            echo "   ⚠️  Warning: categoryTypeId column not found (may need manual check)"
-        fi
-        
-        if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'imageId');" | grep -q t; then
-            echo "   ✅ Verified: user.imageId column exists"
-        fi
-        
-        if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bakong_user' AND column_name = 'syncStatus');" | grep -q t; then
-            echo "   ✅ Verified: bakong_user.syncStatus column exists"
-        fi
-    else
-        echo ""
-        echo "   ⚠️  Migration had warnings (may be normal if already applied)"
-        echo "   Checking if migration is already applied..."
-        
-        # Check if migration was already applied
-        if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
-            echo "   ✅ Migration already applied (categoryTypeId exists)"
-        else
-            echo "   ❌ Migration may have failed - please check manually"
-            echo "   Migration output:"
-            echo "$MIGRATION_OUTPUT" | tail -10
-            unset PGPASSWORD
-            exit 1
+            echo "   ⚠️  Verification had warnings (check manually if needed)"
         fi
     fi
+
+    # Quick verification - check critical columns
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'categoryTypeId');" | grep -q t; then
+        echo "   ✅ Verified: categoryTypeId column exists"
+    else
+        echo "   ⚠️  Warning: categoryTypeId column not found (may need manual check)"
+    fi
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'imageId');" | grep -q t; then
+        echo "   ✅ Verified: user.imageId column exists"
+    fi
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bakong_user' AND column_name = 'syncStatus');" | grep -q t; then
+        echo "   ✅ Verified: bakong_user.syncStatus column exists"
+    fi
+
     unset PGPASSWORD
 else
     echo "   ⚠️  Database not running - cannot test migration"
@@ -214,18 +208,18 @@ echo ""
 echo "📋 Step 5: Verifying Cascade Delete Constraint..."
 echo "----------------------------------------"
 
-# Verify cascade constraint exists (unified-migration.sql should have created it)
 if [ "$DB_RUNNING" = true ]; then
     DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
     export PGPASSWORD="$DB_PASSWORD"
-    
-    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" 2>/dev/null | grep -q "ON DELETE CASCADE"; then
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'notification'::regclass AND conname = 'FK_notification_template';" 2>/dev/null | grep -q "ON DELETE CASCADE"; then
         echo "   ✅ Verified: FK_notification_template has ON DELETE CASCADE"
     else
         echo "   ⚠️  Warning: CASCADE constraint not found (unified-migration.sql should handle it)"
         echo "   This is normal if migration hasn't run yet or constraint has different name"
     fi
-    
+
     unset PGPASSWORD
 else
     echo "   ⚠️  Database not running - verification skipped"
@@ -235,7 +229,6 @@ echo ""
 echo "📋 Step 6: Testing Utils Script Commands..."
 echo "----------------------------------------"
 
-# Test utils-server.sh commands if available
 if [ -f "$UTILS_FILE" ]; then
     echo "Testing: bash utils-server.sh db-migrate"
     if bash utils-server.sh db-migrate > /dev/null 2>&1; then
@@ -243,10 +236,9 @@ if [ -f "$UTILS_FILE" ]; then
     else
         echo "⚠️  db-migrate command had issues (may be normal if already migrated)"
     fi
-    
+
     echo ""
     echo "Testing: bash utils-server.sh verify-all"
-    # Check if verify-all.sql exists before testing
     if [ -f "apps/backend/scripts/verify-all.sql" ]; then
         if bash utils-server.sh verify-all > /dev/null 2>&1; then
             echo "✅ verify-all command works"
@@ -257,13 +249,12 @@ if [ -f "$UTILS_FILE" ]; then
         echo "⚠️  verify-all.sql not found (using verify-migration.sql instead)"
         echo "   ✅ Skipping verify-all test (file removed)"
     fi
-    
+
     echo ""
     echo "Testing: bash utils-server.sh db-backup dev"
     if bash utils-server.sh db-backup dev > /dev/null 2>&1; then
         echo "✅ db-backup command works"
-        
-        # Check if backup file was created
+
         if [ -f "backups/backup_dev_latest.sql" ]; then
             BACKUP_SIZE=$(du -h "backups/backup_dev_latest.sql" 2>/dev/null | cut -f1 || echo "unknown")
             echo "✅ Backup file created: backups/backup_dev_latest.sql ($BACKUP_SIZE)"
@@ -281,11 +272,7 @@ echo ""
 echo "📋 Step 7: Verifying Data Integrity..."
 echo "----------------------------------------"
 
-# Note: Migration verification (verify-migration.sql) was already run in Step 4
-# This step is for additional comprehensive verification if verify-all.sql exists
-
 if [ -f "$UTILS_FILE" ]; then
-    # Check if verify-all.sql exists for additional comprehensive checks
     if [ -f "apps/backend/scripts/verify-all.sql" ]; then
         echo "   Running comprehensive data verification (verify-all.sql)..."
         bash utils-server.sh verify-all || {
@@ -303,36 +290,31 @@ echo ""
 echo "📋 Step 8: Testing NULL categoryTypeId Fix..."
 echo "----------------------------------------"
 
-# Test fixing NULL categoryTypeId in templates
 if [ "$DB_RUNNING" = true ]; then
     DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
     export PGPASSWORD="$DB_PASSWORD"
-    
-    # Check if there are any NULL categoryTypeId templates
-    NULL_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-    
+
+    NULL_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+
     echo "   Checking for templates with NULL categoryTypeId..."
-    
+
     if [ "$NULL_COUNT" -gt 0 ]; then
         echo "   Found $NULL_COUNT template(s) with NULL categoryTypeId"
         echo "   Testing fix..."
-        
-        # Run the fix script inline (idempotent - safe to run multiple times)
+
         docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
 DO $$
 DECLARE
     news_category_id INTEGER;
     null_count INTEGER;
-    updated_count INTEGER;
 BEGIN
-    -- Find the NEWS category type ID (usually id=1, but we'll query to be safe)
     SELECT id INTO news_category_id
     FROM category_type
     WHERE name = 'NEWS'
     AND "deletedAt" IS NULL
     LIMIT 1;
-    
-    -- If NEWS doesn't exist, try to find any available category type
+
     IF news_category_id IS NULL THEN
         SELECT id INTO news_category_id
         FROM category_type
@@ -340,34 +322,30 @@ BEGIN
         ORDER BY id ASC
         LIMIT 1;
     END IF;
-    
-    -- Check how many templates have NULL categoryTypeId
+
     SELECT COUNT(*) INTO null_count
     FROM template
     WHERE "categoryTypeId" IS NULL
     AND "deletedAt" IS NULL;
-    
+
     IF news_category_id IS NULL THEN
         RAISE WARNING 'No category types found - skipping fix';
         RETURN;
     END IF;
-    
-    -- Update templates with NULL categoryTypeId
+
     IF null_count > 0 THEN
         UPDATE template
         SET "categoryTypeId" = news_category_id,
             "updatedAt" = NOW()
         WHERE "categoryTypeId" IS NULL
         AND "deletedAt" IS NULL;
-        
-        GET DIAGNOSTICS updated_count = ROW_COUNT;
     END IF;
 END$$;
 EOF
-        
-        # Verify the fix
-        NULL_COUNT_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-        
+
+        NULL_COUNT_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+          "SELECT COUNT(*) FROM template WHERE \"categoryTypeId\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+
         if [ "$NULL_COUNT_AFTER" -eq 0 ]; then
             echo "   ✅ Successfully fixed NULL categoryTypeId for all templates"
             echo "   ✅ Test passed: Fix works correctly"
@@ -379,12 +357,17 @@ EOF
         echo "   ✅ All templates already have categoryTypeId set"
         echo "   ✅ Test passed: No NULL values found"
     fi
-    
-    # Show category type distribution for verification
+
     echo ""
     echo "   Category type distribution:"
-    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT ct.name as category_name, COUNT(t.id) as template_count FROM category_type ct LEFT JOIN template t ON t.\"categoryTypeId\" = ct.id AND t.\"deletedAt\" IS NULL WHERE ct.\"deletedAt\" IS NULL GROUP BY ct.id, ct.name ORDER BY template_count DESC;" 2>/dev/null | head -10 || echo "   (Could not retrieve distribution)"
-    
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c \
+      "SELECT ct.name as category_name, COUNT(t.id) as template_count
+       FROM category_type ct
+       LEFT JOIN template t ON t.\"categoryTypeId\" = ct.id AND t.\"deletedAt\" IS NULL
+       WHERE ct.\"deletedAt\" IS NULL
+       GROUP BY ct.id, ct.name
+       ORDER BY template_count DESC;" 2>/dev/null | head -10 || echo "   (Could not retrieve distribution)"
+
     unset PGPASSWORD
 else
     echo "   ⚠️  Database not running - test skipped"
@@ -394,33 +377,28 @@ echo ""
 echo "📋 Step 9: Testing NULL Template Fields Fix..."
 echo "----------------------------------------"
 
-# Test fixing NULL fields in templates (createdBy, updatedBy)
 if [ "$DB_RUNNING" = true ]; then
     DB_PASSWORD="${POSTGRES_PASSWORD:-dev}"
     export PGPASSWORD="$DB_PASSWORD"
-    
-    # Check for NULL createdBy or updatedBy
-    NULL_CREATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-    NULL_UPDATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-    
+
+    NULL_CREATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+    NULL_UPDATED_COUNT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+
     if [ "$NULL_CREATED_COUNT" -gt 0 ] || [ "$NULL_UPDATED_COUNT" -gt 0 ]; then
         echo "   Found templates with NULL createdBy ($NULL_CREATED_COUNT) or updatedBy ($NULL_UPDATED_COUNT)"
         echo "   Testing fix..."
-        
-        # Run the fix
+
         docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'EOF' > /dev/null 2>&1
 DO $$
-DECLARE
-    updated_count INTEGER;
 BEGIN
-    -- Fix: Set default 'createdBy' if NULL
     UPDATE template
     SET "createdBy" = COALESCE("createdBy", 'System'),
         "updatedAt" = NOW()
     WHERE "createdBy" IS NULL
     AND "deletedAt" IS NULL;
-    
-    -- Fix: Set default 'updatedBy' if NULL
+
     UPDATE template
     SET "updatedBy" = COALESCE("updatedBy", "createdBy", 'System'),
         "updatedAt" = NOW()
@@ -428,11 +406,12 @@ BEGIN
     AND "deletedAt" IS NULL;
 END$$;
 EOF
-        
-        # Verify
-        NULL_CREATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-        NULL_UPDATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
-        
+
+        NULL_CREATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+          "SELECT COUNT(*) FROM template WHERE \"createdBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+        NULL_UPDATED_AFTER=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+          "SELECT COUNT(*) FROM template WHERE \"updatedBy\" IS NULL AND \"deletedAt\" IS NULL;" 2>/dev/null || echo "0")
+
         if [ "$NULL_CREATED_AFTER" -eq 0 ] && [ "$NULL_UPDATED_AFTER" -eq 0 ]; then
             echo "   ✅ Successfully fixed NULL createdBy/updatedBy for all templates"
             echo "   ✅ Test passed: Fix works correctly"
@@ -443,7 +422,7 @@ EOF
         echo "   ✅ All templates already have createdBy and updatedBy set"
         echo "   ✅ Test passed: No NULL values found"
     fi
-    
+
     unset PGPASSWORD
 else
     echo "   ⚠️  Database not running - test skipped"
@@ -482,4 +461,3 @@ echo "   • Verify migration: psql -U $DB_USER -d $DB_NAME -f apps/backend/scri
 echo "   • Backup: bash utils-server.sh db-backup dev"
 echo "   • Restart: docker compose -f $COMPOSE_FILE restart db"
 echo ""
-

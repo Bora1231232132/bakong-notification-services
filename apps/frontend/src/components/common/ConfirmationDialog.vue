@@ -2,17 +2,34 @@
   <Teleport to="body">
     <div v-if="visible" class="dialog-overlay">
       <div class="dialog-container" @click.stop>
-        <div class="dialog-content">
+        <div class="dialog-content" :class="{ 'has-input': showReasonInput }">
           <div class="dialog-text-container">
             <h3 class="dialog-title">{{ title }}</h3>
             <p class="dialog-message">{{ message }}</p>
+          </div>
+
+          <!-- Reason input for reject action -->
+          <div v-if="showReasonInput" class="reason-input-container">
+            <label class="reason-label">Reason for rejection <span class="required">*</span></label>
+            <textarea
+              v-model="reasonText"
+              class="reason-textarea"
+              placeholder="Please provide a reason for rejection..."
+              rows="4"
+              maxlength="1000"
+            ></textarea>
+            <p class="reason-hint">{{ reasonText.length }}/1000 characters</p>
           </div>
 
           <div class="dialog-actions">
             <button class="cancel-btn" @click="handleCancel">
               {{ cancelText }}
             </button>
-            <button :class="confirmButtonClass" @click="handleConfirm">
+            <button 
+              :class="confirmButtonClass" 
+              @click="handleConfirm"
+              :disabled="showReasonInput && !reasonText.trim()"
+            >
               {{ confirmText }}
             </button>
           </div>
@@ -23,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 interface Props {
   modelValue: boolean
@@ -33,11 +50,12 @@ interface Props {
   cancelText?: string
   type?: 'danger' | 'warning' | 'info' | 'success'
   confirmButtonType?: 'primary' | 'danger' | 'warning' | 'info' | 'success'
+  showReasonInput?: boolean
 }
 
 interface Emits {
   (e: 'update:modelValue', value: boolean): void
-  (e: 'confirm'): void
+  (e: 'confirm', reason?: string): void
   (e: 'cancel'): void
 }
 
@@ -46,13 +64,23 @@ const props = withDefaults(defineProps<Props>(), {
   cancelText: 'Cancel',
   type: 'info',
   confirmButtonType: 'primary',
+  showReasonInput: false,
 })
 
 const emit = defineEmits<Emits>()
 
+const reasonText = ref('')
+
 const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
+})
+
+// Reset reason text when dialog closes
+watch(visible, (newValue) => {
+  if (!newValue) {
+    reasonText.value = ''
+  }
 })
 
 const confirmButtonClass = computed(() => {
@@ -73,7 +101,11 @@ const confirmButtonClass = computed(() => {
 })
 
 const handleConfirm = () => {
+  if (props.showReasonInput) {
+    emit('confirm', reasonText.value.trim())
+  } else {
   emit('confirm')
+  }
   visible.value = false
 }
 
@@ -100,8 +132,7 @@ const handleCancel = () => {
 .dialog-container {
   position: relative;
   width: 386px;
-  height: 198px;
-  /* height: 217px; */
+  min-height: 198px;
 }
 
 .dialog-content {
@@ -112,10 +143,14 @@ const handleCancel = () => {
   padding: 24px;
   gap: 24px;
   width: 386px;
-  /* min-height: 217px; */
+  min-height: 198px;
   background: #ffffff;
   border-radius: 16px;
   box-sizing: border-box;
+}
+
+.dialog-content.has-input {
+  min-height: 350px;
 }
 
 .dialog-text-container {
@@ -357,5 +392,71 @@ const handleCancel = () => {
 
 .confirm-btn-primary:hover {
   background: #000a2e;
+}
+
+.reason-input-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  order: 1;
+}
+
+.reason-label {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 150%;
+  color: #001346;
+  margin: 0;
+}
+
+.required {
+  color: #ef4444;
+}
+
+.reason-textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 150%;
+  color: #001346;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.reason-textarea:focus {
+  outline: none;
+  border-color: #001346;
+  box-shadow: 0 0 0 3px rgba(0, 19, 70, 0.1);
+}
+
+.reason-hint {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 150%;
+  color: rgba(0, 19, 70, 0.4);
+  margin: 0;
+  align-self: flex-end;
+}
+
+.confirm-btn-primary:disabled,
+.confirm-btn-danger:disabled,
+.confirm-btn-warning:disabled,
+.confirm-btn-success:disabled,
+.confirm-btn-info:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

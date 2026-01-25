@@ -107,7 +107,8 @@ const addResponseInterceptor = (axiosInstance: typeof api) => {
       const isChangePasswordEndpoint = error.config?.url?.includes('/auth/change-password')
       const isTemplateEndpoint =
         error.config?.url?.includes('/template/create') ||
-        (error.config?.url?.includes('/template/') && error.config?.url?.includes('/update-publish'))
+        (error.config?.url?.includes('/template/') && error.config?.url?.includes('/update-publish')) ||
+        error.config?.url?.includes('/template/') && error.config?.url?.includes('/remove')
       const currentToken = localStorage.getItem('auth_token')
       const isOnAuthPage =
         window.location.pathname.includes('/login') ||

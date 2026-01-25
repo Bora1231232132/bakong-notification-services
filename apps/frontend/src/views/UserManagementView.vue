@@ -4,11 +4,11 @@
       <div class="h-auto sm:h-[56px] flex-shrink-0 !mb-4">
         <NotificationTableHeader
           v-model="searchQuery"
-          label-text="User"
+          :show-refresh="false"
+          :admin-only-add="true"
           @addNew="addNew"
           @filter="filter"
           @search="handleSearch"
-          @refresh="handleRefresh"
         />
       </div>
       <div class="flex-1 w-full" style="min-height: 434px">
@@ -16,6 +16,7 @@
           v-if="!loading"
           mode="user"
           :items="displayUsers"
+          :admin-only-actions="true"
           @view="handleView"
           @edit="handleEdit"
           @delete="handleDelete"
@@ -44,7 +45,7 @@
     title="You want to delete?"
     message="This action cannot be undone. This will permanently delete user and remove data from our servers."
     confirm-text="Continue"
-    cancel-text="Cancel"
+    cancel-text="Cancel now"
     type="warning"
     confirm-button-type="primary"
     @confirm="handleDeleteConfirm"
@@ -66,6 +67,8 @@ import type { UserItem } from '@/components/common'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { userApi } from '@/services/userApi'
 import { UserRole } from '@bakong/shared'
+import { ElNotification } from 'element-plus'
+
 
 const paginationStyle: PaginationStyle = 'user-management'
 
@@ -169,7 +172,12 @@ const addNew = () => {
 }
 
 const filter = () => {
-  console.log('filter')
+  ElNotification({
+    title: 'Coming Soon',
+    message: 'This feature is coming soon',
+    type: 'info',
+    duration: 3000,
+  })
 }
 
 const handleSearch = async () => {

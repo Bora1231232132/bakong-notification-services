@@ -5,6 +5,14 @@ export class CreateCategoryTypeDto {
   @IsString()
   name: string
 
+  @IsOptional()
+  @IsString()
+  namekh?: string
+
+  @IsOptional()
+  @IsString()
+  namejp?: string
+
   @IsNotEmpty()
   icon: Buffer
 

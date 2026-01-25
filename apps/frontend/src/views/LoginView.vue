@@ -179,72 +179,81 @@ const handleSubmitLogin = async (formRef: any) => {
   }
 
   try {
-    const result = await appStore.proceedLogin({
-      Email: loginFormData.Email,
-      Password: loginFormData.Password,
-    })
+  isLoading.value = true
 
-    // DEBUG: Log the full result to see mustChangePassword flag
-    console.log('🔍 Login Result:', result)
-    console.log('🔍 mustChangePassword:', 'mustChangePassword' in (result || {}) ? (result as any).mustChangePassword : undefined)
+  const result = await appStore.proceedLogin(loginFormData)
 
-    if (result?.success) {
-      const mustChange = 'mustChangePassword' in result && result.mustChangePassword
+  console.log('LOGIN RESULT:', result)
 
-      if (mustChange) {
-        ElNotification({
-          title: 'Password Change Required',
-          message: 'You must change your temporary password first before accessing the system.',
-          type: 'warning',
-          duration: 5000,
-        })
-      } else {
-        ElNotification({
-          title: 'Success',
-          message: loginFormData.Email
-            ? `Welcome back!`
-            : 'Login successful!',
-          type: 'success',
-          duration: 2000,
-        })
-      }
+  if (result?.success) {
+  const mustChange = Boolean((result as any)?.mustChangePassword)
 
-      await new Promise((resolve) => setTimeout(resolve, 200))
-
-      // If backend indicates this is a temporary/default password,
-      // send user directly to change-password screen.
-      // Use 'in' operator or optional chaining to safely check property
-      const targetRoute = mustChange ? '/change-password' : '/'
-      console.log('🔍 Target Route:', targetRoute, 'mustChangePassword:', mustChange)
-      router.replace(targetRoute)
-    } else {
-      // Safely access error property
-      const errorMessage = ('error' in (result || {}) ? (result as any).error : null) || 'Login failed. Please try again.'
-
-      // Check if account is suspended
-      const isAccountSuspended =
-        errorMessage.toLowerCase().includes('suspended') ||
-        errorMessage.toLowerCase().includes('too many login attempt') ||
-        errorMessage.toLowerCase().includes('account timeout') ||
-        errorMessage.toLowerCase().includes('temporarily locked')
-
-      ElNotification({
-        title: isAccountSuspended ? 'Account Suspended' : 'Error',
-        message: isAccountSuspended
-          ? 'Your account has been temporarily suspended due to too many failed login attempts. Please contact an administrator to reset your account, or wait before trying again.'
-          : errorMessage,
-        type: 'error',
-        duration: isAccountSuspended ? 5000 : 2000,
-      })
-    }
-  } catch (err) {
+  if (mustChange) {
     ElNotification({
-      title: 'Error',
-      message: 'An unexpected error occurred. Please try again.',
-      type: 'error',
-      duration: 2000,
+      title: 'Password Change Required',
+      message: 'You must change your temporary password first before accessing the system.',
+      type: 'warning',
+      duration: 5000,
     })
+
+    // ✅ go to mandatory change password screen
+    await router.replace('/change-password')
+    return
   }
+
+  // ✅ login success → go home immediately (no refresh needed)
+    ElNotification({
+      title: 'Login Successfully',
+      message: `Welcome <strong>${authStore.user?.displayName || authStore.user?.username || ''}</strong> to the system!`,
+      type: 'success',
+      duration: 2000,
+      dangerouslyUseHTMLString: true,
+    })
+    await router.replace('/')
+    return
+  }
+
+  // ❌ Login failed → always prefer backend responseMessage
+  const apiResponseMessage =
+    typeof (result as any)?.responseMessage === 'string'
+      ? (result as any).responseMessage.trim()
+      : ''
+
+  const fallbackError =
+    typeof (result as any)?.error === 'string' ? (result as any).error : ''
+
+  const messageToShow = apiResponseMessage || fallbackError || 'Login failed. Please try again.'
+
+  const lowerMsg = messageToShow.toLowerCase()
+  const isAccountSuspended =
+    lowerMsg.includes('suspended') ||
+    lowerMsg.includes('too many login attempt') ||
+    lowerMsg.includes('account timeout') ||
+    lowerMsg.includes('temporarily locked') ||
+    lowerMsg.includes('deactivated')
+
+  ElNotification({
+    title: isAccountSuspended ? 'Account Issue' : 'Error',
+    message: messageToShow,
+    type: 'error',
+    duration: isAccountSuspended ? 5000 : 2000,
+  })
+} catch (err: any) {
+  const apiMsg =
+    typeof err?.response?.data?.responseMessage === 'string'
+      ? err.response.data.responseMessage.trim()
+      : ''
+
+  ElNotification({
+    title: 'Error',
+    message: apiMsg || err?.message || 'An unexpected error occurred. Please try again.',
+    type: 'error',
+    duration: 2000,
+  })
+} finally {
+  isLoading.value = false
+}
+
 }
 
 const goToRegister = () => {

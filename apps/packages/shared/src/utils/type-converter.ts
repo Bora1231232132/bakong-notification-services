@@ -16,9 +16,9 @@ export const formatUserRole = (role: UserRole | string): string => {
 export const formatUserRoleShort = (role: UserRole | string): string => {
   switch (role) {
     case UserRole.VIEW_ONLY:
-      return 'View only'
+      return 'Viewer Only'
     case UserRole.APPROVAL:
-      return 'Approval'
+      return 'Approver'
     case UserRole.EDITOR:
       return 'Editor'
     default:

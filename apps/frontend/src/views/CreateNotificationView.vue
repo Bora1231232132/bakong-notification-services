@@ -2,7 +2,26 @@
   <div class="create-notification-container">
     <div class="main-content">
       <Tabs v-model="activeLanguage" :tabs="languageTabs" @tab-changed="handleLanguageChanged" />
+     
       <div class="form-content">
+         <!-- Reject Reason Display: Only show for rejected templates in draft tab -->
+      <div 
+        v-if="(isEditMode || isViewMode) && fromTab === 'draft' && rejectReasonText" 
+        class="reject-reason-container"
+      >
+        <div class="reject-reason-header">
+          <el-icon class="reject-reason-icon"><WarningFilled /></el-icon>
+          <div class="reject-reason-label ">Reject Reason: <span class="reject-reason-text">{{ rejectReasonText }}</span></div>
+        </div>
+        <!-- <el-input
+          v-model="rejectReasonText"
+          type="textarea"
+          :rows="2"
+          :readonly="true"
+          class="reject-reason-textarea"
+          resize="vertical"
+        /> -->
+      </div>
         <div class="form-group">
           <ImageUpload
             :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
@@ -23,12 +42,25 @@
             <div class="form-group">
               <label class="form-label">Type <span class="required">*</span></label>
               <el-dropdown
-                @command="(command: number) => (formData.categoryTypeId = command)"
+                @command="(command: number) => {
+                  if (!isReadOnly && !isEditingRestrictedFields && !loadingCategoryTypes) {
+                    formData.categoryTypeId = command
+                  }
+                }"
                 trigger="click"
                 class="custom-dropdown"
-                :disabled="loadingCategoryTypes || isReadOnly"
+                :class="{ 'is-disabled': loadingCategoryTypes || isReadOnly || isEditingRestrictedFields }"
+                :disabled="loadingCategoryTypes || isReadOnly || isEditingRestrictedFields"
               >
-                <span class="dropdown-trigger">
+                <span 
+                  class="dropdown-trigger"
+                  @click.stop="(e) => {
+                    if (loadingCategoryTypes || isReadOnly || isEditingRestrictedFields) {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }
+                  }"
+                >
                   {{
                     formatCategoryType(
                       categoryTypes.find(
@@ -56,12 +88,25 @@
             <div class="form-group">
               <label class="form-label">Push to OS Platforms <span class="required">*</span></label>
               <el-dropdown
-                @command="(command: Platform) => (formData.pushToPlatforms = command)"
+                @command="(command: Platform) => {
+                  if (!isReadOnly && !isEditingRestrictedFields) {
+                    formData.pushToPlatforms = command
+                  }
+                }"
                 trigger="click"
-                :disabled="isReadOnly"
+                :disabled="isReadOnly || isEditingRestrictedFields"
                 class="custom-dropdown"
+                :class="{ 'is-disabled': isReadOnly || isEditingRestrictedFields }"
               >
-                <span class="dropdown-trigger">
+                <span 
+                  class="dropdown-trigger"
+                  @click.stop="(e) => {
+                    if (isReadOnly || isEditingRestrictedFields) {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }
+                  }"
+                >
                   {{ formatPlatform(formData.pushToPlatforms) }}
                   <el-icon class="dropdown-icon">
                     <ArrowDown />
@@ -124,12 +169,25 @@
           <div class="form-group">
             <label class="form-label">Bakong Platform <span class="required">*</span></label>
             <el-dropdown
-              @command="(command: BakongApp) => (formData.platform = command)"
+              @command="(command: BakongApp) => {
+                if (!isReadOnly && !isEditingRestrictedFields) {
+                  formData.platform = command
+                }
+              }"
               trigger="click"
               class="custom-dropdown full-width-dropdown"
-              :disabled="isReadOnly"
+              :class="{ 'is-disabled': isReadOnly || isEditingRestrictedFields }"
+              :disabled="isReadOnly || isEditingRestrictedFields"
             >
-              <span class="dropdown-trigger full-width-trigger">
+              <span 
+                class="dropdown-trigger full-width-trigger"
+                @click.stop="(e) => {
+                  if (isReadOnly || isEditingRestrictedFields) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }
+                }"
+              >
                 {{ formatBakongApp(formData.platform) }}
                 <el-icon class="dropdown-icon">
                   <ArrowDown />
@@ -185,7 +243,7 @@
                     <input
                       v-model="formData.scheduleEnabled"
                       type="checkbox"
-                      :disabled="isReadOnly"
+                      :disabled="isReadOnly || isEditingRestrictedFields"
                     />
                     <span class="toggle-slider"></span>
                   </label>
@@ -195,6 +253,7 @@
                 <div class="schedule-form-group">
                   <label class="schedule-form-label">Date <span class="required">*</span></label>
                   <el-date-picker
+                    :key="`date-picker-${notificationId || 'new'}-${formData.scheduleDate || 'empty'}`"
                     v-model="formData.scheduleDate"
                     type="date"
                     :placeholder="datePlaceholder"
@@ -204,12 +263,12 @@
                     style="width: 277.5px !important; height: 56px !important; border-radius: 16px"
                     :prefix-icon="null"
                     :clear-icon="null"
-                    :disabled-date="disabledDate"
-                    :disabled="isReadOnly"
+                    :disabled-date="customDisabledDate"
+                    :disabled="isReadOnly || isEditingRestrictedFields"
+                    :default-value="scheduleDateDefaultValue"
                     @change="
                       (val: string | null) => {
-                        formData.scheduleDate = val ?? ''
-                        console.log('Date changed:', val)
+                        handleDatePickerChange(val)
                       }
                     "
                   />
@@ -217,7 +276,8 @@
                 <div class="schedule-form-group">
                   <label class="schedule-form-label">Time <span class="required">*</span></label>
                   <el-time-picker
-                    v-model="formData.scheduleTime"
+                    :key="`time-picker-${notificationId || 'new'}-${isLoadingData ? 'loading' : 'ready'}`"
+                    v-model="scheduleTimeModel"
                     :placeholder="timePlaceholder"
                     format="HH:mm"
                     value-format="HH:mm"
@@ -229,11 +289,42 @@
                     :disabled-minutes="
                       (hour: number) => disabledMinutes(hour, formData.scheduleDate)
                     "
-                    :disabled="isReadOnly"
+                    :disabled="isReadOnly || isEditingRestrictedFields || isLoadingData || (isTemplateExpired && isReadOnly)"
                     @change="
                       (val: string | null) => {
-                        formData.scheduleTime = val
-                        console.log('Time changed:', val)
+                        const hasLoaded = hasLoadedScheduleTime
+                        const isLoading = isLoadingData
+                        const loadedTime = loadedScheduleTime
+                        console.log('🟢 [Time Picker Change] Event fired:', {
+                          newValue: val,
+                          currentFormDataTime: formData.scheduleTime,
+                          loadedScheduleTime: loadedTime,
+                          hasLoadedScheduleTime: hasLoaded,
+                          isLoadingData: isLoading,
+                          willUpdate: val !== formData.scheduleTime,
+                        })
+                        
+                        // CRITICAL: Block ALL updates during loading if we've loaded schedule time from template
+                        // This prevents the time picker from overwriting the loaded time with placeholder
+                        if (isLoading && hasLoaded && loadedTime) {
+                          if (val !== loadedTime) {
+                            console.log('🔒 [Time Picker Change] BLOCKED - Preserving loaded time during load:', {
+                              attemptedValue: val,
+                              preservedValue: loadedTime,
+                              currentFormDataTime: formData.scheduleTime,
+                            })
+                            // Restore the loaded time immediately and prevent further updates
+                            formData.scheduleTime = loadedTime
+                            return
+                          }
+                        }
+                        
+                        // Note: v-model already handles the binding, but we log here for debugging
+                        // Only update if value actually changed to avoid unnecessary updates
+                        if (val !== formData.scheduleTime) {
+                          formData.scheduleTime = val
+                          console.log('🟢 [Time Picker Change] Updated formData.scheduleTime to:', val)
+                        }
                       }
                     "
                   />
@@ -316,8 +407,29 @@
               height="56px"
               @click="handlePublishNow"
             />
+            <!-- Cancel now button: Show when editing from Published, Pending, or Scheduled tabs (not Draft) -->
             <Button
-              v-if="!isEditingPublished && !isEditingPending"
+              v-if="isEditMode && (isEditingPublished || isEditingPending || isEditingScheduled) && fromTab !== 'draft'"
+              text="Cancel now"
+              variant="secondary"
+              size="medium"
+              width="116px"
+              height="56px"
+              @click="handleCancel"
+              />
+            <!-- Update now button: Show when editing from Draft tab (including expired templates) -->
+            <Button
+              v-if="isEditMode && fromTab === 'draft'"
+              text="Update now"
+              variant="secondary"
+              size="medium"
+              width="116px"
+              height="56px"
+              @click="() => handleSaveDraft(false)"
+              />
+            <!-- Save draft button: Show only when creating a NEW notification -->
+            <Button
+              v-if="!isEditMode"
               text="Save draft"
               variant="secondary"
               size="medium"
@@ -328,14 +440,42 @@
             </template>
             <!-- Back button for read-only view mode -->
             <Button
-              v-if="isReadOnly"
-              text="Back"
+              v-if="isReadOnly && !isApprovalViewMode"
+              text="Back now"
               variant="secondary"
               size="medium"
               width="116px"
               height="56px"
               @click="handleBack"
             />
+            
+            <!-- Approval view mode buttons for Approver viewing PENDING notification -->
+            <template v-if="isReadOnly && isApprovalViewMode">
+              <Button
+                :text="approvalButtonText"
+                variant="primary"
+                size="medium"
+                width="180px"
+                height="56px"
+                @click="handleApprovalFromView"
+              />
+              <Button
+                text="Reject Now"
+                variant="danger"
+                size="medium"
+                width="130px"
+                height="56px"
+                @click="handleRejectFromView"
+              />
+              <Button
+                text="Back now"
+                variant="secondary"
+                size="medium"
+                width="116px"
+                height="56px"
+                @click="handleBack"
+              />
+            </template>
           </div>
         </div>
       </div>
@@ -368,12 +508,8 @@
   <ConfirmationDialog
     v-model="showLeaveDialog"
     title="Are you sure you want to leave?"
-    :message="
-      isEditMode
-        ? 'If you leave now, any changes you made will be updated. If there are no changes, nothing will be updated.'
-        : 'If you leave now, your progress will be saved as a draft. You can resume and complete it anytime.'
-    "
-    :confirm-text="isEditMode ? 'Update and leave' : 'Save as draft & leave'"
+    :message="getLeaveDialogMessage()"
+    :confirm-text="getLeaveDialogConfirmText()"
     cancel-text="Stay on page"
     type="warning"
     confirm-button-type="primary"
@@ -381,11 +517,23 @@
     @cancel="handleLeaveDialogCancel"
   />
   <ConfirmationDialog
+    v-model="showRejectDialog"
+    title="Reject Notification?"
+    message="Please provide a reason for rejecting this notification. It will be moved back to Draft tab."
+    confirm-text="Reject"
+    cancel-text="Cancel now"
+    type="warning"
+    confirm-button-type="danger"
+    :show-reason-input="true"
+    @confirm="(reason?: string) => handleRejectFromViewConfirm(reason)"
+    @cancel="handleRejectFromViewCancel"
+  />
+  <ConfirmationDialog
     v-model="showUpdateConfirmationDialog"
     title="You want to update?"
     message="Updating will immediately change the announcement for all users."
     confirm-text="Continue"
-    cancel-text="Cancel"
+    cancel-text="Cancel now"
     type="warning"
     confirm-button-type="primary"
     @confirm="handleUpdateConfirmationConfirm"
@@ -397,7 +545,7 @@
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElNotification, ElInputNumber, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, WarningFilled } from '@element-plus/icons-vue'
 import { MobilePreview, ImageUpload, Tabs, Button } from '@/components/common'
 import ConfirmationDialog from '@/components/common/ConfirmationDialog.vue'
 import { notificationApi, type CreateTemplateRequest } from '@/services/notificationApi'
@@ -446,14 +594,94 @@ const isEditingPublished = ref(false)
 const wasScheduled = ref(false)
 const isLoadingData = ref(false)
 const isEditingPending = ref(false) // Track if editing a PENDING template
+const isEditingScheduled = ref(false) // Track if editing from Scheduled tab (approved template)
+const isTemplateExpired = ref(false) // Track if template is expired (should preserve original scheduled time)
+const hasLoadedScheduleTime = ref(false) // Track if schedule time was loaded from template
+const loadedScheduleTime = ref<string | null>(null) // Store the original loaded schedule time to prevent overwrites
+const originalIsSent = ref<boolean | null>(null) // Store the original isSent value to preserve when editing from Scheduled/Published/Pending tabs
 
 // Check if user is APPROVAL role (read-only access)
 const isApprovalRole = computed(() => authStore.user?.role === (UserRole.APPROVAL as any))
 // Read-only mode: APPROVAL role can only view, not edit
 const isReadOnly = computed(() => isViewMode.value || isApprovalRole.value)
 
+// Check if editing Published notifications (restricted fields should be disabled)
+// Only published notifications (already sent to users) should have restricted fields
+// Scheduled/Pending notifications haven't been sent yet, so all fields can be edited
+const isEditingRestrictedFields = computed(() => {
+  return isEditMode.value && isEditingPublished.value
+})
+
+// Check if template is rejected (for showing reject reason)
+// Only show for REJECTED templates, not EXPIRED
+const isRejectedTemplate = computed(() => {
+  // Check if we're in edit/view mode and have a rejection reason
+  if (!isEditMode.value && !isViewMode.value) {
+    console.log('🔍 [isRejectedTemplate] Not in edit/view mode')
+    return false
+  }
+  // Only show for rejected templates (not expired) with a reason
+  const hasReason = rejectReasonText.value !== '' && rejectReasonText.value !== null && rejectReasonText.value !== undefined
+  console.log('🔍 [isRejectedTemplate] Computed:', {
+    isEditMode: isEditMode.value,
+    isViewMode: isViewMode.value,
+    rejectReasonText: rejectReasonText.value,
+    hasReason,
+    fromTab: fromTab.value,
+    willShow: hasReason && fromTab.value === 'draft',
+  })
+  return hasReason
+})
+
+// Check if this is approval view mode (Approver viewing PENDING notification)
+const isApprovalViewMode = computed(() => {
+  return isReadOnly.value && isApprovalRole.value && isEditingPending.value
+})
+
+// Custom disabled date function that allows today for all cases
+const customDisabledDate = (time: Date): boolean => {
+  // Get current time in Cambodia timezone to determine "today"
+  const now = DateUtils.nowInCambodia()
+  
+  // Get today's date string in Cambodia timezone (M/D/YYYY format)
+  const todayStr = DateUtils.getCurrentDateString() // e.g., "1/25/2026"
+  const [todayMonth, todayDay, todayYear] = todayStr.split('/').map(Number)
+  
+  // Element Plus date picker passes dates - we need to get the date in Cambodia timezone
+  // Convert the input date to a string in Cambodia timezone to get accurate date components
+  const timeInCambodia = time.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Phnom_Penh',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  })
+  const [selectedMonth, selectedDay, selectedYear] = timeInCambodia.split('/').map(Number)
+  
+  // Compare date components
+  // Disable dates that are before today (allow today and future dates)
+  if (selectedYear < todayYear) return true
+  if (selectedYear > todayYear) return false
+  if (selectedMonth < todayMonth) return true
+  if (selectedMonth > todayMonth) return false
+  if (selectedDay < todayDay) return true
+  
+  // Today and future dates are allowed (return false = not disabled)
+  return false
+}
+
+// Approval button text based on sendType
+const approvalButtonText = computed(() => {
+  if (!isApprovalViewMode.value) return 'Approve'
+  // Check if notification is scheduled
+  return formData.scheduleEnabled ? 'Approval Scheduled' : 'Approval Now'
+})
+
 // Dynamic button text based on context and user role
 const publishButtonText = computed(() => {
+  // If editing from Scheduled tab (approved template), show "Update now"
+  if (isEditingScheduled.value) {
+    return 'Update now'
+  }
   // If editing a PENDING template, show "Update now"
   if (isEditingPending.value) {
     return 'Update now'
@@ -462,10 +690,11 @@ const publishButtonText = computed(() => {
     return 'Update now'
   }
   if (formData.scheduleEnabled) {
-    return 'Schedule Now'
+    return 'Submit Now'
   }
-  // For EDITOR role, show "Submit now" instead of "Publish now"
-  if (authStore.user?.role === (UserRole.EDITOR as any)) {
+  // For EDITOR and ADMIN roles, show "Submit now" instead of "Publish now"
+  const userRole = authStore.user?.role as any
+  if (userRole === UserRole.EDITOR || userRole === UserRole.ADMINISTRATOR) {
     return 'Submit now'
   }
   return 'Publish now'
@@ -495,6 +724,21 @@ const handleLanguageChanged = (tab: { value: string; label: string }) => {
 
 const datePlaceholder = ref(getCurrentDatePlaceholder())
 const timePlaceholder = ref(getCurrentTimePlaceholder())
+
+// Computed property to provide default value for date picker (today's date)
+// This ensures the date picker always shows today when creating a new notification
+const scheduleDateDefaultValue = computed(() => {
+  if (!isEditMode.value && !isViewMode.value) {
+    // For new notifications, always default to today
+    const todayDate = getTodayDateString()
+    // Convert M/D/YYYY to a Date object for Element Plus
+    const [month, day, year] = todayDate.split('/').map(Number)
+    // Create date in local timezone (Element Plus will handle timezone conversion)
+    const today = new Date(year, month - 1, day)
+    return today
+  }
+  return undefined // For edit/view mode, don't set default value
+})
 
 type LanguageFormData = {
   title: string
@@ -577,11 +821,9 @@ const originalFormData = reactive({
 })
 
 const getTodayDateString = (): string => {
-  const now = DateUtils.nowInCambodia()
-  const month = now.getMonth() + 1
-  const day = now.getDate()
-  const year = now.getFullYear()
-  return `${month}/${day}/${year}`
+  // Use DateUtils.getCurrentDateString() which correctly handles Cambodia timezone
+  // This ensures we get today's date in Cambodia timezone, not browser local timezone
+  return DateUtils.getCurrentDateString()
 }
 
 // Use category types store
@@ -598,7 +840,7 @@ const formData = reactive({
   platform: BakongApp.BAKONG,
   scheduleEnabled: false,
   scheduleDate: getTodayDateString(),
-  scheduleTime: null as string | null,
+  scheduleTime: getCurrentTimePlaceholder() as string | null, // Default to current time
   splashEnabled: false,
 })
 
@@ -683,14 +925,130 @@ const currentImageUrl = computed({
 const titleHasKhmer = computed(() => containsKhmer(currentTitle.value))
 const descriptionHasKhmer = computed(() => containsKhmer(currentDescription.value))
 
+// Computed property for schedule time that prevents overwrites during loading
+const scheduleTimeModel = computed({
+  get: () => {
+    // For expired/rejected templates in VIEW mode, preserve original time (read-only)
+    // For expired/rejected templates in EDIT mode, allow editing
+    if (isTemplateExpired.value && hasLoadedScheduleTime.value && loadedScheduleTime.value && isReadOnly.value) {
+      // If formData time doesn't match loaded time, restore it (only in view mode)
+      if (formData.scheduleTime !== loadedScheduleTime.value) {
+        console.log('🔒 [ScheduleTimeModel] Expired template (view mode) - restoring original time:', {
+          formDataTime: formData.scheduleTime,
+          originalTime: loadedScheduleTime.value,
+        })
+        nextTick(() => {
+          formData.scheduleTime = loadedScheduleTime.value
+        })
+        return loadedScheduleTime.value
+      }
+      return loadedScheduleTime.value
+    }
+    // During loading, if we have a loaded schedule time, always return it
+    if (isLoadingData.value && hasLoadedScheduleTime.value && loadedScheduleTime.value) {
+      return loadedScheduleTime.value
+    }
+    // After loading, if formData doesn't match loaded time and we still have loaded time,
+    // it means something changed it incorrectly - restore it once
+    // For expired/rejected templates in VIEW mode, restore if it doesn't match
+    if (!isLoadingData.value && hasLoadedScheduleTime.value && loadedScheduleTime.value) {
+      if (formData.scheduleTime !== loadedScheduleTime.value) {
+        // For expired/rejected templates in view mode, restore (but allow editing in edit mode)
+        if (isTemplateExpired.value && isReadOnly.value) {
+          console.log('🔒 [ScheduleTimeModel] Expired template (view mode) - restoring original time:', {
+            formDataTime: formData.scheduleTime,
+            originalTime: loadedScheduleTime.value,
+          })
+          nextTick(() => {
+            formData.scheduleTime = loadedScheduleTime.value
+          })
+          return loadedScheduleTime.value
+        }
+        // For non-expired templates, only restore if it's the placeholder (current time)
+        if (formData.scheduleTime === timePlaceholder.value) {
+          // Time was changed to placeholder (current time) - restore loaded time
+          console.log('🔒 [ScheduleTimeModel] Detected placeholder time, restoring loaded time:', {
+            formDataTime: formData.scheduleTime,
+            loadedTime: loadedScheduleTime.value,
+            placeholder: timePlaceholder.value,
+          })
+          // Use nextTick to avoid infinite loop
+          nextTick(() => {
+            formData.scheduleTime = loadedScheduleTime.value
+          })
+          return loadedScheduleTime.value
+        }
+      }
+    }
+    // Otherwise return the form data value
+    return formData.scheduleTime
+  },
+  set: (value: string | null) => {
+    // CRITICAL: For expired/rejected templates in VIEW mode, preserve original time (read-only)
+    // But in EDIT mode, allow changes so user can update the schedule
+    if (isTemplateExpired.value && hasLoadedScheduleTime.value && loadedScheduleTime.value && isReadOnly.value) {
+      if (value !== loadedScheduleTime.value) {
+        console.log('🔒 [ScheduleTimeModel] BLOCKED write for expired template (view mode) - preserving original time:', {
+          attemptedValue: value,
+          preservedValue: loadedScheduleTime.value,
+        })
+        // Don't update - keep the original time (only in view mode)
+        return
+      }
+    }
+    // CRITICAL: Block writes during loading if we have a loaded schedule time
+    if (isLoadingData.value && hasLoadedScheduleTime.value && loadedScheduleTime.value) {
+      if (value !== loadedScheduleTime.value) {
+        console.log('🔒 [ScheduleTimeModel] BLOCKED write during loading:', {
+          attemptedValue: value,
+          preservedValue: loadedScheduleTime.value,
+        })
+        // Don't update - keep the loaded time
+        return
+      }
+    }
+    // After loading, allow updates but clear hasLoadedScheduleTime if user manually changes it
+    // EXCEPT for expired/rejected templates in VIEW mode - preserve original time in view mode only
+    if (!isLoadingData.value && hasLoadedScheduleTime.value && loadedScheduleTime.value) {
+      if (value !== loadedScheduleTime.value) {
+        // For expired/rejected templates in view mode, preserve original time (but allow editing in edit mode)
+        if (isTemplateExpired.value && isReadOnly.value) {
+          console.log('🔒 [ScheduleTimeModel] BLOCKED change for expired template (view mode) - preserving original time:', {
+            attemptedValue: value,
+            preservedValue: loadedScheduleTime.value,
+          })
+          // Don't update - keep the original time (only in view mode)
+          return
+        }
+        // User is manually changing the time - allow it and clear the loaded time flag
+        console.log('✅ [ScheduleTimeModel] User manually changed time, clearing loaded time flag', {
+          isTemplateExpired: isTemplateExpired.value,
+          isReadOnly: isReadOnly.value,
+          isEditMode: isEditMode.value,
+        })
+        hasLoadedScheduleTime.value = false
+        loadedScheduleTime.value = null
+      }
+    }
+    // Allow normal updates
+    formData.scheduleTime = value
+  },
+})
+
 // Store template creation date to check if notification is old
 const templateCreatedAt = ref<Date | null>(null)
+// Store rejection reason for rejected templates
+const rejectReasonText = ref<string>('')
 
 const loadNotificationData = async () => {
   // Load data for both edit mode and view mode
   if ((!isEditMode.value && !isViewMode.value) || !notificationId.value) return
 
   isLoadingData.value = true
+  hasLoadedScheduleTime.value = false // Reset flag before loading
+  loadedScheduleTime.value = null // Reset loaded time before loading
+  isTemplateExpired.value = false // Reset expired flag before loading
+  originalIsSent.value = null // Reset original isSent before loading
   try {
     const res = await api.get(`/api/v1/template/${notificationId.value}`)
     const template = res.data?.data
@@ -707,11 +1065,55 @@ const loadNotificationData = async () => {
       templateCreatedAt.value = null
     }
 
-    // Check if editing a published notification (either from fromTab query or isSent status)
-    isEditingPublished.value = fromTab.value === 'published' || template.isSent === true
+    // Check if editing a published notification
+    // Only restrict fields if explicitly from Published tab (already sent to users)
+    // Pending/Scheduled notifications haven't been sent yet, so allow full editing
+    isEditingPublished.value = fromTab.value === 'published' && template.isSent === true
+    
+    // Check if editing from Scheduled tab (approved template with sendSchedule)
+    isEditingScheduled.value = fromTab.value === 'scheduled' && template.approvalStatus === 'APPROVED' && template.sendSchedule !== null
     
     // Check if editing a PENDING template
     isEditingPending.value = template.approvalStatus === 'PENDING'
+    
+    // Check if template is EXPIRED or REJECTED
+    // For expired/rejected templates in EDIT mode, allow editing all fields including schedule time
+    // For expired/rejected templates in VIEW mode, preserve original scheduled time (read-only)
+    isTemplateExpired.value = template.approvalStatus === 'EXPIRED' || template.approvalStatus === 'REJECTED'
+    
+    // Store rejection reason if template is rejected
+    console.log('🔍 [Load Data] Checking rejection reason:', {
+      approvalStatus: template.approvalStatus,
+      reasonForRejection: template.reasonForRejection,
+      hasReason: !!template.reasonForRejection,
+      fromTab: fromTab.value,
+    })
+    if (template.approvalStatus === 'REJECTED') {
+      rejectReasonText.value = template.reasonForRejection || ''
+      console.log('✅ [Load Data] Rejection reason loaded:', {
+        approvalStatus: template.approvalStatus,
+        reasonForRejection: template.reasonForRejection,
+        rejectReasonText: rejectReasonText.value,
+        fromTab: fromTab.value,
+      })
+    } else {
+      rejectReasonText.value = ''
+      console.log('⚠️ [Load Data] No rejection reason found or not rejected:', {
+        approvalStatus: template.approvalStatus,
+      })
+    }
+    
+    // Store original isSent value to preserve when editing from Scheduled/Published/Pending tabs
+    originalIsSent.value = template.isSent ?? null
+    
+    // For expired/rejected templates, log the behavior
+    if (isTemplateExpired.value && template.sendSchedule) {
+      if (isReadOnly.value) {
+        console.log('🔒 [Load Data] Template is EXPIRED/REJECTED (view mode) - will preserve original scheduled time')
+      } else {
+        console.log('✅ [Load Data] Template is EXPIRED/REJECTED (edit mode) - allowing all field edits including schedule time')
+      }
+    }
 
     formData.notificationType =
       mapNotificationTypeToFormType(template.notificationType) || NotificationType.NOTIFICATION
@@ -733,19 +1135,102 @@ const loadNotificationData = async () => {
       originalFormData.pushToPlatforms = Platform.ALL
     }
 
+    // Load schedule data - always set scheduleEnabled based on sendSchedule existence
+    // This ensures view mode shows the correct toggle state
     if (template.sendSchedule) {
-      formData.scheduleEnabled = true
       wasScheduled.value = true
       try {
         const { date, time } = DateUtils.formatUTCToCambodiaDateTime(template.sendSchedule)
         if (date && time) {
+          console.log('🔵 [Load Data] BEFORE setting schedule:', {
+            originalUTC: template.sendSchedule,
+            parsedDate: date,
+            parsedTime: time,
+            currentFormDataScheduleTime: formData.scheduleTime,
+            hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+            isLoadingData: isLoadingData.value,
+          })
+          
+          // CRITICAL: Store the loaded time first, then set it
+          // This allows us to restore it if something tries to change it during loading
+          loadedScheduleTime.value = time
+          hasLoadedScheduleTime.value = true
+          
+          // CRITICAL: Set schedule time BEFORE enabling the toggle
+          // This prevents the time picker from initializing with placeholder value
           formData.scheduleDate = date
           formData.scheduleTime = time
-          console.log('✅ [Load Data] Set schedule:', { date, time })
+          
+          console.log('✅ [Load Data] AFTER setting schedule time:', {
+            originalUTC: template.sendSchedule,
+            parsedDate: date,
+            parsedTime: time,
+            formDataScheduleDate: formData.scheduleDate,
+            formDataScheduleTime: formData.scheduleTime,
+            loadedScheduleTime: loadedScheduleTime.value,
+            hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+            isLoadingData: isLoadingData.value,
+          })
+          
+          // Wait a tick to ensure time is set before enabling toggle
+          await nextTick()
+          
+          // Verify time hasn't changed before enabling toggle
+          if (formData.scheduleTime !== loadedScheduleTime.value) {
+            console.warn('⚠️ [Load Data] Time changed before enabling toggle, restoring:', {
+              current: formData.scheduleTime,
+              expected: loadedScheduleTime.value,
+            })
+            formData.scheduleTime = loadedScheduleTime.value
+          }
+          
+          // NOW enable the toggle - time picker will already have the correct value
+          formData.scheduleEnabled = true
+          
+          console.log('✅ [Load Data] AFTER enabling toggle:', {
+            formDataScheduleTime: formData.scheduleTime,
+            expectedTime: time,
+            loadedScheduleTime: loadedScheduleTime.value,
+            timeMatches: formData.scheduleTime === time,
+            hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+            scheduleEnabled: formData.scheduleEnabled,
+          })
+          
+          // Wait another tick and verify time is still preserved
+          await nextTick()
+          
+          // If time changed, restore it
+          if (formData.scheduleTime !== loadedScheduleTime.value && loadedScheduleTime.value) {
+            console.warn('⚠️ [Load Data] Time changed after enabling toggle, restoring:', {
+              current: formData.scheduleTime,
+              expected: loadedScheduleTime.value,
+            })
+            formData.scheduleTime = loadedScheduleTime.value
+          }
+          
+          console.log('🔍 [Load Data] Final check after toggle enabled:', {
+            formDataScheduleTime: formData.scheduleTime,
+            expectedTime: time,
+            loadedScheduleTime: loadedScheduleTime.value,
+            timeMatches: formData.scheduleTime === time,
+            hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+          })
         }
       } catch (error) {
-        console.error('Error parsing schedule date/time:', error)
+        console.error('❌ [Load Data] Error parsing schedule date/time:', error)
+        hasLoadedScheduleTime.value = false
+        loadedScheduleTime.value = null
       }
+    } else {
+      // Explicitly set to false if no schedule exists
+      // This ensures view mode shows correct state (toggle OFF)
+      hasLoadedScheduleTime.value = false
+      loadedScheduleTime.value = null
+      formData.scheduleEnabled = false
+      wasScheduled.value = false
+      formData.scheduleDate = getTodayDateString()
+      formData.scheduleTime = null
+      console.log('✅ [Load Data] No schedule - disabled toggle')
     }
 
     formData.splashEnabled = template.notificationType === NotificationType.FLASH_NOTIFICATION
@@ -764,7 +1249,6 @@ const loadNotificationData = async () => {
         languageFormData[lang].linkToSeeMore = linkPreview
         languageFormData[lang].imageUrl = fileId ? `/api/v1/image/${fileId}` : null
         languageFormData[lang].imageFile = null
-        existingImageIds[lang] = fileId || null
 
         // Store original values for change detection
         originalLanguageFormData[lang].title = title
@@ -782,6 +1266,18 @@ const loadNotificationData = async () => {
     // Wait for Vue to process all reactive changes (like the scheduleEnabled watcher)
     // while isLoadingData is still true, to prevent overwriting with defaults
     await nextTick()
+    
+    // CRITICAL: Final verification - ensure schedule time is correct before finishing load
+    // This catches any last-minute changes from the time picker
+    if (hasLoadedScheduleTime.value && loadedScheduleTime.value && formData.scheduleTime !== loadedScheduleTime.value) {
+      console.log('🔒 [Load Data] Final restoration - Time incorrect before finishing load:', {
+        current: formData.scheduleTime,
+        expected: loadedScheduleTime.value,
+      })
+      formData.scheduleTime = loadedScheduleTime.value
+      // Wait one more tick to ensure it's set
+      await nextTick()
+    }
   } catch (error) {
     console.error('Error loading notification data:', error)
     ElNotification({
@@ -791,13 +1287,86 @@ const loadNotificationData = async () => {
       duration: 2000,
     })
   } finally {
+    // CRITICAL: For expired/rejected templates in VIEW mode, ensure time is preserved one final time after loading
+    // In EDIT mode, allow user to change the time
+    if (isTemplateExpired.value && hasLoadedScheduleTime.value && loadedScheduleTime.value && isReadOnly.value) {
+      if (formData.scheduleTime !== loadedScheduleTime.value) {
+        console.log('🔒 [Load Data] Final preservation for expired template (view mode):', {
+          current: formData.scheduleTime,
+          original: loadedScheduleTime.value,
+        })
+        formData.scheduleTime = loadedScheduleTime.value
+        await nextTick()
+      }
+      // For expired/rejected templates in view mode, keep hasLoadedScheduleTime to preserve original time
+      console.log('🔒 [Load Data] Expired template (view mode) - keeping hasLoadedScheduleTime=true to preserve original time')
+    } else if (isTemplateExpired.value && hasLoadedScheduleTime.value && loadedScheduleTime.value && !isReadOnly.value) {
+      // In edit mode, allow user to change the time - clear the preservation flag after loading completes
+      // This allows the initial load to show the correct time, but then allows free editing
+      console.log('✅ [Load Data] Expired template (edit mode) - will allow time editing after load completes')
+      // Use nextTick to clear after Vue has processed all reactive updates
+      nextTick(() => {
+        setTimeout(() => {
+          console.log('✅ [Load Data] Expired template (edit mode) - clearing preservation flag to allow editing')
+          hasLoadedScheduleTime.value = false
+          loadedScheduleTime.value = null
+        }, 200) // Small delay to ensure time picker has initialized with correct value
+      })
+    }
+    
+    // Only set isLoadingData to false after we're absolutely sure the time is correct
     isLoadingData.value = false
+    console.log('✅ [Load Data] Loading complete, isLoadingData set to false', {
+      isTemplateExpired: isTemplateExpired.value,
+      hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+      loadedScheduleTime: loadedScheduleTime.value,
+      formDataScheduleTime: formData.scheduleTime,
+      isReadOnly: isReadOnly.value,
+      isEditMode: isEditMode.value,
+    })
   }
 }
 
 onMounted(async () => {
   datePlaceholder.value = getCurrentDatePlaceholder()
   timePlaceholder.value = getCurrentTimePlaceholder()
+
+  // For new notifications (not editing), always set default date and time to today/current time
+  if (!isEditMode.value && !isViewMode.value) {
+    // Force set to today's date and current time
+    const todayDate = getTodayDateString()
+    const currentTime = getCurrentTimePlaceholder()
+    // Always ensure date is today for new notifications
+    // Use nextTick to ensure it's set after the component has fully rendered
+    await nextTick()
+    formData.scheduleDate = todayDate
+    formData.scheduleTime = currentTime
+    console.log('✅ [Mount] Set default date and time for new notification:', {
+      date: todayDate,
+      time: currentTime,
+      scheduleEnabled: formData.scheduleEnabled,
+      scheduleDate: formData.scheduleDate,
+    })
+    
+    // Double-check after nextTick to ensure date is still today
+    await nextTick()
+    if (formData.scheduleDate !== todayDate) {
+      console.log('⚠️ [Mount] Date was changed, correcting back to today:', {
+        expected: todayDate,
+        actual: formData.scheduleDate,
+      })
+      formData.scheduleDate = todayDate
+    }
+    
+    // If schedule is already enabled, ensure date is still today (in case it was changed)
+    if (formData.scheduleEnabled) {
+      await nextTick()
+      if (formData.scheduleDate !== todayDate) {
+        formData.scheduleDate = todayDate
+        console.log('✅ [Mount] Corrected schedule date to today:', todayDate)
+      }
+    }
+  }
 
   // Load notification data for both edit mode and view mode
   if (isEditMode.value || isViewMode.value) {
@@ -808,6 +1377,7 @@ onMounted(async () => {
 const showConfirmationDialog = ref(false)
 const showLeaveDialog = ref(false)
 const showUpdateConfirmationDialog = ref(false)
+const showRejectDialog = ref(false)
 let pendingNavigation: (() => void) | null = null
 let isSavingOrPublishing = ref(false) // Flag to prevent blocking during save/publish
 const isDiscarding = ref(false) // Flag to allow navigation when discarding changes
@@ -826,28 +1396,196 @@ watch(
   },
 )
 
-// Watch scheduleEnabled to auto-set date and time when enabled
+// Watch scheduleTime to track when it changes and restore if needed during loading
 watch(
-  () => formData.scheduleEnabled,
-  (isEnabled) => {
-    // Only auto-set date/time if we are NOT currently loading existing data
-    if (isEnabled && !isLoadingData.value) {
-      // When schedule is turned ON, set date to today and time to current time
-      formData.scheduleDate = getTodayDateString()
-      formData.scheduleTime = getCurrentTimePlaceholder()
-      console.log(
-        '✅ [Schedule Toggle] Enabled - Set date:',
-        formData.scheduleDate,
-        'time:',
-        formData.scheduleTime,
-      )
-    } else if (!isEnabled) {
-      // When schedule is turned OFF, clear time but keep date for next time
-      formData.scheduleTime = null
-      console.log('✅ [Schedule Toggle] Disabled - Cleared time')
+  () => formData.scheduleTime,
+  (newTime, oldTime) => {
+    console.log('🟡 [ScheduleTime Watcher] Time changed:', {
+      oldTime,
+      newTime,
+      hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+      isLoadingData: isLoadingData.value,
+      scheduleEnabled: formData.scheduleEnabled,
+      loadedScheduleTime: loadedScheduleTime.value,
+      isTemplateExpired: isTemplateExpired.value,
+      isReadOnly: isReadOnly.value,
+    })
+    
+    // CRITICAL: For expired/rejected templates in VIEW mode, restore original time if it changes
+    // But in EDIT mode, allow changes so user can update the schedule
+    if (isTemplateExpired.value && hasLoadedScheduleTime.value && loadedScheduleTime.value && isReadOnly.value) {
+      if (newTime !== loadedScheduleTime.value) {
+        console.log('🔒 [ScheduleTime Watcher] RESTORING - Expired template (view mode) time changed, restoring to original:', {
+          attemptedTime: newTime,
+          restoredTime: loadedScheduleTime.value,
+        })
+        // Use nextTick to avoid infinite loop
+        nextTick(() => {
+          formData.scheduleTime = loadedScheduleTime.value
+        })
+        return
+      }
+    }
+    
+    // CRITICAL: If we're loading and have a loaded schedule time, restore it immediately if it changed
+    if (isLoadingData.value && hasLoadedScheduleTime.value && loadedScheduleTime.value) {
+      if (newTime !== loadedScheduleTime.value) {
+        console.log('🔒 [ScheduleTime Watcher] RESTORING - Time changed during load, restoring to loaded time:', {
+          attemptedTime: newTime,
+          restoredTime: loadedScheduleTime.value,
+        })
+        // Use nextTick to avoid infinite loop
+        nextTick(() => {
+          formData.scheduleTime = loadedScheduleTime.value
+        })
+      }
     }
   },
 )
+
+// Watch scheduleEnabled to auto-set date and time when enabled
+watch(
+  () => formData.scheduleEnabled,
+  (isEnabled, wasEnabled) => {
+    console.log('🔵 [Schedule Toggle Watcher] FIRED:', {
+      isEnabled,
+      wasEnabled,
+      currentScheduleTime: formData.scheduleTime,
+      currentScheduleDate: formData.scheduleDate,
+      hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+      isLoadingData: isLoadingData.value,
+      isEditMode: isEditMode.value,
+    })
+    
+    // CRITICAL: NEVER overwrite schedule time that was loaded from template
+    // If hasLoadedScheduleTime is true, always preserve the existing time
+    if (hasLoadedScheduleTime.value && formData.scheduleTime) {
+      console.log('🔒 [Schedule Toggle] BLOCKED - Preserving loaded schedule time:', {
+        scheduleDate: formData.scheduleDate,
+        scheduleTime: formData.scheduleTime,
+        wasEnabled,
+        isLoadingData: isLoadingData.value,
+        hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+      })
+      return // Always preserve loaded schedule time, never overwrite
+    }
+    
+    // For new notifications (not editing), always ensure date is set to today when schedule is enabled
+    if (isEnabled && !isLoadingData.value && !hasLoadedScheduleTime.value && !isEditMode.value) {
+      // Always set to today's date for new notifications when schedule is enabled
+      const todayDate = getTodayDateString()
+      const currentTime = getCurrentTimePlaceholder()
+      
+      // Force set to today, even if date was already set (to ensure it's always today for new notifications)
+      // Use nextTick to ensure it's set after the component has rendered
+      nextTick(() => {
+        if (formData.scheduleDate !== todayDate) {
+          formData.scheduleDate = todayDate
+          console.log('✅ [Schedule Toggle] Corrected date to today for new notification:', {
+            oldDate: formData.scheduleDate,
+            newDate: todayDate,
+          })
+        } else {
+          // Even if it's already today, ensure it's explicitly set to refresh the date picker
+          formData.scheduleDate = todayDate
+        }
+        if (!formData.scheduleTime || formData.scheduleTime === '') {
+          formData.scheduleTime = currentTime
+        }
+        console.log('✅ [Schedule Toggle] New notification - Set date to today:', {
+          date: formData.scheduleDate,
+          time: formData.scheduleTime,
+          wasEnabled,
+        })
+      })
+    } else if (isEnabled && !isLoadingData.value && wasEnabled === false && !hasLoadedScheduleTime.value && isEditMode.value) {
+      // For editing mode, only set date/time if they're not already set
+      if (!formData.scheduleDate || formData.scheduleDate === '') {
+        formData.scheduleDate = getTodayDateString()
+      }
+      if (!formData.scheduleTime || formData.scheduleTime === '') {
+        formData.scheduleTime = getCurrentTimePlaceholder()
+      }
+    } else if (!isEnabled) {
+      // When schedule is turned OFF, clear time but keep date for next time
+      // Reset the flag when disabling
+      if (hasLoadedScheduleTime.value) {
+        hasLoadedScheduleTime.value = false
+      }
+      formData.scheduleTime = null
+      console.log('✅ [Schedule Toggle] Disabled - Cleared time')
+    } else if (isEnabled && formData.scheduleTime) {
+      // Schedule is enabled and already has a time - preserve it
+      console.log('✅ [Schedule Toggle] Preserving existing schedule time:', {
+        scheduleDate: formData.scheduleDate,
+        scheduleTime: formData.scheduleTime,
+        wasEnabled,
+        isLoadingData: isLoadingData.value,
+        hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+      })
+    } else {
+      console.log('⚠️ [Schedule Toggle] No action taken:', {
+        isEnabled,
+        wasEnabled,
+        hasScheduleTime: !!formData.scheduleTime,
+        hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+        isLoadingData: isLoadingData.value,
+      })
+    }
+  },
+)
+
+// Watch scheduleDate to ensure it's always today for new notifications when schedule is enabled
+watch(
+  () => formData.scheduleDate,
+  (newDate, oldDate) => {
+    // Only enforce for new notifications (not editing) when schedule is enabled
+    if (!isEditMode.value && !isViewMode.value && formData.scheduleEnabled && !hasLoadedScheduleTime.value && !isLoadingData.value) {
+      const todayDate = getTodayDateString()
+      // If the date is not today, correct it to today
+      if (newDate && newDate !== todayDate) {
+        console.log('⚠️ [Schedule Date Watcher] Date changed from today, correcting:', {
+          oldDate,
+          newDate,
+          todayDate,
+          isEditMode: isEditMode.value,
+          isViewMode: isViewMode.value,
+          scheduleEnabled: formData.scheduleEnabled,
+          hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+          isLoadingData: isLoadingData.value,
+        })
+        // Use nextTick to avoid infinite loop
+        nextTick(() => {
+          formData.scheduleDate = todayDate
+          console.log('✅ [Schedule Date Watcher] Corrected date to today:', todayDate)
+        })
+      }
+    }
+  },
+  { immediate: false },
+)
+
+// Handler for date picker change event
+const handleDatePickerChange = (val: string | null) => {
+  // For new notifications, ensure date is always today
+  if (!isEditMode.value && !isViewMode.value && formData.scheduleEnabled) {
+    const todayDate = getTodayDateString()
+    if (val && val !== todayDate) {
+      console.log('⚠️ [Date Picker Change] Date changed from today, correcting:', {
+        selected: val,
+        today: todayDate,
+      })
+      // Use nextTick to avoid infinite loop
+      nextTick(() => {
+        formData.scheduleDate = todayDate
+        console.log('✅ [Date Picker Change] Corrected date to today:', todayDate)
+      })
+      return
+    }
+  }
+  formData.scheduleDate = val ?? ''
+  console.log('Date changed:', val)
+}
 
 const titleError = ref('')
 const descriptionError = ref('')
@@ -1144,12 +1882,13 @@ const handlePublishNowInternal = async () => {
   isSavingOrPublishing.value = true
 
   const loadingNotification = ElNotification({
-    title: isEditMode.value ? 'Updating notification...' : 'Creating notification...',
+    title: isEditMode.value ? 'Sending Notification' : 'Sending Notification',
     message: isEditMode.value
-      ? 'Please wait while we update your notification'
-      : 'Please wait while we create your notification',
-    type: 'warning',
+      ? 'Please wait while we send the notification to <strong>all users</strong>. This may take a moment to complete.'
+      : 'Please wait while we send the notification to <strong>all users</strong>. This may take a moment to complete.',
+    type: 'info',
     duration: 0,
+    dangerouslyUseHTMLString: true,
   })
 
   // Wait for Vue to update reactive values (especially from Element Plus pickers)
@@ -1159,12 +1898,15 @@ const handlePublishNowInternal = async () => {
   let redirectTab = 'published'
 
   try {
-    // For EDITOR role, submissions need approval first (not sent immediately)
+    // For EDITOR and ADMIN roles, submissions need approval first (not sent immediately)
     const isEditor = authStore.user?.role === (UserRole.EDITOR as any)
+    const isAdmin = authStore.user?.role === (UserRole.ADMINISTRATOR as any)
+    const needsApproval = isEditor || isAdmin // Both Editor and Admin need approval
     let sendType = SendType.SEND_NOW
     // When clicking "Submit now", it's a submission that needs approval
     // So isSent should be true to trigger backend to set approvalStatus = PENDING
-    let isSent = true
+    // Use undefined to preserve existing value when editing from Scheduled/Published/Pending tabs
+    let isSent: boolean | undefined = true
 
     // Common schedule validation logic for both create and edit modes
     const validateSchedule = async (): Promise<boolean> => {
@@ -1229,17 +1971,91 @@ const handlePublishNowInternal = async () => {
 
     // When editing, determine redirect tab based on notification status and fromTab
     if (isEditMode.value) {
-      // If editing a published notification, always keep it published
-      if (isEditingPublished.value) {
-        sendType = SendType.SEND_NOW
-        isSent = true
-        redirectTab = 'published'
-        // Clear schedule fields to prevent any scheduling
-        formData.scheduleEnabled = false
-        formData.scheduleDate = ''
-        formData.scheduleTime = ''
+      // Check if editing from Scheduled/Published/Pending tabs - preserve status and stay in same tab
+      const isEditingFromScheduled = fromTab.value === 'scheduled'
+      const isEditingFromPublished = fromTab.value === 'published'
+      const isEditingFromPending = fromTab.value === 'pending'
+      
+      // If editing from Scheduled/Published/Pending tabs, preserve status and redirect to same tab
+      if (isEditingFromScheduled || isEditingFromPublished || isEditingFromPending) {
+        console.log(`🔄 [Submit] Editing from ${fromTab.value} tab - preserving status and staying in same tab`)
+        
+        if (isEditingFromScheduled) {
+          // Editing from Scheduled tab - preserve scheduled status
+          if (formData.scheduleEnabled) {
+            const isValid = await validateSchedule()
+            if (!isValid) {
+              loadingNotification.close()
+              isSavingOrPublishing.value = false
+              return
+            }
+            sendType = SendType.SEND_SCHEDULE
+            // Preserve existing isSent value from original template
+            isSent = originalIsSent.value ?? false
+            redirectTab = 'scheduled'
+          } else {
+            // User disabled schedule - convert to SEND_NOW but stay in scheduled tab
+            sendType = SendType.SEND_NOW
+            isSent = true
+            redirectTab = 'scheduled'
+          }
+        } else if (isEditingFromPublished) {
+          // Editing from Published tab - preserve published status
+          sendType = SendType.SEND_NOW
+          isSent = true // Keep as sent
+          redirectTab = 'published'
+          // Clear schedule fields to prevent any scheduling
+          formData.scheduleEnabled = false
+          formData.scheduleDate = ''
+          formData.scheduleTime = ''
+        } else if (isEditingFromPending) {
+          // Editing from Pending Approval tab - preserve pending status
+          if (formData.scheduleEnabled) {
+            const isValid = await validateSchedule()
+            if (!isValid) {
+              loadingNotification.close()
+              isSavingOrPublishing.value = false
+              return
+            }
+            sendType = SendType.SEND_SCHEDULE
+            // Preserve PENDING status - keep isSent as it was (likely true for pending)
+            isSent = originalIsSent.value ?? true
+            redirectTab = 'pending'
+          } else {
+            sendType = SendType.SEND_NOW
+            // Preserve PENDING status - keep isSent as it was (likely true for pending)
+            isSent = originalIsSent.value ?? true
+            redirectTab = 'pending'
+          }
+        }
+      }
+      // For expired/rejected templates from Draft tab, treat them like normal draft templates
+      // They should follow the same submission flow as creating new notifications
+      else if (isTemplateExpired.value) {
+        console.log('🔄 [Submit] Template is expired/rejected from Draft - following normal submission flow')
+        // For expired templates, follow normal flow (same as creating new notification)
+        if (formData.scheduleEnabled) {
+          // Perform schedule validation
+          const isValid = await validateSchedule()
+          if (!isValid) {
+            loadingNotification.close()
+            isSavingOrPublishing.value = false
+            return
+          }
+          sendType = SendType.SEND_SCHEDULE
+          // For Editor and Admin, scheduled submissions need approval first
+          const needsApprovalForEdit = isEditor || isAdmin
+          isSent = needsApprovalForEdit ? true : false
+          redirectTab = needsApprovalForEdit ? 'pending' : 'scheduled'
+        } else {
+          // User disabled schedule or no schedule - Submit Now
+          sendType = SendType.SEND_NOW
+          // EDITOR and ADMIN submissions need approval first (not sent immediately)
+          isSent = true
+          redirectTab = needsApproval ? 'pending' : 'published'
+        }
       } else {
-        // Editing draft or scheduled notification
+        // Editing draft notification (not expired/rejected)
         if (formData.scheduleEnabled) {
           // Perform schedule validation even in edit mode!
           const isValid = await validateSchedule()
@@ -1250,21 +2066,19 @@ const handlePublishNowInternal = async () => {
           }
 
           sendType = SendType.SEND_SCHEDULE
-          isSent = false
-          redirectTab = 'scheduled'
+          // For Editor and Admin, scheduled submissions need approval first
+          // Set isSent = true so backend sets approvalStatus = PENDING (goes to Pending Approval tab)
+          // After approval, scheduler will handle sending at scheduled time
+          const needsApprovalForEdit = isEditor || isAdmin
+          isSent = needsApprovalForEdit ? true : false
+          redirectTab = needsApprovalForEdit ? 'pending' : 'scheduled'
         } else {
           // User disabled schedule or no schedule
           sendType = SendType.SEND_NOW
-          // If editing a PENDING template, keep it in Pending tab
-          if (isEditingPending.value) {
-            isSent = false // Keep as not sent to maintain PENDING status
-            redirectTab = 'pending'
-          } else {
-            // EDITOR submissions need approval first (not sent immediately)
-            // When submitting (not saving as draft), isSent should be true
-            isSent = true
-            redirectTab = isEditor ? 'pending' : 'published'
-          }
+          // EDITOR and ADMIN submissions need approval first (not sent immediately)
+          // When submitting (not saving as draft), isSent should be true
+          isSent = true
+          redirectTab = needsApproval ? 'pending' : 'published'
         }
       }
     } else {
@@ -1278,15 +2092,16 @@ const handlePublishNowInternal = async () => {
         }
 
         sendType = SendType.SEND_SCHEDULE
-        isSent = false
-        // For Editor, scheduled templates go to Pending tab (needs approval first)
-        // For Admin, scheduled templates go to Scheduled tab (auto-approved)
-        redirectTab = isEditor ? 'pending' : 'scheduled'
+        // For Editor and Admin, scheduled submissions need approval first
+        // Set isSent = true so backend sets approvalStatus = PENDING (goes to Pending Approval tab)
+        // After approval, scheduler will handle sending at scheduled time
+        isSent = needsApproval ? true : false
+        redirectTab = needsApproval ? 'pending' : 'scheduled'
       } else {
-        // For non-scheduled new notifications, EDITOR goes to pending, others to published
-        // When editor clicks "Submit now", it's a submission that needs approval
+        // For non-scheduled new notifications, EDITOR and ADMIN go to pending (needs approval)
+        // When clicking "Submit now", it's a submission that needs approval
         isSent = true
-        redirectTab = isEditor ? 'pending' : 'published'
+        redirectTab = needsApproval ? 'pending' : 'published'
       }
     }
     const imagesToUpload: { file: File; language: string }[] = []
@@ -1467,24 +2282,72 @@ const handlePublishNowInternal = async () => {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],
       bakongPlatform: formData.platform,
       sendType: sendType,
-      isSent: isSent,
+      isSent: isSent, // Always include isSent (use original value when preserving status)
       translations: translations,
       notificationType: mapTypeToNotificationType(formData.notificationType),
       categoryTypeId: formData.categoryTypeId ?? undefined,
       priority: 1,
     }
 
-    // Only set schedule if not editing a published notification
+    // Handle schedule: explicitly set or clear based on scheduleEnabled
+    // This ensures updates work correctly when toggling schedule on/off
     if (formData.scheduleEnabled && !(isEditMode.value && isEditingPublished.value)) {
-      const scheduleDateTime = DateUtils.parseScheduleDateTime(
-        String(formData.scheduleDate),
-        String(formData.scheduleTime),
-      )
-      templateData.sendSchedule = scheduleDateTime.toISOString()
-    } else if (isEditMode.value && isEditingPublished.value) {
-      // Explicitly clear schedule when editing published notification
-      templateData.sendSchedule = undefined
+      // Schedule is enabled - set the new schedule time
+      const dateStr = String(formData.scheduleDate)
+      const timeStr = String(formData.scheduleTime)
+      
+      console.log('🔍 [Submit] BEFORE UPDATE - Schedule Data:', {
+        scheduleEnabled: formData.scheduleEnabled,
+        formDataScheduleDate: formData.scheduleDate,
+        formDataScheduleTime: formData.scheduleTime,
+        dateStr,
+        timeStr,
+        isEditMode: isEditMode.value,
+        templateId: notificationId.value,
+        hasLoadedScheduleTime: hasLoadedScheduleTime.value,
+        isLoadingData: isLoadingData.value,
+      })
+      
+      const scheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+      const utcISOString = scheduleDateTime.toISOString()
+      templateData.sendSchedule = utcISOString
+      
+      const { date: cambodiaDate, time: cambodiaTime } = DateUtils.formatUTCToCambodiaDateTime(utcISOString)
+      
+      console.log('✅ [Submit] AFTER PARSING - Schedule Conversion:', {
+        inputDate: dateStr,
+        inputTime: timeStr,
+        parsedDateTime: scheduleDateTime,
+        utcISOString: utcISOString,
+        cambodiaDate,
+        cambodiaTime,
+        willSendToBackend: templateData.sendSchedule,
+        originalFormDataTime: formData.scheduleTime,
+        timeMatches: timeStr === formData.scheduleTime,
+      })
+    } else {
+      // Schedule is disabled OR editing published notification - explicitly clear it
+      // This ensures old schedule times are removed when user turns schedule OFF
+      // Send null explicitly so backend processes it (undefined is ignored by backend)
+      ;(templateData as any).sendSchedule = null
+      console.log('✅ [Submit] Clearing schedule (disabled or published):', {
+        scheduleEnabled: formData.scheduleEnabled,
+        isEditMode: isEditMode.value,
+        isEditingPublished: isEditingPublished.value,
+        willSendNull: true,
+      })
     }
+
+    console.log('📤 [Submit] Sending to backend:', {
+      isEditMode: isEditMode.value,
+      templateId: isEditMode.value ? notificationId.value : 'NEW',
+      templateData: {
+        ...templateData,
+        sendSchedule: templateData.sendSchedule,
+        sendType: templateData.sendType,
+        isSent: templateData.isSent,
+      },
+    })
 
     let result
     if (isEditMode.value) {
@@ -1492,6 +2355,15 @@ const handlePublishNowInternal = async () => {
     } else {
       result = await notificationApi.createTemplate(templateData)
     }
+
+    console.log('📥 [Submit] Backend Response:', {
+      responseCode: result?.data?.responseCode,
+      responseMessage: result?.data?.responseMessage,
+      returnedSendSchedule: result?.data?.data?.sendSchedule,
+      returnedSendType: result?.data?.data?.sendType,
+      returnedIsSent: result?.data?.data?.isSent,
+      fullResponse: result?.data?.data,
+    })
 
     loadingNotification.close()
 
@@ -1508,20 +2380,17 @@ const handlePublishNowInternal = async () => {
       // Stay in published tab (notification was published)
       redirectTab = 'published'
     } else if (isEditMode.value && redirectTab === 'scheduled') {
-      // Editing a scheduled notification - check if it was actually sent
-      const successfulCountFromResult = result?.data?.successfulCount
-      const wasActuallySent =
-        successfulCountFromResult !== undefined &&
-        successfulCountFromResult !== null &&
-        successfulCountFromResult > 0
-
-      if (wasActuallySent) {
-        // Scheduled notification was sent immediately - redirect to published
-      redirectTab = 'published'
-      } else {
-        // Scheduled notification remains scheduled - stay in scheduled tab
-        redirectTab = 'scheduled'
-      }
+      // Editing a scheduled notification - show update success message
+      const platformNameForScheduled = formatBakongApp(formData.platform)
+      ElNotification({
+        title: 'Success',
+        message: `Notification for <strong>${platformNameForScheduled}</strong> has been updated successfully!`,
+        type: 'success',
+        duration: 3000,
+        dangerouslyUseHTMLString: true,
+      })
+      // Stay in scheduled tab
+      redirectTab = 'scheduled'
     } else {
       // Use unified message handler for draft/failure cases
       const platformName = formatBakongApp(formData.platform)
@@ -1571,6 +2440,9 @@ const handlePublishNowInternal = async () => {
           if (needsApproval && !isEditMode.value) {
             message = `Notification for <strong>${platformNameForScheduled}</strong> has been submitted for approval and scheduled. It will appear in the Pending tab.`
             redirectTab = 'pending'
+          } else if (!needsApproval && !isEditMode.value) {
+            // Admin auto-approved scheduled notifications go to scheduled tab
+            redirectTab = 'scheduled'
           }
 
           ElNotification({
@@ -1584,10 +2456,11 @@ const handlePublishNowInternal = async () => {
         }
       } else {
         // Handle non-scheduled notifications (published, draft, etc.)
-        // Check if user is EDITOR and notification needs approval FIRST
+        // Check if user is EDITOR or ADMIN and notification needs approval FIRST
         const isEditor = authStore.user?.role === (UserRole.EDITOR as any)
+        const isAdmin = authStore.user?.role === (UserRole.ADMINISTRATOR as any)
         const needsApproval =
-          result?.data?.approvalStatus === 'PENDING' || (!isEditMode.value && isEditor)
+          result?.data?.approvalStatus === 'PENDING' || (!isEditMode.value && (isEditor || isAdmin))
 
         // If editing a PENDING template, keep it in Pending tab
         if (isEditingPending.value && isEditMode.value) {
@@ -1595,6 +2468,19 @@ const handlePublishNowInternal = async () => {
           ElNotification({
             title: 'Success',
             message: `Notification for <strong>${platformNameForUpdate}</strong> has been updated. It remains in the Pending tab.`,
+            type: 'success',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          redirectTab = 'pending'
+          // Skip the rest of the success/error handling - continue to navigation logic below
+        }
+        // For expired/rejected templates resubmitting from Draft tab, show submission message
+        else if (isTemplateExpired.value && isEditMode.value && redirectTab === 'pending') {
+          const platformNameForSubmit = formatBakongApp(formData.platform)
+          ElNotification({
+            title: 'Success',
+            message: `Notification for <strong>${platformNameForSubmit}</strong> has been submitted for approval. It will appear in the Pending tab.`,
             type: 'success',
             duration: 3000,
             dangerouslyUseHTMLString: true,
@@ -1744,11 +2630,14 @@ const handlePublishNowInternal = async () => {
       }
       }
     }
+    // Clear cache to ensure fresh data is fetched after update
     try {
+      console.log('🗑️ [Submit] Clearing cache before redirect...')
       localStorage.removeItem('notifications_cache')
       localStorage.removeItem('notifications_cache_timestamp')
+      console.log('✅ [Submit] Cache cleared successfully')
     } catch (error) {
-      console.warn('Failed to clear cache:', error)
+      console.warn('⚠️ [Submit] Failed to clear cache:', error)
     }
 
     // Close any open dialogs before navigation
@@ -1765,6 +2654,7 @@ const handlePublishNowInternal = async () => {
       // - Published notification → 'published'
       // - Scheduled notification → 'scheduled' (or 'published' if sent)
       // - Draft notification → 'published' (when publishing)
+      // - Expired/rejected templates → 'pending' (if needs approval) or 'published'/'scheduled' (if no approval needed)
       // So we use redirectTab directly, which already handles the logic correctly
       finalRedirectTab = redirectTab
     } else {
@@ -1772,16 +2662,39 @@ const handlePublishNowInternal = async () => {
       finalRedirectTab = redirectTab
     }
 
+    console.log('🔄 [Submit] Redirect configuration:', {
+      isEditMode: isEditMode.value,
+      isTemplateExpired: isTemplateExpired.value,
+      fromTab: fromTab.value,
+      redirectTab,
+      finalRedirectTab,
+      templateId: notificationId.value,
+    })
+
+    // Set localStorage immediately to ensure tab switches instantly
+    try {
+      localStorage.setItem('notification_active_tab', finalRedirectTab)
+      // Clear cache to force immediate refresh
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+    } catch (error) {
+      console.warn('Failed to update localStorage:', error)
+    }
+    
     if (isEditMode.value) {
+      // Add cache-busting query parameter to force fresh data fetch
+      const cacheBuster = Date.now()
       setTimeout(() => {
-        window.location.href = `/?tab=${finalRedirectTab}`
+        console.log('🔄 [Submit] Redirecting to:', `/?tab=${finalRedirectTab}&_refresh=${cacheBuster}`)
+        window.location.href = `/?tab=${finalRedirectTab}&_refresh=${cacheBuster}`
         // Reset flag after navigation starts (full page reload)
         isSavingOrPublishing.value = false
-      }, 500)
+      }, 1000) // Increased delay to ensure backend has committed
     } else {
       // Keep flag true until navigation completes
+      const cacheBuster = Date.now()
       router
-        .push(`/?tab=${finalRedirectTab}`)
+        .push(`/?tab=${finalRedirectTab}&_refresh=${cacheBuster}`)
         .then(() => {
           isSavingOrPublishing.value = false
         })
@@ -2022,11 +2935,12 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
     }
 
     // 3. Determine sendType and schedule
-    // If forceDraft is true, we set sendType to SEND_NOW to make it a draft,
-    // but we still preserve the sendSchedule if the user has it enabled.
-    // This satisfies "keep all data" while still being in the Draft tab.
+    // If schedule is enabled, always set sendType to SEND_SCHEDULE to preserve the schedule
+    // This ensures that when the user submits it later, it will follow the scheduled flow
     const useSchedule = formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime
-    const finalSendType = forceDraft || !useSchedule ? SendType.SEND_NOW : SendType.SEND_SCHEDULE
+    // Always use SEND_SCHEDULE if schedule is enabled, regardless of draft status
+    // The backend will handle the draft status via isSent=false
+    const finalSendType = useSchedule ? SendType.SEND_SCHEDULE : SendType.SEND_NOW
 
     const templateData: CreateTemplateRequest = {
       platforms: [mapPlatformToEnum(formData.pushToPlatforms)],
@@ -2062,7 +2976,7 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
 
     ElNotification({
       title: 'Success',
-      message: `Notification saved as draft successfully!`,
+      message: `Notification updated successfully!`,
       type: 'success',
       duration: 2000,
     })
@@ -2076,10 +2990,19 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
     }
 
     // Determine redirect tab based on our finalized status
-    // If editing, preserve the original tab (fromTab) if it's draft, otherwise use calculated tab
-    let redirectTab = forceDraft || !useSchedule ? 'draft' : 'scheduled'
+    // When saving as draft (forceDraft=true), ALWAYS redirect to Draft tab
+    // This ensures that even if schedule is enabled, it appears in Draft tab until submitted
+    // The schedule is preserved (sendType: SEND_SCHEDULE, sendSchedule: <date>), but it stays in Draft tab
+    let redirectTab: string
+    if (forceDraft) {
+      // When explicitly saving as draft, always go to Draft tab regardless of schedule
+      redirectTab = 'draft'
+    } else {
+      // This shouldn't happen in saveAsDraft, but handle it just in case
+      redirectTab = !useSchedule ? 'draft' : 'scheduled'
+    }
     
-    // If editing a draft template, always redirect to draft tab
+    // If editing, preserve the original tab (fromTab) if it's draft, otherwise use calculated tab
     if (isEditMode.value && fromTab.value === 'draft') {
       redirectTab = 'draft'
     }
@@ -2109,9 +3032,275 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
 }
 
 const handleBack = () => {
-  // Navigate back to the previous tab (usually pending tab for APPROVAL role)
-  const redirectTab = fromTab.value || 'pending'
+  // Navigate back to the previous tab
+  const redirectTab = fromTab.value || 'published'
   router.push(`/?tab=${redirectTab}`)
+}
+
+const handleCancel = () => {
+  console.log('🚫 [CANCEL] User clicked Cancel button')
+  // Set flag to bypass navigation guard (don't show leave dialog)
+  isDiscarding.value = true
+  // Navigate back to the previous tab (same as handleBack)
+  const redirectTab = fromTab.value || 'published'
+  console.log('🚫 [CANCEL] Redirecting to tab:', redirectTab)
+  router.push(`/?tab=${redirectTab}`).finally(() => {
+    // Reset flag after navigation completes
+    setTimeout(() => {
+      isDiscarding.value = false
+    }, 100)
+  })
+}
+
+// Get leave dialog message based on context
+const getLeaveDialogMessage = () => {
+  if (isReadOnly.value) {
+    return 'If you leave now, you will return to the previous page.'
+  }
+  if (isEditMode.value) {
+    return 'If you leave now, any changes you made will be updated. If there are no changes, nothing will be updated.'
+  }
+  // Create mode with data
+  if (hasUnsavedChanges.value) {
+    return 'If you leave now, your progress will be saved as a draft. You can resume and complete it anytime.'
+  }
+  return 'If you leave now, you will return to the previous page.'
+}
+
+// Get leave dialog confirm text based on context
+const getLeaveDialogConfirmText = () => {
+  if (isReadOnly.value) {
+    return 'Leave now'
+  }
+  if (isEditMode.value) {
+    return 'Update and leave'
+  }
+  // Create mode with data
+  if (hasUnsavedChanges.value) {
+    return 'Leave and save draft'
+  }
+  return 'Leave now'
+}
+
+// Handle approval from view page
+const handleApprovalFromView = async () => {
+  if (!notificationId.value) return
+  
+  try {
+    const templateId = parseInt(notificationId.value)
+    
+    // Fetch full template to check sendType and schedule
+    const fullTemplate = await api.get(`/api/v1/template/${templateId}`)
+    const template = fullTemplate.data?.data || fullTemplate.data
+    
+    // Check if this is a scheduled notification and if the scheduled time has passed
+    if (template?.sendSchedule && template?.sendType === 'SEND_SCHEDULE') {
+      const scheduledTime = new Date(template.sendSchedule)
+      const now = new Date()
+      
+      // Check if scheduled time has passed (with 1 minute grace period)
+      const oneMinuteAgo = new Date(now.getTime() - 60 * 1000)
+      
+      if (scheduledTime < oneMinuteAgo) {
+        // Scheduled time has passed - show warning and let backend handle auto-expiration
+        console.warn('⏰ [APPROVE] Scheduled time has passed:', {
+          scheduledTime: scheduledTime.toISOString(),
+          currentTime: now.toISOString(),
+          scheduledTimeLocal: scheduledTime.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+          currentTimeLocal: now.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+        })
+      }
+    }
+    
+    console.log('📤 [APPROVE] Calling approve API with template:', {
+      templateId,
+      sendSchedule: template?.sendSchedule,
+      sendType: template?.sendType,
+      approvalStatus: template?.approvalStatus,
+    })
+    
+    // Approve the template (backend will auto-expire if scheduled time has passed)
+    await notificationApi.approveTemplate(templateId)
+    
+    // Fetch updated template after approval to get the latest status
+    const updatedTemplateResponse = await api.get(`/api/v1/template/${templateId}`)
+    const updatedTemplate = updatedTemplateResponse.data?.data || updatedTemplateResponse.data
+    
+    // Determine redirect tab based on sendType and isSent status
+    // If scheduled and not yet sent, it should stay in Scheduled tab
+    // Check both sendType and sendSchedule to ensure we correctly identify scheduled notifications
+    const isScheduled = 
+      updatedTemplate?.sendType === 'SEND_SCHEDULE' &&
+      updatedTemplate?.sendSchedule !== null &&
+      updatedTemplate?.sendSchedule !== undefined &&
+      updatedTemplate?.isSent === false
+    
+    console.log('🔍 [APPROVE] Determining redirect tab:', {
+      sendType: updatedTemplate?.sendType,
+      sendSchedule: updatedTemplate?.sendSchedule,
+      isSent: updatedTemplate?.isSent,
+      isScheduled,
+      redirectTab: isScheduled ? 'scheduled' : 'published',
+    })
+    
+    const redirectTab = isScheduled ? 'scheduled' : 'published'
+    
+    const message = isScheduled 
+      ? 'Notification approved successfully! It will be sent at the scheduled time and moved to Published tab automatically.'
+      : 'Notification approved and published successfully! Users will receive it shortly.'
+    
+    ElNotification({
+      title: 'Success',
+      message: message,
+      type: 'success',
+      duration: 3000,
+    })
+    
+    // Set localStorage immediately to ensure tab switches instantly
+    try {
+      localStorage.setItem('notification_active_tab', redirectTab)
+      // Clear cache to force immediate refresh
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+    } catch (error) {
+      console.warn('Failed to update localStorage:', error)
+    }
+    
+    // Redirect to appropriate tab with cache-busting parameter for immediate refresh
+    const cacheBuster = Date.now()
+    router.push(`/?tab=${redirectTab}&_refresh=${cacheBuster}`)
+  } catch (error: any) {
+    console.log('❌ [APPROVE] Error caught in handleApprovalFromView:', {
+      error: error,
+      response: error.response,
+      responseData: error.response?.data,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+    })
+    
+    // Check if this is an auto-expiration or auto-rejection due to passed scheduled time
+    const isAutoExpired = error.response?.data?.data?.autoExpired === true
+    const isAutoRejected = error.response?.data?.data?.autoRejected === true
+    const expiredReason = error.response?.data?.responseMessage || error.response?.data?.data?.expiredReason || 'Scheduled time has passed. Please contact team member to update the schedule first.'
+    const rejectionReason = error.response?.data?.responseMessage || error.response?.data?.data?.rejectionReason || 'Failed to approve template'
+    
+    console.log('🔍 [APPROVE] Error analysis:', {
+      isAutoExpired,
+      isAutoRejected,
+      expiredReason,
+      rejectionReason,
+      errorResponseData: error.response?.data,
+    })
+    
+    if (isAutoExpired) {
+      // Auto-expired due to passed scheduled time - redirect to Draft tab
+      console.log('⏰ [APPROVE] Template auto-expired - redirecting to Draft tab')
+      ElNotification({
+        title: 'Notification Expired',
+        message: `<strong>Scheduled time has expired</strong>. Please contact <strong>team member</strong> to update the schedule first.`,
+        type: 'warning',
+        duration: 5000,
+        dangerouslyUseHTMLString: true,
+      })
+      
+      // Set localStorage immediately to ensure tab switches instantly
+      try {
+        localStorage.setItem('notification_active_tab', 'draft')
+        // Clear cache to force immediate refresh
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+      } catch (error) {
+        console.warn('Failed to update localStorage:', error)
+      }
+      
+      // Redirect to Draft tab with cache-busting parameter for immediate refresh
+      const cacheBuster = Date.now()
+      setTimeout(() => {
+        console.log('🔄 [APPROVE] Redirecting to Draft tab and refreshing notifications')
+        router.push(`/?tab=draft&_refresh=${cacheBuster}`).then(() => {
+          // Force refresh the notifications list to show the expired template
+          window.dispatchEvent(new CustomEvent('refresh-notifications', { detail: { forceRefresh: true } }))
+        })
+      }, 100) // Reduced delay for faster redirect
+    } else if (isAutoRejected) {
+      // Auto-rejected due to passed scheduled time - redirect to Draft tab
+      ElNotification({
+        title: 'Notification Rejected',
+        message: rejectionReason,
+        type: 'warning',
+        duration: 5000,
+      })
+      
+      // Set localStorage immediately to ensure tab switches instantly
+      try {
+        localStorage.setItem('notification_active_tab', 'draft')
+        // Clear cache to force immediate refresh
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+      } catch (error) {
+        console.warn('Failed to update localStorage:', error)
+      }
+      
+      // Redirect to Draft tab with cache-busting parameter for immediate refresh
+      const cacheBuster = Date.now()
+      router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: rejectionReason,
+        type: 'error',
+        duration: 3000,
+      })
+    }
+  }
+}
+
+// Handle reject from view page
+const handleRejectFromView = () => {
+  showRejectDialog.value = true
+}
+
+const handleRejectFromViewConfirm = async (reason?: string) => {
+  if (!notificationId.value || !reason) return
+  
+  try {
+    const templateId = parseInt(notificationId.value)
+    await notificationApi.rejectTemplate(templateId, reason)
+    
+    ElNotification({
+      title: 'Success',
+      message: 'Template rejected successfully and moved to Draft tab',
+      type: 'success',
+      duration: 2000,
+    })
+    
+    // Set localStorage immediately to ensure tab switches instantly
+    try {
+      localStorage.setItem('notification_active_tab', 'draft')
+      // Clear cache to force immediate refresh
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+    } catch (error) {
+      console.warn('Failed to update localStorage:', error)
+    }
+    
+    // Redirect to draft tab with cache-busting parameter for immediate refresh
+    const cacheBuster = Date.now()
+    router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+  } catch (error: any) {
+    ElNotification({
+      title: 'Error',
+      message: error.response?.data?.responseMessage || 'Failed to reject template',
+      type: 'error',
+      duration: 3000,
+    })
+  }
+  
+  showRejectDialog.value = false
+}
+
+const handleRejectFromViewCancel = () => {
+  showRejectDialog.value = false
 }
 
 const handleDiscard = () => {
@@ -2458,16 +3647,16 @@ body::-webkit-scrollbar {
 .form-input-link,
 .form-select,
 .form-textarea {
-  padding: 12px 16px;
-  border: 1px solid #d1d5db;
+  padding: 16px 12px;
+  border: 1px solid var(--surface-main-surface-secondary-bold, #0013461a);
   border-radius: 8px;
   font-size: 14px;
-
   background: white;
   transition: border-color 0.2s ease;
   width: 293.5px;
   height: 56px;
 }
+
 
 .form-input:focus,
 .form-input-title:focus,
@@ -2477,8 +3666,9 @@ body::-webkit-scrollbar {
 .form-textarea:focus {
   outline: none;
   border-color: #001346;
-  box-shadow: 0 0 0 3px rgba(0, 19, 70, 0.1);
+  box-shadow: none;
 }
+
 
 .form-textarea {
   resize: vertical;
@@ -2786,6 +3976,51 @@ input:checked + .toggle-slider:before {
   height: 56px;
 }
 
+/* Disabled field styles for restricted fields */
+.custom-dropdown:has(.el-dropdown.is-disabled),
+.custom-dropdown .el-dropdown.is-disabled,
+.custom-dropdown.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none !important;
+}
+
+.custom-dropdown .dropdown-trigger:has([disabled]),
+.custom-dropdown.is-disabled .dropdown-trigger,
+.custom-dropdown[disabled] .dropdown-trigger {
+  background-color: #f3f4f6 !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+
+/* Prevent dropdown menu from showing when disabled */
+.el-dropdown.is-disabled,
+.el-dropdown.is-disabled .el-dropdown__caret-button,
+.el-dropdown.is-disabled .dropdown-trigger,
+.custom-dropdown.is-disabled .el-dropdown,
+.custom-dropdown[disabled] .el-dropdown {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+}
+
+/* Additional protection - prevent click events on disabled dropdowns */
+.custom-dropdown.is-disabled *,
+.custom-dropdown[disabled] * {
+  pointer-events: none !important;
+}
+
+.schedule-date-picker.is-disabled,
+.schedule-time-picker.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .flash-dropdown-icon {
   position: absolute;
   right: 8px;
@@ -2830,7 +4065,7 @@ input:checked + .toggle-slider:before {
   border-radius: 16px;
 }
 
-.schedule-date-picker .el-input__wrapper,
+/* .schedule-date-picker .el-input__wrapper,
 .schedule-time-picker .el-input__wrapper {
   width: 277.5px !important;
   height: 45px !important;
@@ -2846,7 +4081,17 @@ input:checked + .toggle-slider:before {
   background: white;
   transition: border-color 0.2s ease;
   box-shadow: none;
+} */
+
+.schedule-date-picker .el-input__wrapper,
+.schedule-time-picker .el-input__wrapper {
+  height: 56px !important;
+  padding: 16px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--surface-main-surface-secondary-bold, #0013461a) !important;
+  box-shadow: none !important;
 }
+
 
 .schedule-date-picker .el-input__wrapper:hover,
 .schedule-time-picker .el-input__wrapper:hover {
@@ -3007,4 +4252,62 @@ input:checked + .toggle-slider:before {
     flex-direction: column;
   }
 }
+
+.reject-reason-container {
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.reject-reason-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reject-reason-icon {
+  color: #e42323;
+  font-size: 18px;
+}
+
+.reject-reason-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e42323;
+}
+
+.reject-reason-text {
+  font-weight: 600;
+  /* color: #333; */
+  color: #e42323;
+  word-wrap: break-word;
+  display: inline;
+}
+
+.reject-reason-textarea {
+  min-height: 50px;
+}
+
+.reject-reason-textarea :deep(.el-textarea__inner) {
+  min-height: 50px;
+  resize: vertical;
+  cursor: ns-resize;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.reject-reason-textarea :deep(.el-textarea__inner):hover {
+  border-color: #fca5a5;
+}
+
+.reject-reason-textarea :deep(.el-textarea__inner):focus {
+  border-color: #e42323;
+  outline: none;
+}
+
 </style>

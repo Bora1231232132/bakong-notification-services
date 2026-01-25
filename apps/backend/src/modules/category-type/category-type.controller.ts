@@ -124,11 +124,17 @@ export class CategoryTypeController {
     // With FileInterceptor + multipart/form-data: fields are in req.body
     // With JSON: body is the parsed JSON object
     const name = req?.body?.name || body?.name || (typeof body === 'string' ? body : null)
-
+    const namekh = req?.body?.namekh || body?.namekh || (typeof body === 'string' ? body : null)
+    const namejp = req?.body?.namejp || body?.namejp || (typeof body === 'string' ? body : null)
     if (name && typeof name === 'string' && name.trim()) {
       dto.name = name.trim()
     }
-
+    if (namekh && typeof namekh === 'string' && namekh.trim()) {
+      dto.namekh = namekh.trim()
+    }
+    if (namejp && typeof namejp === 'string' && namejp.trim()) {
+      dto.namejp = namejp.trim()
+    }
     if (file?.buffer) {
       dto.icon = file.buffer
       dto.mimeType = file.mimetype
@@ -141,7 +147,7 @@ export class CategoryTypeController {
         responseCode: 1,
         errorCode: ErrorCode.VALIDATION_FAILED,
         responseMessage: ResponseMessage.VALIDATION_FAILED,
-        data: { validations: ['At least one field (name or icon) must be provided'] },
+        data: { validations: ['At least one field (name, namekh, namejp or icon) must be provided'] },
       }) as any
     }
 
@@ -158,6 +164,7 @@ export class CategoryTypeController {
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     await this.categoryTypeService.remove(id)
+    this.categoryTypeService.clearCache()
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: 'Category type deleted successfully',

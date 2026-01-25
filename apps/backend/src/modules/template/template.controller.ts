@@ -52,7 +52,7 @@ export class TemplateController {
     }
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
   @Post(':id/update-publish')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateTemplateDto, @Req() req: any) {
     console.log('🎯 [CONTROLLER] /template/:id/update-publish endpoint called for template:', id)
@@ -96,7 +96,7 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
   @Post(':id/remove')
   async remove(@Param('id') id: string) {
     const template = await this.templateService.remove(+id)

@@ -197,34 +197,43 @@ export class TemplateService implements OnModuleInit {
         }),
       )
     }
-    // For SEND_NOW: if isSent is explicitly false, it's a draft - don't send
-    // If isSent is true or undefined, send immediately
-    // For other send types, respect the isSent flag from the request
-    const initialIsSent =
-      dto.sendType === SendType.SEND_NOW
-        ? dto.isSent !== false // Send if not explicitly false (true or undefined)
-        : dto.isSent === true
-
     // Normalize platforms: ["IOS", "ANDROID"] -> ["ALL"]
     const normalizedPlatforms = ValidationHelper.parsePlatforms(dto.platforms)
 
     // Set approval status based on user role and template status
-    // EDITOR creates templates in DRAFT state (null) - they must submit for approval
-    // ADMINISTRATOR creates templates that are auto-approved
+    // EDITOR and ADMIN create templates that need approval when isSent=true (submitting)
+    // When isSent=false (saving as draft), they create in DRAFT state (null)
     let approvalStatus: ApprovalStatus | null
 
-    if (currentUser?.role === UserRole.EDITOR) {
-      // EDITOR creates in DRAFT state (null) for non-scheduled templates
-      // For scheduled templates, set to PENDING so it goes to Pending tab immediately
-      if (dto.sendType === SendType.SEND_SCHEDULE && dto.sendSchedule) {
+    if (currentUser?.role === UserRole.EDITOR || currentUser?.role === UserRole.ADMINISTRATOR) {
+      // EDITOR and ADMIN: When submitting (isSent=true), set to PENDING for approval
+      // When saving as draft (isSent=false), set to null (DRAFT)
+      if (dto.isSent === true) {
+        // Submitting for approval - goes to Pending tab
         approvalStatus = ApprovalStatus.PENDING
       } else {
-        approvalStatus = null // DRAFT for non-scheduled templates
+        // Saving as draft - goes to Draft tab
+        approvalStatus = null // DRAFT
       }
     } else {
-      // ADMINISTRATOR - auto-approved
+      // Other roles (if any) auto-approve templates
       approvalStatus = ApprovalStatus.APPROVED
     }
+
+    // Determine initialIsSent based on sendType and approvalStatus
+    // For SEND_SCHEDULE: always set isSent to false initially (will be sent at scheduled time)
+    // For SEND_NOW: 
+    //   - If approvalStatus is PENDING, set isSent to false (wait for approval)
+    //   - If approvalStatus is APPROVED, set isSent based on dto.isSent
+    //   - If saving as draft (isSent=false), set isSent to false
+    const initialIsSent =
+      dto.sendType === SendType.SEND_SCHEDULE
+        ? false // Scheduled notifications are never sent immediately - wait for scheduled time
+        : approvalStatus === ApprovalStatus.PENDING
+          ? false // PENDING templates should not be sent until approved
+          : dto.sendType === SendType.SEND_NOW
+            ? dto.isSent !== false && approvalStatus === ApprovalStatus.APPROVED // Only send if approved
+            : dto.isSent === true && approvalStatus === ApprovalStatus.APPROVED
 
     let template = this.repo.create({
       platforms: normalizedPlatforms,
@@ -498,22 +507,17 @@ export class TemplateService implements OnModuleInit {
 
         console.log('🔵 [TEMPLATE CREATE] ✅ Translations found, calling sendWithTemplate...')
 
-        // Check approval status before sending (ADMINISTRATOR bypasses this check)
-        if (
-          currentUser?.role !== UserRole.ADMINISTRATOR &&
-          template.approvalStatus !== ApprovalStatus.APPROVED
-        ) {
-          throw new BadRequestException(
-            new BaseResponseDto({
-              responseCode: 1,
-              errorCode: ErrorCode.NO_PERMISSION,
-              responseMessage: 'Template must be approved before sending',
-              data: {
-                approvalStatus: template.approvalStatus,
-                templateId: template.id,
-              },
-            }),
+        // Check approval status before sending
+        // ALL roles (including ADMINISTRATOR) must have APPROVED status to send
+        // PENDING templates should wait for approver approval
+        if (template.approvalStatus !== ApprovalStatus.APPROVED) {
+          console.log(
+            `🔵 [TEMPLATE CREATE] ⏸️ Skipping send - template ${template.id} has approvalStatus: ${template.approvalStatus}, waiting for approval`,
           )
+          // Don't send - template is pending approval
+          // Set isSent to false to ensure it stays in Pending tab
+          await this.repo.update(template.id, { isSent: false })
+          break
         }
 
         let sendResult: {
@@ -686,6 +690,17 @@ export class TemplateService implements OnModuleInit {
   }
 
   async update(id: number, dto: UpdateTemplateDto, currentUser?: any) {
+    console.log(`\n🔵 [UPDATE] ========== START UPDATE REQUEST ==========`)
+    console.log(`🔵 [UPDATE] Template ID: ${id}`)
+    console.log(`🔵 [UPDATE] Current User: ${currentUser?.username || 'NO USER'} (Role: ${currentUser?.role || 'NO ROLE'})`)
+    console.log(`🔵 [UPDATE] Request DTO:`, {
+      isSent: dto.isSent,
+      sendType: dto.sendType,
+      sendSchedule: dto.sendSchedule,
+      hasTranslations: !!dto.translations?.length,
+      platforms: dto.platforms,
+    })
+    
     const {
       platforms,
       bakongPlatform,
@@ -697,41 +712,52 @@ export class TemplateService implements OnModuleInit {
       isSent,
     } = dto
     const template = await this.findOneRaw(id)
+    console.log(`🔵 [UPDATE] Current Template State:`, {
+      id: template.id,
+      isSent: template.isSent,
+      sendType: template.sendType,
+      approvalStatus: template.approvalStatus,
+      sendSchedule: template.sendSchedule,
+    })
 
-    // Strict check: Cannot edit if PUBLISHED (APPROVED)
-    // Allow editing PENDING templates - editing will reset to DRAFT
-    if (template.approvalStatus === ApprovalStatus.APPROVED) {
-      throw new BadRequestException(
-        new BaseResponseDto({
-          responseCode: 1,
-          errorCode: ErrorCode.VALIDATION_FAILED,
-          responseMessage: 'Cannot edit a published notification',
-        }),
-      )
-    }
+    // Check if this is an approver using "Publish Now" on a PENDING template
+    // In this case, we want to send the notification, not just edit it
+    const isApproverPublishingPending = 
+      currentUser?.role === UserRole.APPROVAL &&
+      template.approvalStatus === ApprovalStatus.PENDING &&
+      dto.isSent === true
 
-    // If template is already sent, handle it as editing published notification
-    // This includes scheduled notifications that have already been sent
-    if (template.isSent) {
-      // If trying to "publish" an already-sent notification (especially scheduled ones),
-      // just clear the schedule and ensure it's marked as published
-      if (dto.sendType === SendType.SEND_NOW && dto.isSent === true && dto.sendSchedule === null) {
-        // This is a "Publish now" action on an already-sent notification
-        // Just clear schedule and ensure it's published - don't resend
-        await this.repo.update(id, {
-          sendType: SendType.SEND_NOW,
-          sendSchedule: null,
-          sendInterval: null,
-          isSent: true,
-          updatedAt: new Date(),
-        })
-        const updatedTemplate = await this.findOneRaw(id)
-        return this.formatTemplateResponse(updatedTemplate)
-      }
+    console.log(`🔵 [UPDATE] Is approver publishing pending template:`, {
+      isApproverPublishingPending,
+      userRole: currentUser?.role,
+      templateApprovalStatus: template.approvalStatus,
+      dtoIsSent: dto.isSent,
+      templateIsSent: template.isSent,
+    })
+
+    // If template is APPROVED (not just sent), handle it as editing published notification
+    // EXCEPT: If approver is publishing a PENDING template, we need to send it (not just edit)
+    // NOTE: PENDING notifications with isSent=true should NOT route here - they can still be updated
+    // Only truly APPROVED notifications should use editPublishedNotification
+    if (template.approvalStatus === ApprovalStatus.APPROVED && !isApproverPublishingPending) {
+      console.log(`🔵 [UPDATE] Routing to editPublishedNotification (template is APPROVED and not approver publishing pending)`)
+      // Always use editPublishedNotification for approved/published notifications
+      // This method handles updates without re-sending FCM notifications
       return await this.editPublishedNotification(id, dto, currentUser)
     }
+    
+    if (isApproverPublishingPending) {
+      console.log(`🔵 [UPDATE] ✅ Approver publishing PENDING template - will go through send flow (not editPublishedNotification)`)
+    }
 
-    this.validateModificationTemplate(template)
+    // Skip validation if approver is publishing a pending template (even if isSent is true from previous attempt)
+    // This allows approver to re-send/publish the notification
+    if (!isApproverPublishingPending) {
+      console.log(`🔵 [UPDATE] Running validateModificationTemplate...`)
+      this.validateModificationTemplate(template)
+    } else {
+      console.log(`🔵 [UPDATE] ⏭️ Skipping validateModificationTemplate for approver publishing pending template`)
+    }
 
     try {
       const updateFields: any = {}
@@ -762,39 +788,66 @@ export class TemplateService implements OnModuleInit {
       }
 
       if (sendSchedule !== undefined) {
+        console.log(`🔵 [UPDATE] Processing sendSchedule update:`, {
+          provided: sendSchedule,
+          current: template.sendSchedule,
+          willUpdate: sendSchedule !== null && sendSchedule !== undefined,
+        })
         if (sendSchedule) {
           const scheduledTime = moment.utc(sendSchedule)
-      if (!scheduledTime.isValid()) {
-        throw new BadRequestException(
-          new BaseResponseDto({
-            responseCode: 1,
-            errorCode: ErrorCode.VALIDATION_FAILED,
-            responseMessage: 'Invalid sendSchedule date format',
-            data: {
-              providedDate: sendSchedule,
-              expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
-            },
-          }),
-        )
-      }
-      const now = moment.utc()
-      // Add 1-minute grace period for network latency and clock skew
-      if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
-        throw new BadRequestException(
-          new BaseResponseDto({
-            responseCode: 1,
-            errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-            responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
-            data: {
-              scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
-              currentTime: now.format('h:mm A MMM D, YYYY'),
-            },
-          }),
-        )
-      }
+          const existingScheduleTime = template.sendSchedule ? moment.utc(template.sendSchedule) : null
+          
+          if (!scheduledTime.isValid()) {
+            throw new BadRequestException(
+              new BaseResponseDto({
+                responseCode: 1,
+                errorCode: ErrorCode.VALIDATION_FAILED,
+                responseMessage: 'Invalid sendSchedule date format',
+                data: {
+                  providedDate: sendSchedule,
+                  expectedFormat: 'ISO 8601 format (e.g., 2025-10-06T09:30:00)',
+                },
+              }),
+            )
+          }
+          
+          // Check if this is the same schedule time as existing (preserving original schedule)
+          const isPreservingExistingSchedule = existingScheduleTime && scheduledTime.isSame(existingScheduleTime)
+          
+          if (!isPreservingExistingSchedule) {
+            // Only validate new schedule times (not when preserving existing)
+            const now = moment.utc()
+            // Add 1-minute grace period for network latency and clock skew
+            if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
+              throw new BadRequestException(
+                new BaseResponseDto({
+                  responseCode: 1,
+                  errorCode: ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+                  responseMessage: ResponseMessage.TEMPLATE_SEND_SCHEDULE_IN_PAST,
+                  data: {
+                    scheduledTime: scheduledTime.format('h:mm A MMM D, YYYY'),
+                    currentTime: now.format('h:mm A MMM D, YYYY'),
+                  },
+                }),
+              )
+            }
+          } else {
+            console.log(`🔵 [UPDATE] ⏭️ Preserving existing schedule time (no validation needed):`, {
+              utc: scheduledTime.toISOString(),
+              cambodia: scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss'),
+            })
+          }
+          
           updateFields.sendSchedule = scheduledTime.toDate()
+          console.log(`🔵 [UPDATE] ✅ Setting sendSchedule to:`, {
+            utc: scheduledTime.toISOString(),
+            local: scheduledTime.format('YYYY-MM-DD HH:mm:ss'),
+            cambodia: scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss'),
+            isPreservingExisting: isPreservingExistingSchedule,
+          })
         } else {
           updateFields.sendSchedule = null
+          console.log(`🔵 [UPDATE] ✅ Clearing sendSchedule (null provided)`)
         }
       }
 
@@ -814,31 +867,69 @@ export class TemplateService implements OnModuleInit {
         updateFields.updatedBy = currentUser.username
       }
 
-      // If EDITOR edits a template, reset approval status based on current status
-      if (currentUser?.role === UserRole.EDITOR) {
+      // If ADMINISTRATOR or EDITOR edits a template, reset approval status based on current status
+      if (currentUser?.role === UserRole.EDITOR || currentUser?.role === UserRole.ADMINISTRATOR) {
         const existingTemplate = await this.repo.findOne({ where: { id } })
         if (existingTemplate) {
+          // If resubmitting an EXPIRED or REJECTED template (isSent: true), reset to PENDING for approval
+          // This only happens when resubmitting from Draft tab
+          if (
+            (existingTemplate.approvalStatus === ('EXPIRED' as ApprovalStatus) ||
+              existingTemplate.approvalStatus === ApprovalStatus.REJECTED) &&
+            isSent === true
+          ) {
+            console.log(
+              `🔄 [UPDATE] Resubmitting ${existingTemplate.approvalStatus} template ${id} - resetting approvalStatus to PENDING`,
+            )
+            updateFields.approvalStatus = ApprovalStatus.PENDING
+            updateFields.approvedBy = null
+            updateFields.approvedAt = null
+            updateFields.reasonForRejection = null
+          }
           // If editing a DRAFT template (null), keep it as DRAFT (null) - preserve draft status
-          if (existingTemplate.approvalStatus === null || existingTemplate.approvalStatus === undefined) {
+          else if (existingTemplate.approvalStatus === null || existingTemplate.approvalStatus === undefined) {
             // Keep approvalStatus as null (DRAFT) - don't change it
             // Clear any rejection reason if it exists
             updateFields.reasonForRejection = null
           }
           // If editing a PENDING template, keep it as PENDING (don't reset to DRAFT)
           // This allows editor to update pending templates without needing to resubmit
+          // Preserve status when editing from Pending Approval tab
           else if (existingTemplate.approvalStatus === ApprovalStatus.PENDING) {
             // Keep approvalStatus as PENDING - don't change it
             // Just clear rejection reason if it exists
             updateFields.reasonForRejection = null
           }
-          // If editing an APPROVED template, reset to PENDING
+          // If editing an APPROVED template, check if it's from Scheduled/Published tab
+          // If it has sendSchedule (scheduled) or isSent=true without sendSchedule (published), preserve APPROVED status
           else if (existingTemplate.approvalStatus === ApprovalStatus.APPROVED) {
-            updateFields.approvalStatus = ApprovalStatus.PENDING
-            updateFields.approvedBy = null
-            updateFields.approvedAt = null
+            // Preserve APPROVED status when editing from Scheduled or Published tabs
+            // Check both existing template state and new sendSchedule value
+            const existingIsScheduled = existingTemplate.sendSchedule !== null && existingTemplate.sendSchedule !== undefined
+            const newIsScheduled = sendSchedule !== null && sendSchedule !== undefined
+            const isScheduledTemplate = existingIsScheduled || newIsScheduled // Template is/was scheduled
+            const isPublishedTemplate = existingTemplate.isSent === true && !existingIsScheduled
+            
+            if (isScheduledTemplate || isPublishedTemplate) {
+              // Preserve APPROVED status - don't change it when editing from Scheduled/Published tabs
+              console.log(
+                `🔄 [UPDATE] Editing APPROVED template ${id} from ${isScheduledTemplate ? 'Scheduled' : 'Published'} tab - preserving APPROVED status`,
+              )
+              // Don't change approvalStatus - keep it as APPROVED
+              // Just clear rejection reason if it exists
+              updateFields.reasonForRejection = null
+            } else {
+              // Not from Scheduled/Published - reset to PENDING (this shouldn't normally happen)
+              console.log(
+                `🔄 [UPDATE] Editing APPROVED template ${id} - resetting approvalStatus to PENDING`,
+              )
+              updateFields.approvalStatus = ApprovalStatus.PENDING
+              updateFields.approvedBy = null
+              updateFields.approvedAt = null
+            }
           }
-          // If editing a REJECTED template, keep it as REJECTED (can be edited and resubmitted)
-          else if (existingTemplate.approvalStatus === ApprovalStatus.REJECTED) {
+          // If editing a REJECTED template without resubmitting (isSent: false or undefined), keep it as REJECTED
+          else if (existingTemplate.approvalStatus === ApprovalStatus.REJECTED && isSent !== true) {
             // Keep approvalStatus as REJECTED - don't change it
             // Editor can edit and resubmit later
           }
@@ -998,9 +1089,63 @@ export class TemplateService implements OnModuleInit {
       }
 
       const updatedTemplate = await this.findOneRaw(id)
+      console.log(`🔵 [UPDATE] Template after field updates:`, {
+        id: updatedTemplate.id,
+        isSent: updatedTemplate.isSent,
+        sendType: updatedTemplate.sendType,
+        approvalStatus: updatedTemplate.approvalStatus,
+        sendSchedule: updatedTemplate.sendSchedule,
+      })
 
-      // Check if trying to publish a draft (SEND_NOW with isSent=true)
-      if (updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true) {
+      // Check if trying to publish a draft
+      // For APPROVAL role using "Publish Now": send immediately regardless of sendType (keep original sendType in DB)
+      // For others: only send if SEND_NOW with isSent=true
+      const isApproverPublishNow = 
+        currentUser?.role === UserRole.APPROVAL && 
+        updatedTemplate.isSent === true
+      
+      // Check if this is a resubmission from rejected/expired state
+      // If admin/editor resubmits a rejected template, it should NOT send immediately - wait for approver
+      // Use `template` (original state before update) to check if it was REJECTED/EXPIRED
+      const isResubmissionFromRejected = 
+        (template.approvalStatus === ApprovalStatus.REJECTED || 
+         template.approvalStatus === ('EXPIRED' as ApprovalStatus)) &&
+        updatedTemplate.approvalStatus === ApprovalStatus.PENDING &&
+        (currentUser?.role === UserRole.ADMINISTRATOR || currentUser?.role === UserRole.EDITOR)
+      
+      console.log(`🔵 [UPDATE] Send Decision Logic:`, {
+        isApproverPublishNow,
+        userRole: currentUser?.role,
+        templateIsSent: updatedTemplate.isSent,
+        templateSendType: updatedTemplate.sendType,
+        isSendNow: updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true,
+        isResubmissionFromRejected,
+        originalApprovalStatus: template.approvalStatus,
+        newApprovalStatus: updatedTemplate.approvalStatus,
+      })
+      
+      // Don't send immediately if this is a resubmission from rejected state (wait for approver)
+      // Only send if:
+      // 1. Approver is using "Publish Now" (isApproverPublishNow), OR
+      // 2. It's SEND_NOW with isSent=true AND it's NOT a resubmission from rejected state
+      const shouldSendImmediately = 
+        isApproverPublishNow ||
+        (updatedTemplate.sendType === SendType.SEND_NOW && 
+         updatedTemplate.isSent === true && 
+         !isResubmissionFromRejected)
+      
+      console.log(`🔵 [UPDATE] shouldSendImmediately: ${shouldSendImmediately}`, {
+        reason: isApproverPublishNow 
+          ? 'Approver publish now' 
+          : isResubmissionFromRejected 
+            ? 'Resubmission from rejected - waiting for approver' 
+            : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
+              ? 'SEND_NOW with isSent=true'
+              : 'Conditions not met',
+      })
+      
+      if (shouldSendImmediately) {
+        console.log(`🔵 [UPDATE] ✅ Entering send block - will attempt to send notification`)
         // FLASH_NOTIFICATION now sends FCM push like other notification types
         // Mobile app will display it differently (as popup/flash screen)
         console.log(
@@ -1026,17 +1171,30 @@ export class TemplateService implements OnModuleInit {
         }
 
         // Try to send the notification
+        console.log(`🔵 [UPDATE] Fetching template with translations for sending...`)
         const templateWithTranslations = await this.repo.findOne({
           where: { id: updatedTemplate.id },
           relations: ['translations', 'translations.image', 'categoryTypeEntity'],
         })
 
+        console.log(`🔵 [UPDATE] Template with translations:`, {
+          id: templateWithTranslations?.id,
+          hasTranslations: !!templateWithTranslations?.translations,
+          translationsCount: templateWithTranslations?.translations?.length || 0,
+          approvalStatus: templateWithTranslations?.approvalStatus,
+          isSent: templateWithTranslations?.isSent,
+        })
+
         if (templateWithTranslations && templateWithTranslations.translations) {
-          // Check approval status before sending (ADMINISTRATOR bypasses this check)
-          if (
-            currentUser?.role !== UserRole.ADMINISTRATOR &&
-            templateWithTranslations.approvalStatus !== ApprovalStatus.APPROVED
-          ) {
+          console.log(`🔵 [UPDATE] ✅ Template has translations, proceeding with send logic`)
+          // Check approval status before sending
+          // ADMINISTRATOR and APPROVAL roles can bypass approval check
+          // APPROVAL role can auto-approve and send immediately when using "Publish Now"
+          const canBypassApproval = 
+            currentUser?.role === UserRole.ADMINISTRATOR || 
+            currentUser?.role === UserRole.APPROVAL
+          
+          if (!canBypassApproval && templateWithTranslations.approvalStatus !== ApprovalStatus.APPROVED) {
             throw new BadRequestException(
               new BaseResponseDto({
                 responseCode: 1,
@@ -1049,6 +1207,53 @@ export class TemplateService implements OnModuleInit {
               }),
             )
           }
+          
+          // If APPROVAL role is publishing, ALWAYS auto-approve it first (regardless of current status)
+          // This ensures the notification can be sent
+          console.log(`🔵 [UPDATE] Checking auto-approval conditions:`, {
+            userRole: currentUser?.role,
+            isApproval: currentUser?.role === UserRole.APPROVAL,
+            approvalStatus: templateWithTranslations.approvalStatus,
+            isPending: templateWithTranslations.approvalStatus === ApprovalStatus.PENDING,
+            isSent: isSent,
+            isApproverPublishNow,
+          })
+          
+          if (
+            currentUser?.role === UserRole.APPROVAL &&
+            isSent === true // Only auto-approve when actually sending
+          ) {
+            console.log(
+              `✅ [UPDATE] APPROVAL role auto-approving template ${templateWithTranslations.id} before sending (current status: ${templateWithTranslations.approvalStatus})`,
+            )
+            const approvalUpdate = {
+              approvalStatus: ApprovalStatus.APPROVED,
+              approvedBy: currentUser?.username,
+              approvedAt: new Date(),
+            }
+            console.log(`🔵 [UPDATE] Auto-approval update fields:`, approvalUpdate)
+            const updateResult = await this.repo.update(templateWithTranslations.id, approvalUpdate)
+            console.log(`🔵 [UPDATE] Auto-approval update result:`, updateResult)
+            console.log(`🔵 [UPDATE] ✅ Auto-approval update completed`)
+            
+            // Re-fetch to get updated approval status - CRITICAL: use this for sending
+            const refreshedTemplate = await this.repo.findOne({
+              where: { id: templateWithTranslations.id },
+              relations: ['translations', 'translations.image', 'categoryTypeEntity'],
+            })
+            if (refreshedTemplate) {
+              console.log(`🔵 [UPDATE] Refreshed template approvalStatus: ${refreshedTemplate.approvalStatus}`)
+              // Update the template object that will be used for sending
+              templateWithTranslations.approvalStatus = ApprovalStatus.APPROVED
+              templateWithTranslations.approvedBy = refreshedTemplate.approvedBy
+              templateWithTranslations.approvedAt = refreshedTemplate.approvedAt
+              console.log(`🔵 [UPDATE] ✅ Template object updated with APPROVED status for sending`)
+            } else {
+              console.error(`🔵 [UPDATE] ❌ Failed to refresh template after auto-approval`)
+            }
+          } else {
+            console.log(`🔵 [UPDATE] ⏭️ Skipping auto-approval (conditions not met)`)
+          }
 
           let sendResult: {
             successfulCount: number
@@ -1057,9 +1262,25 @@ export class TemplateService implements OnModuleInit {
             failedDueToInvalidTokens?: boolean
           } = { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let noUsersForPlatform = false
+          
+          console.log(`🔵 [UPDATE] ========== CALLING sendWithTemplate ==========`)
+          console.log(`🔵 [UPDATE] Template details for sending:`, {
+            id: templateWithTranslations.id,
+            approvalStatus: templateWithTranslations.approvalStatus,
+            sendType: templateWithTranslations.sendType,
+            platforms: templateWithTranslations.platforms,
+            bakongPlatform: templateWithTranslations.bakongPlatform,
+            translationsCount: templateWithTranslations.translations?.length || 0,
+          })
+          
           try {
             sendResult = await this.notificationService.sendWithTemplate(templateWithTranslations)
-            console.log(`[UPDATE] sendWithTemplate returned:`, sendResult)
+            console.log(`🔵 [UPDATE] ✅ sendWithTemplate completed successfully:`, {
+              successfulCount: sendResult.successfulCount,
+              failedCount: sendResult.failedCount,
+              failedUsers: sendResult.failedUsers?.length || 0,
+              failedDueToInvalidTokens: sendResult.failedDueToInvalidTokens,
+            })
 
             // Log detailed failure information for debugging
             if (sendResult.failedCount > 0 && sendResult.failedUsers?.length) {
@@ -1074,11 +1295,18 @@ export class TemplateService implements OnModuleInit {
               }
             }
           } catch (error: any) {
-            console.error(`[UPDATE] ❌ ERROR in sendWithTemplate:`, error?.message)
+            console.error(`🔵 [UPDATE] ❌ ERROR in sendWithTemplate:`, {
+              message: error?.message,
+              stack: error?.stack,
+              code: error?.code,
+              response: error?.response?.data,
+            })
             // Check if error is about no users for bakongPlatform
             if (error?.message && error.message.includes('No users found for')) {
               noUsersForPlatform = true
-              console.log(`[UPDATE] ⚠️ No users found for bakongPlatform - keeping as draft`)
+              console.log(`🔵 [UPDATE] ⚠️ No users found for bakongPlatform - keeping as draft`)
+            } else {
+              console.error(`🔵 [UPDATE] ❌ Unexpected error during send - not related to no users`)
             }
           }
 
@@ -1092,11 +1320,69 @@ export class TemplateService implements OnModuleInit {
             const reloadedTemplate = await this.findOneRaw(id)
             ;(reloadedTemplate as any).savedAsDraftNoUsers = true
             return this.formatTemplateResponse(reloadedTemplate)
-          } else if (sendResult.successfulCount > 0) {
+          } else if (sendResult.successfulCount > 0 || isApproverPublishNow) {
             // Successfully sent to at least some users, mark as published
+            // OR if approver used "Publish Now", mark as published even if no users (approver's explicit action)
             // Even if some failed, if ANY succeeded, mark as published
-            console.log(`[UPDATE] ✅ Template ${updatedTemplate.id} published successfully - sent to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`)
-            await this.markAsPublished(updatedTemplate.id, currentUser)
+            const wasApproverAction = isApproverPublishNow && sendResult.successfulCount === 0
+            console.log(
+              `[UPDATE] ✅ Template ${updatedTemplate.id} published successfully - sent to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}${wasApproverAction ? ' (Approver published, marking as published)' : ''}`,
+            )
+            
+            // Mark as published - ensure approvalStatus is also set to APPROVED if approver used "Publish Now"
+            console.log(`🔵 [UPDATE] ========== MARKING AS PUBLISHED ==========`)
+            const publishUpdateFields: any = {
+              isSent: true,
+              updatedAt: new Date(),
+            }
+            if (currentUser?.username) {
+              publishUpdateFields.publishedBy = currentUser.username
+            }
+            // If approver used "Publish Now", always set approvalStatus to APPROVED (auto-approve)
+            // AND change sendType to SEND_NOW and clear sendSchedule since they're sending immediately, not waiting for schedule
+            if (isApproverPublishNow) {
+              publishUpdateFields.approvalStatus = ApprovalStatus.APPROVED
+              publishUpdateFields.approvedBy = currentUser?.username
+              publishUpdateFields.approvedAt = new Date()
+              // When approver clicks "Publish Now", they're choosing to send immediately
+              // So change sendType to SEND_NOW and clear the schedule
+              publishUpdateFields.sendType = SendType.SEND_NOW
+              publishUpdateFields.sendSchedule = null
+              console.log(
+                `🔵 [UPDATE] ✅ Setting approvalStatus to APPROVED and changing sendType to SEND_NOW for approver publish action on template ${updatedTemplate.id}`,
+              )
+              console.log(
+                `🔵 [UPDATE] ✅ Clearing sendSchedule since approver chose to send immediately (not waiting for scheduled time)`,
+              )
+            }
+            console.log(`🔵 [UPDATE] Publish update fields:`, publishUpdateFields)
+            const publishUpdateResult = await this.repo.update(updatedTemplate.id, publishUpdateFields)
+            console.log(`🔵 [UPDATE] Publish update result:`, publishUpdateResult)
+            console.log(`🔵 [UPDATE] ✅ Template marked as published in database`)
+            
+            // CRITICAL: Re-fetch template to verify approvalStatus was set correctly
+            const verifyAfterPublish = await this.repo.findOne({
+              where: { id: updatedTemplate.id },
+            })
+            console.log(`🔵 [UPDATE] Verification after publish update:`, {
+              id: verifyAfterPublish?.id,
+              isSent: verifyAfterPublish?.isSent,
+              approvalStatus: verifyAfterPublish?.approvalStatus,
+              approvedBy: verifyAfterPublish?.approvedBy,
+              approvedAt: verifyAfterPublish?.approvedAt,
+            })
+            
+            // If approvalStatus is still not APPROVED, force update it one more time
+            if (isApproverPublishNow && verifyAfterPublish?.approvalStatus !== ApprovalStatus.APPROVED) {
+              console.error(`🔵 [UPDATE] ❌ approvalStatus not set correctly, forcing update again`)
+              await this.repo.update(updatedTemplate.id, {
+                approvalStatus: ApprovalStatus.APPROVED,
+                approvedBy: currentUser?.username,
+                approvedAt: new Date(),
+              })
+              console.log(`🔵 [UPDATE] ✅ Forced approvalStatus update completed`)
+            }
+            
             console.log(
               `[UPDATE] Template published successfully, sent to ${sendResult.successfulCount} users`,
             )
@@ -1145,15 +1431,71 @@ export class TemplateService implements OnModuleInit {
         }
       }
 
-      if (updatedTemplate.sendType === SendType.SEND_SCHEDULE && updatedTemplate.sendSchedule) {
+      // Only schedule if it wasn't already sent immediately by approver
+      // If approver used "Publish Now", it was already sent above, so don't schedule it
+      const wasSentByApprover = 
+        currentUser?.role === UserRole.APPROVAL && 
+        updatedTemplate.isSent === true &&
+        (updatedTemplate as any).successfulCount > 0
+      
+      if (updatedTemplate.sendType === SendType.SEND_SCHEDULE && updatedTemplate.sendSchedule && !wasSentByApprover) {
         if (this.schedulerRegistry.doesExist('cron', id.toString())) {
           this.schedulerRegistry.deleteCronJob(id.toString())
         }
         this.addScheduleNotification(updatedTemplate)
       }
 
-      // Reload template to get latest state
-      const finalTemplate = await this.findOneRaw(id)
+      // Reload template to get latest state - CRITICAL: Use findOne to ensure we get the latest DB state
+      console.log(`🔵 [UPDATE] ========== FINAL TEMPLATE STATE ==========`)
+      const finalTemplate = await this.repo.findOne({
+        where: { id },
+        relations: ['translations', 'translations.image', 'categoryTypeEntity'],
+      })
+      
+      if (!finalTemplate) {
+        console.error(`🔵 [UPDATE] ❌ Failed to load final template`)
+        throw new Error(`Template ${id} not found after update`)
+      }
+      
+      console.log(`🔵 [UPDATE] Final template state from DB:`, {
+        id: finalTemplate.id,
+        isSent: finalTemplate.isSent,
+        approvalStatus: finalTemplate.approvalStatus,
+        sendType: finalTemplate.sendType,
+        approvedBy: finalTemplate.approvedBy,
+        approvedAt: finalTemplate.approvedAt,
+        publishedBy: finalTemplate.publishedBy,
+      })
+      
+      // Final safety check: if approver published but approvalStatus is still not APPROVED, fix it
+      if (isApproverPublishNow && finalTemplate.approvalStatus !== ApprovalStatus.APPROVED) {
+        console.error(`🔵 [UPDATE] ❌ CRITICAL: approvalStatus still not APPROVED in final state (${finalTemplate.approvalStatus}), fixing now`)
+        await this.repo.update(id, {
+          approvalStatus: ApprovalStatus.APPROVED,
+          approvedBy: currentUser?.username,
+          approvedAt: new Date(),
+        })
+        // Re-fetch one more time to get the fixed state
+        const fixedTemplate = await this.repo.findOne({
+          where: { id },
+          relations: ['translations', 'translations.image', 'categoryTypeEntity'],
+        })
+        if (fixedTemplate) {
+          console.log(`🔵 [UPDATE] ✅ Fixed approvalStatus in final template:`, fixedTemplate.approvalStatus)
+          // Preserve flags and send results
+          if ((updatedTemplate as any).savedAsDraftNoUsers) {
+            ;(fixedTemplate as any).savedAsDraftNoUsers = true
+          }
+          if ((updatedTemplate as any).successfulCount !== undefined) {
+            ;(fixedTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
+            ;(fixedTemplate as any).failedCount = (updatedTemplate as any).failedCount
+            ;(fixedTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
+          }
+          console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
+          return this.formatTemplateResponse(fixedTemplate)
+        }
+      }
+      
       // Preserve flag if it was set
       if ((updatedTemplate as any).savedAsDraftNoUsers) {
         ;(finalTemplate as any).savedAsDraftNoUsers = true
@@ -1163,7 +1505,24 @@ export class TemplateService implements OnModuleInit {
         ;(finalTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
         ;(finalTemplate as any).failedCount = (updatedTemplate as any).failedCount
         ;(finalTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
+        ;(finalTemplate as any).failedDueToInvalidTokens = (updatedTemplate as any).failedDueToInvalidTokens
       }
+      
+      // CRITICAL: For approver "Publish Now", ensure send results are always included
+      // If send results weren't preserved from updatedTemplate, check if we can infer from finalTemplate state
+      if (isApproverPublishNow && (finalTemplate as any).successfulCount === undefined) {
+        // If template is marked as sent and approved, but no send results, set defaults
+        // This ensures the frontend always gets a response with send results
+        if (finalTemplate.isSent === true && finalTemplate.approvalStatus === ApprovalStatus.APPROVED) {
+          ;(finalTemplate as any).successfulCount = 0 // Will be updated by frontend if needed
+          ;(finalTemplate as any).failedCount = 0
+          ;(finalTemplate as any).failedUsers = []
+          ;(finalTemplate as any).failedDueToInvalidTokens = false
+          console.log(`🔵 [UPDATE] ⚠️ Approver publish: send results not preserved, setting defaults for response`)
+        }
+      }
+      
+      console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
       return this.formatTemplateResponse(finalTemplate)
     } catch (error) {
       console.error('Error updating template:', error)
@@ -1248,6 +1607,76 @@ export class TemplateService implements OnModuleInit {
       )
     }
 
+    // Store original status to determine if this was a resubmission from rejected state
+    const wasPending = template.approvalStatus === ApprovalStatus.PENDING
+    const originalIsSent = template.isSent
+
+    // Check if this is a scheduled notification and if the scheduled time has passed
+    if (template.sendSchedule && template.sendType === SendType.SEND_SCHEDULE) {
+      const scheduledTime = moment.utc(template.sendSchedule)
+      const now = moment.utc()
+      
+      // Log the time comparison for debugging
+      this.logger.log(`⏰ [APPROVE] Checking scheduled time for template ${id}:`, {
+        scheduledTimeUTC: scheduledTime.toISOString(),
+        scheduledTimeCambodia: scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss'),
+        currentTimeUTC: now.toISOString(),
+        currentTimeCambodia: now.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss'),
+        timeDifferenceMinutes: scheduledTime.diff(now, 'minutes'),
+        hasPassed: scheduledTime.isBefore(now.clone().subtract(1, 'minute')),
+      })
+      
+      // Check if scheduled time has passed (with 1 minute grace period for clock skew)
+      if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
+        this.logger.warn(
+          `⏰ [APPROVE] Template ${id} scheduled time ${scheduledTime.toISOString()} (${scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss')} Cambodia) has passed (current: ${now.toISOString()} / ${now.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss')} Cambodia). Marking as expired.`,
+        )
+        
+        // Mark as expired (not rejected) - preserve all original data including sendSchedule
+        const expiredReason = 'Scheduled time has passed. Please contact team member to update the schedule first.'
+        
+        // Fetch template first to ensure we preserve all fields
+        const templateToExpire = await this.repo.findOne({ where: { id } })
+        if (!templateToExpire) {
+          throw new BadRequestException(
+            new BaseResponseDto({
+              responseCode: 1,
+              errorCode: ErrorCode.TEMPLATE_NOT_FOUND,
+              responseMessage: ResponseMessage.TEMPLATE_NOT_FOUND,
+            }),
+          )
+        }
+        
+        // Update only approval-related fields, preserve everything else (especially sendSchedule)
+        // Using string literal cast since EXPIRED was just added to the enum and shared package may need rebuild
+        templateToExpire.approvalStatus = 'EXPIRED' as ApprovalStatus
+        templateToExpire.approvedBy = currentUser?.username
+        templateToExpire.approvedAt = new Date()
+        templateToExpire.reasonForRejection = expiredReason
+        // NOTE: We intentionally do NOT update sendSchedule or any other fields
+        // This preserves the original schedule time that admin created/updated
+        
+        await this.repo.save(templateToExpire)
+        
+        this.logger.log(`✅ [APPROVE] Template ${id} marked as expired due to passed scheduled time (data preserved)`)
+        
+        // Throw exception to inform frontend that it was expired
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: expiredReason,
+            data: {
+              autoExpired: true,
+              expiredReason: expiredReason,
+            },
+          }),
+        )
+      } else {
+        this.logger.log(`✅ [APPROVE] Template ${id} scheduled time is valid (not passed yet)`)
+      }
+    }
+
     // First, update approval status
     await this.repo.update(id, {
       approvalStatus: ApprovalStatus.APPROVED,
@@ -1259,37 +1688,87 @@ export class TemplateService implements OnModuleInit {
     // If it has a schedule, don't send yet - keep it in Scheduled tab until scheduled time
     const updatedTemplate = await this.findOneRaw(id)
     
-    if (updatedTemplate.sendSchedule && updatedTemplate.sendType === SendType.SEND_SCHEDULE) {
+    // Check if scheduled: must have sendSchedule AND sendType must be SEND_SCHEDULE
+    const isScheduledNotification = 
+      updatedTemplate.sendSchedule !== null && 
+      updatedTemplate.sendSchedule !== undefined &&
+      updatedTemplate.sendType === SendType.SEND_SCHEDULE
+    
+    this.logger.log(`🔍 [APPROVE] Template ${id} check:`, {
+      sendSchedule: updatedTemplate.sendSchedule,
+      sendType: updatedTemplate.sendType,
+      isSent: updatedTemplate.isSent,
+      isScheduledNotification,
+      approvalStatus: updatedTemplate.approvalStatus,
+    })
+    
+    if (isScheduledNotification) {
       // Scheduled notification - don't send immediately, keep in Scheduled tab
       // The scheduler will handle sending when the scheduled time arrives
       this.logger.log(
         `📅 [APPROVE] Template ${id} is scheduled for ${updatedTemplate.sendSchedule.toISOString()} - keeping in Scheduled tab until scheduled time`,
       )
-      // Keep isSent: false so it stays in Scheduled tab
+      // Ensure isSent is false so it stays in Scheduled tab
       // approvalStatus is already set to APPROVED above
-    } else if (
-      updatedTemplate.sendType === SendType.SEND_NOW &&
-      !updatedTemplate.sendSchedule &&
-      !updatedTemplate.isSent
-    ) {
-      // Non-scheduled notification - send immediately after approval
+      await this.repo.update(id, { isSent: false })
+      // Register the scheduled job so it will be sent at the scheduled time
+      const templateForScheduler = await this.findOneRaw(id)
+      this.addScheduleNotification(templateForScheduler)
       this.logger.log(
-        `📤 [APPROVE] Template ${id} is ready to send after approval - sending automatically`,
+        `✅ [APPROVE] Scheduled notification job registered for template ${id} - will auto-send at scheduled time`,
       )
-      try {
-        await this.notificationService.sendWithTemplate(updatedTemplate)
-        // Mark as sent after successful send
-        await this.repo.update(id, { isSent: true })
-        this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully`)
-      } catch (error) {
-        this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
-        // Don't throw error - approval was successful, just log the send failure
-        // Still mark as published (isSent: true) even if send failed
+    } else if (updatedTemplate.sendType === SendType.SEND_NOW && !updatedTemplate.sendSchedule) {
+      // Non-scheduled notification - send immediately after approval
+      // Note: isSent might be true if template was resubmitted from rejected state (PENDING status)
+      // In that case, we still need to send it because it hasn't actually been sent to users yet
+      // wasPending is already set above (line 1585) - it's always true here since we only approve PENDING templates
+      this.logger.log(
+        `📤 [APPROVE] Template ${id} is SEND_NOW - checking if needs to send:`,
+        {
+          wasPending,
+          originalIsSent,
+          currentIsSent: updatedTemplate.isSent,
+          willSend: wasPending || !updatedTemplate.isSent,
+        },
+      )
+      
+      // Send if: (1) it was PENDING (fresh approval) OR (2) it hasn't been sent yet
+      // wasPending is always true here (we only approve PENDING templates), so we always send
+      if (wasPending || !updatedTemplate.isSent) {
+        this.logger.log(
+          `📤 [APPROVE] Template ${id} is ready to send after approval - sending automatically`,
+        )
+        try {
+          await this.notificationService.sendWithTemplate(updatedTemplate)
+          // Mark as sent after successful send
+          await this.repo.update(id, { isSent: true })
+          this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully`)
+        } catch (error) {
+          this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
+          // Don't throw error - approval was successful, just log the send failure
+          // Still mark as published (isSent: true) even if send failed
+          await this.repo.update(id, { isSent: true })
+        }
+      } else {
+        // Already sent and not pending - this means it was already published before
+        this.logger.log(
+          `✅ [APPROVE] Template ${id} was already sent (not pending), keeping published status`,
+        )
+        // Ensure isSent is true (should already be, but make sure)
         await this.repo.update(id, { isSent: true })
       }
-    } else {
-      // Already sent or other cases
+    } else if (updatedTemplate.isSent === true && updatedTemplate.sendType !== SendType.SEND_SCHEDULE) {
+      // Already sent and not scheduled - no need to update isSent
+      this.logger.log(`✅ [APPROVE] Template ${id} was already sent, keeping published status`)
+    } else if (updatedTemplate.sendType !== SendType.SEND_SCHEDULE) {
+      // Other non-scheduled cases - mark as sent
+      this.logger.log(`✅ [APPROVE] Template ${id} marking as sent (non-scheduled notification)`)
       await this.repo.update(id, { isSent: true })
+    } else {
+      // Scheduled notification that's already sent - shouldn't happen, but handle gracefully
+      this.logger.warn(
+        `⚠️ [APPROVE] Template ${id} is scheduled but isSent is true - this shouldn't happen`,
+      )
     }
 
     return await this.findOneRaw(id)
@@ -1800,6 +2279,7 @@ export class TemplateService implements OnModuleInit {
       approvalStatus: template.approvalStatus,
       approvedBy: template.approvedBy,
       approvedAt: template.approvedAt ? moment(template.approvedAt).toISOString() : null,
+      reasonForRejection: template.reasonForRejection || null,
       // Preserve send result properties if they exist
       successfulCount: (template as any).successfulCount,
       failedCount: (template as any).failedCount,
@@ -1871,7 +2351,12 @@ export class TemplateService implements OnModuleInit {
     let status: string
     if (template.isSent) {
       status = 'published'
-    } else if (template.sendType === 'SEND_SCHEDULE' || template.sendType === 'SEND_INTERVAL') {
+    } else if (
+      (template.sendType === 'SEND_SCHEDULE' || template.sendType === 'SEND_INTERVAL') &&
+      template.approvalStatus === ApprovalStatus.APPROVED
+    ) {
+      // Only set status to 'scheduled' if it's approved and not yet sent
+      // Drafts with schedule should still be 'draft' status until approved
       status = 'scheduled'
     } else {
       status = 'draft'
@@ -1882,10 +2367,12 @@ export class TemplateService implements OnModuleInit {
     // Get displayName from map if available, otherwise fallback to username
     const author = displayNameMap?.get(username) || username
     let dateToShow: Date
-    if (template.isSent && template.updatedAt) {
-      dateToShow = template.updatedAt
-    } else if (template.sendSchedule) {
+    // For scheduled notifications, always show the scheduled time if it exists
+    // This ensures users see the correct scheduled time, not the update time
+    if (template.sendSchedule) {
       dateToShow = template.sendSchedule
+    } else if (template.isSent && template.updatedAt) {
+      dateToShow = template.updatedAt
     } else {
       dateToShow = template.createdAt
     }
@@ -1927,7 +2414,16 @@ export class TemplateService implements OnModuleInit {
       sendType: template.sendType,
       updatedAt: template.updatedAt,
       scheduledTime: template.sendSchedule
-        ? TimezoneUtils.formatCambodiaTime(template.sendSchedule)
+        ? (() => {
+            // Ensure we're working with UTC to avoid double timezone conversion
+            // Convert to ISO string first to ensure UTC representation
+            const scheduleDate = template.sendSchedule instanceof Date 
+              ? template.sendSchedule 
+              : new Date(template.sendSchedule)
+            // Always use ISO string (UTC) to ensure correct timezone conversion
+            const utcISOString = scheduleDate.toISOString()
+            return TimezoneUtils.formatCambodiaTime(utcISOString)
+          })()
         : null,
       platforms: platforms,
       bakongPlatform: template.bakongPlatform || null,
@@ -1938,7 +2434,9 @@ export class TemplateService implements OnModuleInit {
   }
 
   validateModificationTemplate(template: Template, allowDelete = false) {
-    if (template.isSent && !allowDelete) {
+    // Only block updates if template is APPROVED (not just sent)
+    // PENDING notifications with isSent=true should still be updatable
+    if (template.isSent && template.approvalStatus === ApprovalStatus.APPROVED && !allowDelete) {
       throw new BadRequestException(
         new BaseResponseDto({
           responseCode: 1,
@@ -2075,15 +2573,17 @@ export class TemplateService implements OnModuleInit {
               } at ${new Date()}`,
             )
 
-            // When scheduled notification is sent, mark as published and clear schedule
-            // This moves it from Scheduled tab to Published tab
+            // When scheduled notification is sent, mark as published but preserve original data
+            // Keep sendType as SEND_SCHEDULE and sendSchedule to preserve the original scheduled time
+            // This allows the notification to show "(scheduled time)" in the Published tab
             const updateResult = await this.repo
               .createQueryBuilder()
               .update(Template)
               .set({
                 isSent: true,
-                sendType: SendType.SEND_NOW, // Change to SEND_NOW so it appears in Published tab
-                sendSchedule: null, // Clear schedule since it's been sent
+                // Preserve sendType as SEND_SCHEDULE (don't change to SEND_NOW)
+                // Preserve sendSchedule to keep the original scheduled date/time
+                // Only set isSent to true to mark it as published
               })
               .where('id = :id', { id: template.id })
               .andWhere('isSent = :isSent', { isSent: false })

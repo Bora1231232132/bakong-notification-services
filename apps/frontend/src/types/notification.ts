@@ -28,7 +28,7 @@ export interface Notification {
   templateEndAt?: string
   linkPreview?: string
   language?: string
-  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'
   approvedBy?: string
   approvedAt?: Date | string
 }

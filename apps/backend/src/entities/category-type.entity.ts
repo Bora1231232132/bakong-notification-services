@@ -16,6 +16,12 @@ export class CategoryType {
   @Column({ nullable: false, length: 255, unique: true })
   name: string
 
+  @Column({ nullable: true, length: 255 })
+  namekh?: string
+
+  @Column({ nullable: true, length: 255 })
+  namejp?: string
+
   @Exclude()
   @Column({ nullable: false, type: 'bytea' })
   icon: Buffer

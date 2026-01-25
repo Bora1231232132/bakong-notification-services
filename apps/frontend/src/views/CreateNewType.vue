@@ -57,10 +57,60 @@
               line-height: 150%;
               letter-spacing: 0%;
             "
-            >Type name <span class="text-red-500">*</span></label
+            >Type name (English) <span class="text-red-500">*</span></label
           >
           <input
             v-model="typeName"
+            type="text"
+            placeholder="Product and feature"
+            required
+            :disabled="isViewMode"
+            :readonly="isViewMode"
+            class="w-full border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+            style="height: 56px; border-radius: 8px; border-width: 1px; padding: 16px"
+          />
+        </div>
+
+        <!-- Type Name Input -->
+        <div class="w-full flex flex-col gap-[7px] opacity-100" style="transform: rotate(0deg)">
+          <label
+            class="text-[#011246]"
+            style="
+              font-family: 'IBM Plex Sans', sans-serif;
+              font-weight: 400;
+              font-size: 14px;
+              line-height: 150%;
+              letter-spacing: 0%;
+            "
+            >Type name (Khmer) </label
+          >
+          <input
+            v-model="typeNameKh"
+            type="text"
+            placeholder="Product and feature"
+            required
+            :disabled="isViewMode"
+            :readonly="isViewMode"
+            class="w-full border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+            style="height: 56px; border-radius: 8px; border-width: 1px; padding: 16px"
+          />
+        </div>
+
+        <!-- Type Name Input -->
+        <div class="w-full flex flex-col gap-[7px] opacity-100" style="transform: rotate(0deg)">
+          <label
+            class="text-[#011246]"
+            style="
+              font-family: 'IBM Plex Sans', sans-serif;
+              font-weight: 400;
+              font-size: 14px;
+              line-height: 150%;
+              letter-spacing: 0%;
+            "
+            >Type name (Japanese) </label
+          >
+          <input
+            v-model="typeNameJp"
             type="text"
             placeholder="Product and feature"
             required
@@ -129,6 +179,12 @@ import { categoryTypeApi, type CategoryType } from '@/services/categoryTypeApi'
 import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { ElMessage } from 'element-plus'
+import { useAuthStore, UserRole } from '@/stores/auth'
+import { ElNotification } from 'element-plus'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === UserRole.ADMINISTRATOR)
+
 
 const router = useRouter()
 const route = useRoute()
@@ -146,10 +202,14 @@ const categoryTypeId = computed(() => {
 
 // Form data
 const typeName = ref('')
+const typeNameKh = ref('')  
+const typeNameJp = ref('')
 const selectedFile = ref<File | null>(null)
 const isLoading = ref(false)
 const existingImageUrl = ref<string>('')
 const existingName = ref<string>('')
+const existingTypeNameKh = ref<string>('')
+const existingTypeNameJp = ref<string>('')
 const loadingData = ref(false)
 
 const { handleApiError, showSuccess } = useErrorHandler({
@@ -181,8 +241,12 @@ const fetchCategoryType = async () => {
   try {
     const categoryType = await categoryTypeApi.getById(categoryTypeId.value)
     typeName.value = categoryType.name
+    typeNameKh.value = categoryType.namekh || ''
+    typeNameJp.value = categoryType.namejp || ''
     existingName.value = categoryType.name
-
+    existingTypeNameKh.value = categoryType.namekh || ''
+    existingTypeNameJp.value = categoryType.namejp || ''
+    console.log(existingTypeNameKh.value, existingTypeNameJp.value)
     // Load icon
     try {
       const iconUrl = await categoryTypeApi.getIcon(categoryTypeId.value)
@@ -217,7 +281,7 @@ const handleCreate = async () => {
   isLoading.value = true
 
   try {
-    const created = await categoryTypeApi.create(typeName.value.trim(), selectedFile.value)
+    const created = await categoryTypeApi.create(typeName.value.trim(), typeNameKh.value.trim(), typeNameJp.value.trim(), selectedFile.value)
 
     // Add to store and clear cache
     categoryTypesStore.addCategoryType(created)
@@ -250,6 +314,8 @@ const handleUpdate = async () => {
 
   // Check if anything has changed
   const nameChanged = typeName.value.trim() !== existingName.value
+  const nameKhChanged = typeNameKh.value.trim() !== existingTypeNameKh.value
+  const nameJpChanged = typeNameJp.value.trim() !== existingTypeNameJp.value
   const iconChanged = selectedFile.value !== null
 
   if (!nameChanged && !iconChanged) {
@@ -264,6 +330,8 @@ const handleUpdate = async () => {
     const updated = await categoryTypeApi.update(
       categoryTypeId.value,
       nameChanged ? typeName.value.trim() : undefined,
+      nameKhChanged ? typeNameKh.value.trim() : undefined,
+      nameJpChanged ? typeNameJp.value.trim() : undefined,
       iconChanged && selectedFile.value ? selectedFile.value : undefined,
     )
 
@@ -287,10 +355,24 @@ const handleUpdate = async () => {
 
 // Load data on mount if in view or edit mode
 onMounted(async () => {
+  // ✅ if not admin and not view mode -> block create/edit
+  if (!isAdmin.value && !isViewMode.value) {
+    ElNotification({
+      title: 'Warning',
+      message: 'You do not have permission to perform this action.',
+      type: 'warning',
+      duration: 3000,
+    })
+    await router.replace('/types') // <-- your list route from router is "types"
+    return
+  }
+
+  // Load category type data if in view or edit mode
   if (isViewMode.value || isEditMode.value) {
     await fetchCategoryType()
   }
 })
+
 
 // Clean up icon URL on unmount
 onUnmounted(() => {

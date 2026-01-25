@@ -319,11 +319,14 @@ export const getCurrentDatePlaceholder = () => {
 
 export const disabledDate = (time: Date): boolean => {
   const now = DateUtils.nowInCambodia()
-  // Get today's date in Cambodia timezone properly
+  // Get today's date in Cambodia timezone properly (set to midnight)
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  // Compare only the date part (ignore time)
+  today.setHours(0, 0, 0, 0)
+  // Compare only the date part (ignore time) - set to midnight for accurate comparison
   const selectedDate = new Date(time.getFullYear(), time.getMonth(), time.getDate())
+  selectedDate.setHours(0, 0, 0, 0)
   // Disable dates that are before today (allow today and future dates)
+  // Use <= comparison to ensure today is NOT disabled
   return selectedDate.getTime() < today.getTime()
 }
 

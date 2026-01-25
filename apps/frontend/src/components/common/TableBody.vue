@@ -78,7 +78,7 @@
                 @click="handleNameSort"
               >
                 <div class="flex items-center justify-start gap-2">
-                  Name
+                  Full Name
                   <img
                     src="@/assets/image/Vector.svg"
                     alt="Sort"
@@ -209,6 +209,26 @@
                   </button>
                   <button
                     v-if="showEdit"
+                    :disabled="adminOnlyActions && !isAdmin"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Edit"
+                    @click="!(adminOnlyActions && !isAdmin) && $emit('edit', item)"
+                  >
+                    <img src="@/assets/image/edit.svg" alt="Edit" class="w-3 h-3 sm:w-4 sm:h-4" />
+                  </button>
+
+                  <button
+                    v-if="showDelete"
+                    :disabled="adminOnlyActions && !isAdmin"
+                    class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#F24444] text-white hover:bg-[#d82c2c] transition-all duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Delete"
+                    @click="!(adminOnlyActions && !isAdmin) && $emit('delete', item)"
+                  >
+                    <img src="@/assets/image/trash-can.svg" alt="Delete" class="w-3 h-3 sm:w-4 sm:h-4" />
+                  </button>
+
+                  <!-- <button
+                    v-if="showEdit"
                     class="w-[32px] h-[32px] sm:w-[40px] sm:h-[40px] flex items-center justify-center rounded-full bg-[#0D1C50] text-white hover:bg-[#12236d] transition-all duration-200 shrink-0"
                     title="Edit"
                     @click="$emit('edit', item)"
@@ -226,7 +246,7 @@
                       alt="Delete"
                       class="w-3 h-3 sm:w-4 sm:h-4"
                     />
-                  </button>
+                  </button> -->
                 </div>
               </td>
             </tr>
@@ -364,6 +384,12 @@
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue'
 import { useTableSelection } from '../../composables/useTableSelection'
+import { formatUserRoleShort } from '../../../../packages/shared/src/utils/type-converter'
+import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === UserRole.ADMINISTRATOR)
 
 // Type Definitions
 export interface NotificationItem {
@@ -404,12 +430,14 @@ const props = withDefaults(
     columns?: ColumnConfig[] // Optional column configuration for future extensibility
     showEdit?: boolean
     showDelete?: boolean
+    adminOnlyActions?: boolean
   }>(),
   {
     mode: 'notification',
     columns: undefined,
     showEdit: true,
     showDelete: true,
+    adminOnlyActions: false,
   },
 )
 
@@ -554,16 +582,7 @@ const handleIconError = (event: Event, item: NotificationItem) => {
 const formatRole = (role?: string): string => {
   if (!role) return 'Editor'
 
-  const roleMap: Record<string, string> = {
-    ADMIN_USER: 'Editor',
-    NORMAL_USER: 'View only',
-    API_USER: 'Approval',
-    Editor: 'Editor',
-    'View only': 'View only',
-    Approval: 'Approval',
-  }
-
-  return roleMap[role] || role
+  return formatUserRoleShort(role)
 }
 </script>
 

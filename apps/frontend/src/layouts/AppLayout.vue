@@ -10,6 +10,7 @@
           <el-button
             type="primary"
             class="create-notification-btn"
+            :disabled="!canCreateNotification"
             @click="handleCreateNotification"
           >
             Create Notification
@@ -66,8 +67,8 @@
           <div class="nav-section">
             <div
               class="nav-item"
-              :class="{ active: $route.name === 'templates' }"
-              @click="$router.push('/templates')"
+              :class="{ active: $route.name === 'types' }"
+              @click="$router.push('/types')"
             >
               <img :src="typeIcon" alt="Type" class="nav-icon" />
               <span>Type</span>
@@ -76,14 +77,6 @@
 
           <div class="nav-section">
             <div class="nav-section-title">Tools</div>
-            <div
-              class="nav-item"
-              :class="{ active: $route.name === 'insight' }"
-              @click="handleInsightClick"
-            >
-              <img :src="chartIcon" alt="Insight" class="nav-icon" />
-              <span>Insight</span>
-            </div>
             <div
               v-if="showUserManagement"
               class="nav-item"
@@ -94,7 +87,7 @@
               <span>User Management</span>
             </div>
             <!-- Test page - only visible in development environment -->
-            <div
+            <!-- <div
               v-if="isDevelopment"
               class="nav-item"
               :class="{ active: $route.name === 'test' }"
@@ -102,7 +95,7 @@
             >
               <el-icon class="nav-icon"><Tools /></el-icon>
               <span>Test</span>
-            </div>
+            </div> -->
             <div
               class="nav-item"
               :class="{ active: $route.name === 'settings' }"
@@ -245,8 +238,8 @@ const pageTitle = computed(() => {
       return 'Notifications'
     case 'schedule':
       return 'Schedule'
-    case 'templates':
-      return 'Templates'
+    case 'types':
+      return 'Types'
     case 'users':
       return 'Users'
     default:
@@ -272,7 +265,14 @@ const showUserManagement = computed(() => {
   return isDevelopment.value && isAdmin.value
 })
 
+// Check if user can create notifications (disabled for Viewer and Approver)
+const canCreateNotification = computed(() => {
+  const role = authStore.user?.role as any
+  return role !== UserRole.VIEW_ONLY && role !== UserRole.APPROVAL
+})
+
 const handleCreateNotification = () => {
+  if (!canCreateNotification.value) return
   router.push('/notifications/create')
 }
 
@@ -287,14 +287,6 @@ const handleUserManagementClick = () => {
     if (err.name !== 'NavigationDuplicated') {
       console.error('Navigation error:', err)
     }
-  })
-}
-
-const handleInsightClick = () => {
-  ElNotification({
-    title: 'Info',
-    type: 'info',
-    message: 'This feature is coming soon!',
   })
 }
 
@@ -389,6 +381,44 @@ const confirmLogout = () => {
   letter-spacing: 0;
   border: none;
   transition: all 0.3s ease;
+}
+
+.create-notification-btn:disabled,
+.create-notification-btn.is-disabled {
+  background: #d6d7d8 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.create-notification-btn:disabled:hover,
+.create-notification-btn.is-disabled:hover {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+}
+
+.create-notification-btn:disabled .plus-icon .el-icon,
+.create-notification-btn.is-disabled .plus-icon .el-icon {
+  color: #6b7280 !important;
+}
+
+/* Override Element Plus button disabled styles */
+.create-notification-btn:deep(.el-button.is-disabled),
+.create-notification-btn:deep(.el-button:disabled) {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  border-color: #9ca3af !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  pointer-events: none !important;
+}
+
+.create-notification-btn:deep(.el-button.is-disabled:hover),
+.create-notification-btn:deep(.el-button:disabled:hover) {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  border-color: #9ca3af !important;
 }
 
 .plus-icon {

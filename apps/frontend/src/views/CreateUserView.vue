@@ -17,7 +17,6 @@
             v-model="form.role"
             type="select"
             prop="role"
-            label=""
             placeholder="Select role"
             :options="roleOptions"
             :disabled="loading || mode === 'view'"
@@ -34,7 +33,6 @@
             v-model="form.status"
             type="select"
             prop="status"
-            label=""
             placeholder="Select status"
             :options="statusOptions"
             required
@@ -54,11 +52,11 @@
             label=""
             placeholder="User full name"
             required
-            :disabled="loading || mode === 'edit'"
+            :disabled="loading || mode === 'view'"
             :readonly="mode === 'view'"
           />
         </div>
-
+        
         <!-- Default temporary password info (create mode only) -->
         <p v-if="mode === 'create'" class="text-xs text-gray-500 mt-1">
           Default temporary password for this user:
@@ -78,7 +76,7 @@
             label=""
             placeholder="firstname.lastname.nbc.gov.kh"
             required
-            :disabled="loading"
+            :disabled="loading || mode === 'edit' || mode === 'view'"
             :readonly="mode === 'view'"
           />
         </div>
@@ -94,7 +92,7 @@
             label=""
             placeholder="+855 00 000 000"
             required
-            :disabled="loading"
+            :disabled="loading || mode === 'view'"
             :readonly="mode === 'view'"
             @input="handlePhoneNumberInput"
             @focus="handlePhoneNumberFocus"
@@ -168,7 +166,8 @@ const form = reactive({
 const roleOptions: FormFieldOption[] = [
   { label: 'Editor', value: UserRole.EDITOR },
   { label: 'View Only', value: UserRole.VIEW_ONLY },
-  { label: 'Approval', value: UserRole.APPROVAL },
+  { label: 'Approver', value: UserRole.APPROVAL },
+  { label: 'Administrator', value: UserRole.ADMINISTRATOR },
 ]
 
 const statusOptions: FormFieldOption[] = [
@@ -205,6 +204,7 @@ const resetForm = () => {
   form.username = ''
   form.email = ''
   form.phoneNumber = ''
+  form.email = ''
   formRef.value?.clearValidate()
   clearError()
 }
@@ -226,12 +226,12 @@ const handleSubmit = () => {
         const backendStatus = form.status === 'Deactivate' ? 'DEACTIVATED' : 'ACTIVE'
 
         const success = await userApi.updateUser(userId.value, {
-          username: form.username.trim(), // Include full name update
-          email: lowercaseEmail,
+          username: form.username.trim(),
           role: form.role as UserRole,
           phoneNumber: form.phoneNumber.trim(),
           status: backendStatus,
         })
+
 
         if (success) {
           showSuccess('User updated successfully')
