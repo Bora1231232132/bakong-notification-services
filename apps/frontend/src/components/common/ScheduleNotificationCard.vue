@@ -28,10 +28,28 @@
         Scheduled on {{ formatTime(n) }}
       </div>
 
+      <!-- Approval button for approver role when notification is pending -->
       <button
-        v-if="showButton(n)"  
-        class="mt-2 w-[123px] h-[56px] rounded-[32px] bg-[#0F4AEA] text-white text-[16px] font-semibold leading-[150%] hover:bg-[#0d3bc7] transition-colors"
-        @click="$emit('send-now', n)"
+        v-if="showApprovalButton(n)"  
+        :disabled="!canUseButtons()"
+        class="mt-2 w-[123px] h-[56px] rounded-[32px] text-white text-[16px] font-semibold leading-[150%] transition-colors"
+        :class="canUseButtons() 
+          ? 'bg-[#10B981] hover:bg-[#059669] cursor-pointer' 
+          : 'bg-gray-400 cursor-not-allowed opacity-60'"
+        @click="canUseButtons() && $emit('approve-navigate', n)"
+      >
+        Approval
+      </button>
+
+      <!-- Publish now button for scheduled notifications -->
+      <button
+        v-else-if="showButton(n)"  
+        :disabled="!canUseButtons()"
+        class="mt-2 w-[123px] h-[56px] rounded-[32px] text-white text-[16px] font-semibold leading-[150%] transition-colors"
+        :class="canUseButtons() 
+          ? 'bg-[#0F4AEA] hover:bg-[#0d3bc7] cursor-pointer' 
+          : 'bg-gray-400 cursor-not-allowed opacity-60'"
+        @click="canUseButtons() && $emit('send-now', n)"
       >
         Publish now
       </button>
@@ -42,13 +60,17 @@
 <script setup lang="ts">
 import type { Notification } from '@/services/notificationApi'
 import { containsKhmer } from '@/utils/helpers'
+import { UserRole } from '@bakong/shared'
 
 defineEmits<{
   (e: 'send-now', n: Notification): void
+  (e: 'approve', n: Notification): void
+  (e: 'approve-navigate', n: Notification): void
 }>()
 
 const props = defineProps<{
   notificationsForDay: Notification[]
+  userRole?: string
 }>()
 
 const hasImage = (n: Notification) => {
@@ -75,11 +97,40 @@ const isScheduled = (n: Notification) => {
  * - Frame 78: no image, NO button, height 176.75px
  * - Image + Button: image, WITH button, height 343.74px (275.74 + 56 button + 12 gap)
  */
-const showButton = (n: Notification) => isScheduled(n)
+const isApprover = () => {
+  // Only APPROVAL role can use buttons
+  return props.userRole === UserRole.APPROVAL
+}
+
+const canUseButtons = () => {
+  // Only APPROVAL role can click buttons, others see them disabled
+  return props.userRole === UserRole.APPROVAL
+}
+
+const isPending = (n: Notification) => {
+  const approvalStatus = (n as any).approvalStatus
+  return approvalStatus === 'PENDING'
+}
+
+const showApprovalButton = (n: Notification) => {
+  // Show approval button for all roles when notification is pending (but disabled for non-approvers)
+  return isPending(n)
+}
+
+const isApproved = (n: Notification) => {
+  const approvalStatus = (n as any).approvalStatus
+  return approvalStatus === 'APPROVED' || !approvalStatus // Approved or legacy (no approvalStatus)
+}
+
+const showButton = (n: Notification) => {
+  // Show publish now button for all roles when notification is scheduled and approved (but disabled for non-approvers)
+  return isScheduled(n) && !isPending(n) && isApproved(n)
+}
 
 const cardHeight = (n: Notification) => {
   const hasImg = hasImage(n)
-  const hasBtn = showButton(n)
+  // Check if any button should be shown (approval or publish now)
+  const hasBtn = showApprovalButton(n) || showButton(n)
   
   // if (hasImg && hasBtn) {
   //   // Image + Button case: 275.74px (base) + 56px (button) + 12px (gap) = 343.74px

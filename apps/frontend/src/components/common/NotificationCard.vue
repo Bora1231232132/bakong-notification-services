@@ -81,7 +81,7 @@
               </button>
               
               <!-- Approval Now button for Approver in Pending tab -->
-              <button
+                <button
                 v-if="canShowApprovalNow(notification)"
                 class="approval-now-button"
                 @click="handleApprovalNowClick(notification)"
@@ -475,7 +475,7 @@ const handleViewClick = (notification: Notification) => {
 }
 
 const handleApprovalNowClick = async (notification: Notification) => {
-  const templateId = notification.templateId || notification.id
+    const templateId = notification.templateId || notification.id
   const viewId = templateId
   
   console.log('🔵 [APPROVAL NOW CLICK] Starting approval check for template:', {
@@ -523,7 +523,7 @@ const handleApprovalNowClick = async (notification: Notification) => {
           
           try {
             // Call approve API - backend will auto-expire it
-            await notificationApi.approveTemplate(Number(templateId))
+    await notificationApi.approveTemplate(Number(templateId))
           } catch (error: any) {
             // Check if this is an auto-expiration response
             const isAutoExpired = error.response?.data?.data?.autoExpired === true
@@ -728,12 +728,12 @@ const handleApproveClick = async (notification: Notification) => {
       emit('switch-tab', 'draft')
       emit('refresh', true) // Force refresh to show updated status
     } else {
-      ElNotification({
-        title: 'Error',
+    ElNotification({
+      title: 'Error',
         message: rejectionReason,
-        type: 'error',
-        duration: 3000,
-      })
+      type: 'error',
+      duration: 3000,
+    })
     }
   }
 }
@@ -875,16 +875,17 @@ const handlePublishNowClick = async (notification: Notification) => {
         ElNotification({
           title: 'Success',
           // it will remove this message in the future
-          message: `Notification published and sent to ${successfulCount} user(s) immediately.${failedCount > 0 ? ` (${failedCount} failed)` : ''}`,
+          message: `<strong>Notification published and sent to ${successfulCount} user(s) immediately.</strong>${failedCount > 0 ? ` (${failedCount} failed)` : ''} please wait for a moment to see the notification on the user's device.`,
           type: 'success',
           duration: 3000,
         })
       } else {
         ElNotification({
           title: 'Success',
-          message: 'Notification published successfully.',
+          message: '<strong>Notification published and sent to users immediately.</strong> please wait for a moment to see the notification on the user\'s device.',
           type: 'success',
           duration: 3000,
+          dangerouslyUseHTMLString: true,
         })
       }
     } else {
@@ -895,14 +896,14 @@ const handlePublishNowClick = async (notification: Notification) => {
       if (verifiedData?.isSent === true || verifiedData?.approvalStatus === 'APPROVED') {
         ElNotification({
           title: 'Success',
-          message: `Notification published and sent to users immediately.`,
+          message: `<strong>Notification published and sent to users immediately.</strong> please wait for a moment to see the notification on the user's device.`,
           type: 'success',
           duration: 3000,
         })
       } else {
         ElNotification({
           title: 'Warning',
-          message: 'Notification was updated but may not have been sent. Please check the notification status.',
+          message: '<strong>Notification was updated but may not have been sent.</strong>',
           type: 'warning',
           duration: 5000,
         })

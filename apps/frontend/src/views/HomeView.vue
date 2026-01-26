@@ -959,7 +959,7 @@ const handleSwitchTab = (tab: 'published' | 'scheduled' | 'draft' | 'pending') =
   }
   // Force refresh to get latest data immediately
   fetchNotifications(true).then(() => {
-    applyFilters()
+  applyFilters()
   }).catch(() => {
     // If fetch fails, still apply filters with existing data
     applyFilters()

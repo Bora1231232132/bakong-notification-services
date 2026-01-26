@@ -1975,7 +1975,53 @@ export class TemplateService implements OnModuleInit {
         // Handle non-published notifications (drafts being edited)
         const updatedTemplate = await this.findOneRaw(id)
 
-        if (updatedTemplate.sendType === 'SEND_SCHEDULE' && updatedTemplate.sendSchedule) {
+        // Check if this is converting a scheduled notification to immediate send (Publish now from Schedule page)
+        const isConvertingToImmediateSend = 
+          updatedTemplate.sendType === SendType.SEND_NOW && 
+          updatedTemplate.isSent === true &&
+          oldTemplate.isSent === false // Was not sent before
+
+        if (isConvertingToImmediateSend) {
+          console.log(
+            `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
+          )
+
+          // Fetch template with translations for sending
+          const templateWithTranslations = await this.repo.findOne({
+            where: { id },
+            relations: ['translations', 'translations.image', 'categoryTypeEntity'],
+          })
+
+          if (templateWithTranslations && templateWithTranslations.translations) {
+            try {
+              // Send notification immediately
+              const sendResult = await this.notificationService.sendWithTemplate(
+                templateWithTranslations,
+              )
+
+              if (sendResult && sendResult.successfulCount > 0) {
+                await this.markAsPublished(id)
+                console.log(
+                  `✅ [editPublishedNotification] Template ${id} sent immediately to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`,
+                )
+              } else {
+                console.log(
+                  `⚠️ [editPublishedNotification] Template ${id} updated but no notifications sent`,
+                )
+              }
+            } catch (error) {
+              console.error(
+                `❌ [editPublishedNotification] Failed to send template ${id} immediately:`,
+                error,
+              )
+              // Don't throw error - template was updated, just log the send failure
+            }
+          } else {
+            console.error(
+              `❌ [editPublishedNotification] Template ${id} has no translations, cannot send`,
+            )
+          }
+        } else if (updatedTemplate.sendType === 'SEND_SCHEDULE' && updatedTemplate.sendSchedule) {
           console.log(
             `Scheduling updated notification for template ${id} at ${updatedTemplate.sendSchedule}`,
           )

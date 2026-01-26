@@ -74,9 +74,14 @@ export class CategoryTypeController {
   @Roles(UserRole.ADMINISTRATOR)
   @Post()
   @UseInterceptors(FileInterceptor('icon'))
-  async create(@Body('name') name: string, @UploadedFile() file?: Express.Multer.File) {
+  async create(
+    @Body('name') name: string,
+    @Body('namekh') namekh?: string,
+    @Body('namejp') namejp?: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
     if (!name) {
-      throw new BaseResponseDto({
+      throw new BaseResponseDto({ 
         responseCode: 1,
         errorCode: ErrorCode.VALIDATION_FAILED,
         responseMessage: ResponseMessage.VALIDATION_FAILED,
@@ -94,7 +99,9 @@ export class CategoryTypeController {
     }
 
     const dto: CreateCategoryTypeDto = {
-      name,
+      name: name.trim(),
+      namekh: namekh && namekh.trim() ? namekh.trim() : undefined,
+      namejp: namejp && namejp.trim() ? namejp.trim() : undefined,
       icon: file.buffer,
       mimeType: file.mimetype,
       originalFileName: file.originalname,

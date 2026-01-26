@@ -69,36 +69,36 @@ const router = createRouter({
             },
           },
         },
+        // {
+        //   path: 'types/edit',
+        //   name: 'create-type',
+        //   component: () => import('../views/CreateNewType.vue'),
+        //   meta: {
+        //     breadcrumb: {
+        //       label: 'Create Type',
+        //       parent: { name: 'types', label: 'Types' },
+        //     },
+        //   },
+        // },
         {
-          path: 'templates/create',
-          name: 'create-template',
+          path: 'types/view/:id',
+          name: 'view-type',
           component: () => import('../views/CreateNewType.vue'),
           meta: {
             breadcrumb: {
-              label: 'Create Template',
-              parent: { name: 'templates', label: 'Templates' },
+              label: 'View Type',
+              parent: { name: 'types', label: 'Types' },
             },
           },
         },
         {
-          path: 'templates/view/:id',
-          name: 'view-template',
+          path: 'types/edit/:id',
+          name: 'edit-type',
           component: () => import('../views/CreateNewType.vue'),
           meta: {
             breadcrumb: {
-              label: 'View Template',
-              parent: { name: 'templates', label: 'Types' },
-            },
-          },
-        },
-        {
-          path: 'templates/edit/:id',
-          name: 'edit-template',
-          component: () => import('../views/CreateNewType.vue'),
-          meta: {
-            breadcrumb: {
-              label: 'Edit Template',
-              parent: { name: 'templates', label: 'Templates' },
+              label: 'Edit Type',
+              parent: { name: 'types', label: 'Types' },
             },
           },
         },

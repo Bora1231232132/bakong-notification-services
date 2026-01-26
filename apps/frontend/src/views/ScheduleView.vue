@@ -99,7 +99,10 @@
                 >
                   <ScheduleNotificationCard
                     :notifications-for-day="getNotificationsForDay(day.date)"
+                    :user-role="authStore.user?.role"
                     @send-now="handleSendNow"
+                    @approve="handleApproval"
+                    @approve-navigate="handleApprovalNavigate"
                   />
 
                   <!-- guarantees last item visibility -->
@@ -116,6 +119,7 @@
 </template>
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import type { Notification } from '@/services/notificationApi'
@@ -133,16 +137,27 @@ import {
   getNoUsersAvailableMessage,
 } from '@/utils/helpers'
 
+const router = useRouter()
 const authStore = useAuthStore()
 
 const handleSendNow = async (notification: Notification) => {
+  // Show loading notification immediately (same as NotificationCard)
+  const loadingNotification = ElNotification({
+    title: 'Sending Notification',
+    message: 'Please wait while we send the notification to all users. This may take a moment if there are many recipients...',
+    type: 'info',
+    duration: 0, // Keep it open until we close it manually
+  })
+
   try {
-    const notificationId = typeof notification.id === 'number' ? notification.id : parseInt(String(notification.id))
+    const templateId = notification.templateId || notification.id
+    const notificationId = typeof templateId === 'number' ? templateId : parseInt(String(templateId))
+    
     if (isNaN(notificationId)) {
       throw new Error('Invalid template ID')
     }
 
-    // First, fetch the full template data to get platforms and translations
+    // Fetch full template to get all data FIRST (same as NotificationCard)
     const fullTemplate = await api.get(`/api/v1/template/${notificationId}`)
     const template = fullTemplate.data?.data || fullTemplate.data
 
@@ -150,6 +165,7 @@ const handleSendNow = async (notification: Notification) => {
     const isAlreadySent = template?.isSent === true || notification.isSent === true
 
     if (isAlreadySent) {
+      loadingNotification.close()
       // Notification is already sent - show info message
       ElNotification({
         title: 'Info',
@@ -176,6 +192,7 @@ const handleSendNow = async (notification: Notification) => {
     }
 
     if (!hasValidData) {
+      loadingNotification.close()
       ElNotification({
         title: 'Error',
         message: 'This record cannot be sent. Please review the title and content and try again.',
@@ -185,41 +202,31 @@ const handleSendNow = async (notification: Notification) => {
       return
     }
 
-    // Prepare update payload with existing template data
+    // Prepare update payload - FORCE immediate sending by setting sendType to SEND_NOW
+    // This ensures notifications are sent immediately, not scheduled
     const updatePayload: any = {
-      sendType: SendType.SEND_NOW,
-      isSent: true,
+      isSent: true, // Send immediately
+      sendType: SendType.SEND_NOW, // ALWAYS set to SEND_NOW to force immediate sending
       sendSchedule: null, // Clear schedule when publishing immediately
-    }
-
-    // Include platforms from template (default to [IOS, ANDROID] if not set)
-    if (
-      template?.platforms &&
-      Array.isArray(template.platforms) &&
-      template.platforms.length > 0
-    ) {
-      updatePayload.platforms = template.platforms
-    } else {
-      // Default to both platforms if not set (ALL)
-      updatePayload.platforms = [Platform.IOS, Platform.ANDROID]
-    }
-
-    // Include translations from template
-    if (
-      template?.translations &&
-      Array.isArray(template.translations) &&
-      template.translations.length > 0
-    ) {
-      updatePayload.translations = template.translations.map((t: any) => ({
+      // Keep all other original data
+      platforms: template?.platforms || [], 
+      bakongPlatform: template?.bakongPlatform,
+      notificationType: template?.notificationType,
+      categoryTypeId: template?.categoryTypeId,
+      translations: template?.translations?.map((t: any) => ({
         language: t.language,
         title: t.title,
         content: t.content,
         image: t.image?.fileId || t.imageId || t.image?.id || '',
         linkPreview: t.linkPreview || undefined,
-      }))
+      })) || [],
     }
 
+    // Call API and WAIT for it to complete (same as NotificationCard)
     const result = await notificationApi.updateTemplate(notificationId, updatePayload)
+
+    // Close loading notification
+    loadingNotification.close()
 
     // Check if error response (no users found or approval required)
     if (result?.responseCode !== 0 || result?.errorCode !== 0) {
@@ -268,27 +275,51 @@ const handleSendNow = async (notification: Notification) => {
       return
     }
 
-    // Use unified message handler for draft/failure cases
-    const platformName = getFormattedPlatformName({
-      platformName: result?.data?.platformName,
-      bakongPlatform: result?.data?.bakongPlatform,
-      notification: notification as any,
-    })
+    // Extract response data - handle different response structures (same as NotificationCard)
+    const responseData = result?.data?.data || result?.data || result
+    const successfulCount = responseData?.successfulCount || 0
+    const failedCount = responseData?.failedCount || 0
+    const isSent = responseData?.isSent === true
+    const approvalStatus = responseData?.approvalStatus
 
-    const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
-    const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform)
-    const successfulCount = result?.data?.successfulCount ?? 0
-    const failedCount = result?.data?.failedCount ?? 0
-    const isPartialSuccess = successfulCount > 0 && failedCount > 0
-
-    // Show notification for all cases
-    ElNotification({
-      title: messageConfig.title,
-      message: messageConfig.message,
-      type: messageConfig.type,
-      duration: messageConfig.duration,
-      dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
-    })
+    // Show success message with send results (same as NotificationCard)
+    if (isSent || approvalStatus === 'APPROVED') {
+      if (successfulCount > 0) {
+        ElNotification({
+          title: 'Success',
+          message: `<strong>Notification published and sent to ${successfulCount} user(s) immediately.</strong>${failedCount > 0 ? ` (${failedCount} failed)` : ''} please wait for a moment to see the notification on the user's device.`,
+          type: 'success',
+          duration: 3000,
+        })
+      } else {
+        ElNotification({
+          title: 'Success',
+          message: '<strong>Notification published successfully.</strong> please wait for a moment to see the notification on the user\'s device.',
+          type: 'success',
+          duration: 3000,
+        })
+      }
+    } else {
+      // Fallback: if response doesn't show isSent/APPROVED, fetch template to verify
+      const verifyTemplate = await api.get(`/api/v1/template/${notificationId}`)
+      const verifiedData = verifyTemplate.data?.data || verifyTemplate.data
+      
+      if (verifiedData?.isSent === true || verifiedData?.approvalStatus === 'APPROVED') {
+        ElNotification({
+          title: 'Success',
+          message: `<strong>Notification published and sent to users immediately.</strong> please wait for a moment to see the notification on the user's device.`,
+          type: 'success',
+          duration: 3000,
+        })
+      } else {
+        ElNotification({
+          title: 'Warning',
+          message: '<strong>Notification was updated but may not have been sent.</strong>',
+          type: 'warning',
+          duration: 5000,
+        })
+      }
+    }
 
     // Refresh notifications after publishing
     await fetchNotifications()
@@ -304,12 +335,235 @@ const handleSendNow = async (notification: Notification) => {
       console.warn('Failed to clear HomeView cache:', error)
     }
   } catch (err: any) {
+    // Close loading notification on error
+    loadingNotification.close()
+    
     console.error('Error publishing notification:', err)
     const errorMsg =
       err.response?.data?.responseMessage ||
       err.response?.data?.message ||
       err.message ||
       'Failed to publish notification'
+
+    ElNotification({
+      title: 'Error',
+      message: errorMsg,
+      type: 'error',
+      duration: 5000,
+    })
+    
+    // On error, still refresh to show current state
+    await fetchNotifications()
+  }
+}
+
+const handleApprovalNavigate = async (notification: Notification) => {
+  try {
+    const templateId = notification.templateId || notification.id
+    const viewId = templateId
+    
+    console.log('🔵 [APPROVAL NAVIGATE] Starting approval navigation for template:', {
+      templateId,
+      notificationId: notification.id,
+      sendType: notification.sendType,
+      scheduledTime: (notification as any).scheduledTime,
+    })
+    
+    // Check if this is a scheduled notification that might be expired
+    if (notification.sendType === 'SEND_SCHEDULE' && (notification as any).scheduledTime) {
+      try {
+        // Fetch full template to check scheduled time
+        const fullTemplateResponse = await api.get(`/api/v1/template/${templateId}`)
+        const template = fullTemplateResponse.data?.data || fullTemplateResponse.data
+        
+        console.log('🔵 [APPROVAL NAVIGATE] Fetched template:', {
+          templateId,
+          sendSchedule: template?.sendSchedule,
+          sendType: template?.sendType,
+          approvalStatus: template?.approvalStatus,
+        })
+        
+        if (template?.sendSchedule) {
+          // Parse scheduled time
+          const scheduledTime = new Date(template.sendSchedule)
+          const now = new Date()
+          
+          // Check if scheduled time has passed (with 1 minute grace period)
+          const oneMinuteAgo = new Date(now.getTime() - 60 * 1000)
+          
+          console.log('⏰ [APPROVAL NAVIGATE] Checking scheduled time:', {
+            scheduledTimeUTC: scheduledTime.toISOString(),
+            currentTimeUTC: now.toISOString(),
+            scheduledTimeLocal: scheduledTime.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+            currentTimeLocal: now.toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' }),
+            hasPassed: scheduledTime < oneMinuteAgo,
+          })
+          
+          if (scheduledTime < oneMinuteAgo) {
+            // Scheduled time has passed - auto-expire it
+            console.warn('⏰ [APPROVAL NAVIGATE] Scheduled time has passed - auto-expiring template')
+            
+            try {
+              // Call approve API - backend will auto-expire it
+              await notificationApi.approveTemplate(Number(templateId))
+            } catch (error: any) {
+              // Check if this is an auto-expiration response
+              const isAutoExpired = error.response?.data?.data?.autoExpired === true
+              const expiredReason = error.response?.data?.responseMessage || error.response?.data?.data?.expiredReason || 'Scheduled time has passed. Please contact team member to update the schedule first.'
+              
+              if (isAutoExpired) {
+                console.log('✅ [APPROVAL NAVIGATE] Template auto-expired successfully')
+                ElNotification({
+                  title: 'Notification Expired',
+                  message: `<strong>Scheduled time has expired</strong>. Please contact <strong>team member</strong> to update the schedule first.`,
+                  type: 'warning',
+                  duration: 5000,
+                  dangerouslyUseHTMLString: true,
+                })
+                
+                // Refresh notifications to show updated status
+                await fetchNotifications()
+                return
+              } else {
+                // Unexpected error - still show message
+                console.error('❌ [APPROVAL NAVIGATE] Unexpected error during auto-expiration:', error)
+                ElNotification({
+                  title: 'Error',
+                  message: 'Failed to process expired notification. Please try again.',
+                  type: 'error',
+                  duration: 5000,
+                })
+                await fetchNotifications()
+                return
+              }
+            }
+          } else {
+            // Scheduled time is still valid - proceed to view page
+            console.log('✅ [APPROVAL NAVIGATE] Scheduled time is valid - navigating to view page')
+            router.push(`/notifications/view/${viewId}?fromTab=schedule`)
+          }
+        } else {
+          // No schedule - proceed normally
+          console.log('✅ [APPROVAL NAVIGATE] No schedule - navigating to view page')
+          router.push(`/notifications/view/${viewId}?fromTab=schedule`)
+        }
+      } catch (error) {
+        console.error('❌ [APPROVAL NAVIGATE] Error checking template:', error)
+        // On error, still navigate to view page (fallback)
+        router.push(`/notifications/view/${viewId}?fromTab=schedule`)
+      }
+    } else {
+      // Not a scheduled notification - proceed normally
+      console.log('✅ [APPROVAL NAVIGATE] Not scheduled - navigating to view page')
+      router.push(`/notifications/view/${viewId}?fromTab=schedule`)
+    }
+  } catch (err: any) {
+    console.error('Error navigating to approval page:', err)
+    ElNotification({
+      title: 'Error',
+      message: 'Failed to navigate to approval page. Please try again.',
+      type: 'error',
+      duration: 5000,
+    })
+  }
+}
+
+const handleApproval = async (notification: Notification) => {
+  try {
+    const notificationId = typeof notification.id === 'number' ? notification.id : parseInt(String(notification.id))
+    if (isNaN(notificationId)) {
+      throw new Error('Invalid template ID')
+    }
+
+    const templateId = notification.templateId || notificationId
+
+    // Show loading notification
+    const loadingNotification = ElNotification({
+      title: 'Approving Notification',
+      message: 'Please wait while we approve the notification...',
+      type: 'info',
+      duration: 0,
+    })
+
+    try {
+      // Call approval API
+      const { notificationApi } = await import('@/services/notificationApi')
+      const result = await notificationApi.approveTemplate(Number(templateId))
+
+      // Fetch updated template after approval to get the latest status
+      const { api } = await import('@/services/api')
+      const updatedTemplateResponse = await api.get(`/api/v1/template/${templateId}`)
+      const updatedTemplate = updatedTemplateResponse.data?.data || updatedTemplateResponse.data
+
+      // Determine redirect tab based on sendType and isSent status
+      const isScheduled = 
+        (updatedTemplate?.sendType === 'SEND_SCHEDULE' || updatedTemplate?.sendSchedule !== null) &&
+        updatedTemplate?.isSent === false
+
+      const message = isScheduled 
+        ? '<strong>Notification approved successfully!</strong> It will be sent at the scheduled time and moved to Published tab automatically.'
+        : '<strong>Notification approved and published successfully!</strong> Users will receive it shortly.'
+
+      loadingNotification.close()
+
+      ElNotification({
+        title: 'Success',
+        message: message,
+        type: 'success',
+        duration: 3000,
+        dangerouslyUseHTMLString: true,
+      })
+
+      // Refresh notifications to show updated status
+      await fetchNotifications()
+
+      // Clear HomeView cache to ensure fresh data when navigating to Home
+      try {
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+      } catch (error) {
+        console.warn('Failed to clear HomeView cache:', error)
+      }
+    } catch (error: any) {
+      loadingNotification.close()
+
+      // Check if this is an auto-expiration or auto-rejection due to passed scheduled time
+      const isAutoExpired = error.response?.data?.data?.autoExpired === true
+      const expiredReason = error.response?.data?.responseMessage || error.response?.data?.data?.expiredReason || 'Scheduled time has passed. Please contact team member to update the schedule first.'
+
+      if (isAutoExpired) {
+        ElNotification({
+          title: 'Notification Expired',
+          message: `<strong>Scheduled time has expired</strong>. Please contact <strong>team member</strong> to update the schedule first.`,
+          type: 'warning',
+          duration: 5000,
+          dangerouslyUseHTMLString: true,
+        })
+      } else {
+        const errorMsg =
+          error.response?.data?.responseMessage ||
+          error.response?.data?.message ||
+          error.message ||
+          'Failed to approve notification'
+
+        ElNotification({
+          title: 'Error',
+          message: errorMsg,
+          type: 'error',
+          duration: 5000,
+        })
+      }
+
+      // Refresh notifications even on error to show updated status
+      await fetchNotifications()
+    }
+  } catch (err: any) {
+    console.error('Error approving notification:', err)
+    const errorMsg =
+      err.response?.data?.responseMessage ||
+      err.response?.data?.message ||
+      err.message ||
+      'Failed to approve notification'
 
     ElNotification({
       title: 'Error',
@@ -380,13 +634,23 @@ const formatDateForComparison = (date: Date) => {
 const getNotificationsForDay = (date: Date): Notification[] => {
   const dateStr = formatDateForComparison(date)
   return notifications.value.filter((n) => {
-    // Filter by date
+    // Filter by date - use sendSchedule field which is set in mappedNotifications
+    // This field contains the appropriate date for all notification types:
+    // - sendSchedule for scheduled notifications
+    // - updatedAt for published/sent notifications
+    // - updatedAt or createdAt for pending notifications
     const raw = (n as any).sendSchedule || (n as any).templateStartAt || (n as any).date
     if (!raw) return false
-    const scheduleDate = new Date(raw)
-    if (isNaN(scheduleDate.getTime())) return false
-    const dateMatches = formatDateForComparison(scheduleDate) === dateStr
-    if (!dateMatches) return false
+    
+    try {
+      const scheduleDate = new Date(raw)
+      if (isNaN(scheduleDate.getTime())) return false
+      const dateMatches = formatDateForComparison(scheduleDate) === dateStr
+      if (!dateMatches) return false
+    } catch (error) {
+      // If date parsing fails, skip this notification
+      return false
+    }
 
     // Filter by selected bakongPlatform
     // If no platform is selected, show all (shouldn't happen with current setup)
@@ -410,20 +674,7 @@ const fetchNotifications = async () => {
   error.value = null
 
   try {
-    // Use the existing API endpoint with notification format
-    const notificationResponse = await notificationApi.getAllNotifications({
-      page: 1,
-      pageSize: 1000, // Get all templates for schedule view
-      language: 'KM',
-    })
-
-    // Filter for published and scheduled templates only
-    const filteredNotifications = notificationResponse.data.filter((n) => {
-      const status = n.status?.toLowerCase()
-      return status === 'published' || status === 'scheduled'
-    })
-
-    // Fetch raw template data to get sendSchedule for date matching
+    // Fetch raw template data first to get sendSchedule for filtering
     const rawTemplatesResponse = await api.get('/api/v1/template/all')
     const rawTemplatesMap = new Map<number, any>()
 
@@ -435,6 +686,49 @@ const fetchNotifications = async () => {
       })
     }
 
+    // Use the existing API endpoint with notification format
+    const notificationResponse = await notificationApi.getAllNotifications({
+      page: 1,
+      pageSize: 1000, // Get all templates for schedule view
+      language: 'KM',
+    })
+
+    // Filter for Published, Scheduled, and Pending Approval notifications
+    // Schedule page should show all notifications that have a date/time (sent, scheduled, or pending)
+    const filteredNotifications = notificationResponse.data.filter((n) => {
+      const status = n.status?.toLowerCase()
+      const approvalStatus = (n as any).approvalStatus
+      const templateId = Number(n.templateId || n.id)
+      const rawTemplate = rawTemplatesMap.get(templateId)
+      
+      // Include published notifications (already sent)
+      if (status === 'published' || n.isSent === true) {
+        return true
+      }
+      
+      // Include scheduled notifications (approved, waiting to be sent)
+      if (status === 'scheduled' && (approvalStatus === 'APPROVED' || !approvalStatus)) {
+        return true
+      }
+      
+      // Include pending approval notifications (with or without sendSchedule)
+      // If it has sendSchedule, it's scheduled for future
+      // If it doesn't have sendSchedule but is PENDING, it might be SEND_NOW pending approval
+      if (approvalStatus === 'PENDING') {
+        // Check if it has sendSchedule in raw template data
+        if (rawTemplate?.sendSchedule) {
+          return true
+        }
+        // Also include PENDING notifications even without sendSchedule (they might be SEND_NOW pending)
+        // But only if they have a date (createdAt or updatedAt)
+        if (n.createdAt || (n as any).updatedAt) {
+          return true
+        }
+      }
+      
+      return false
+    })
+
     // Map and normalize the data for schedule view
     const mappedNotifications = filteredNotifications.map((n) => {
       // Normalize status to match component expectations
@@ -443,6 +737,8 @@ const fetchNotifications = async () => {
         normalizedStatus = 'SENT' // Component expects SENT for published
       } else if (normalizedStatus === 'SCHEDULED') {
         normalizedStatus = 'SCHEDULED'
+      } else if (normalizedStatus === 'PENDING') {
+        normalizedStatus = 'PENDING'
       }
 
       // Get sendSchedule from raw template data
@@ -451,19 +747,29 @@ const fetchNotifications = async () => {
       const rawTemplate = rawTemplatesMap.get(templateId)
 
       // Get date for calendar display
-      // For sent/published notifications, use updatedAt (the time it was sent)
-      // For scheduled notifications, use sendSchedule
+      // Priority order:
+      // 1. For scheduled notifications: use sendSchedule
+      // 2. For sent/published notifications: use updatedAt (the time it was sent)
+      // 3. For pending notifications: use sendSchedule if available, otherwise updatedAt or createdAt
       let displayDate: string | Date | undefined
 
-      if (normalizedStatus === 'SENT' || n.isSent) {
-        // Use updatedAt for sent notifications, fallback to createdAt
-        displayDate = (n as any).updatedAt || n.createdAt
-      } else if (rawTemplate?.sendSchedule) {
+      // First check for sendSchedule (scheduled time)
+      if (rawTemplate?.sendSchedule) {
         displayDate = rawTemplate.sendSchedule
-      } else if (rawTemplate?.templateStartAt) {
-        displayDate = rawTemplate.templateStartAt
       } else if (n.sendSchedule) {
         displayDate = n.sendSchedule
+      } 
+      // For sent/published notifications, use updatedAt (the time it was sent)
+      else if (normalizedStatus === 'SENT' || n.isSent || normalizedStatus === 'PUBLISHED') {
+        displayDate = (n as any).updatedAt || n.createdAt
+      } 
+      // For pending notifications without sendSchedule, use updatedAt or createdAt
+      else if (normalizedStatus === 'PENDING') {
+        displayDate = (n as any).updatedAt || n.createdAt
+      }
+      // Fallback to templateStartAt or createdAt
+      else if (rawTemplate?.templateStartAt) {
+        displayDate = rawTemplate.templateStartAt
       } else {
         displayDate = n.createdAt
       }
@@ -504,6 +810,8 @@ const fetchNotifications = async () => {
         description: n.description || n.content || '',
         // Include bakongPlatform: prioritize from notification response, then raw template
         bakongPlatform: (n as any).bakongPlatform || rawTemplate?.bakongPlatform || undefined,
+        // Include approvalStatus for filtering and button display
+        approvalStatus: (n as any).approvalStatus || rawTemplate?.approvalStatus || undefined,
       } as Notification
     })
 

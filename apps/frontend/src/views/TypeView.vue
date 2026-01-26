@@ -138,7 +138,7 @@ const handlePerPageChange = (newPerPage: number) => {
 
 const addNew = () => {
   // Commented out: Add Category feature - coming soon
-  router.push('/templates/create')
+  router.push('/types/create')
 
   // Show notification that feature is coming soon
   // ElNotification({
@@ -197,14 +197,14 @@ const fetchCategoryTypes = async () => {
 const viewItem = (item: any) => {
   const categoryType = item.categoryType as CategoryType
   if (categoryType) {
-    router.push(`/templates/view/${categoryType.id}`)
+    router.push(`/types/view/${categoryType.id}`)
   }
 }
 
 const editItem = (item: any) => {
   const categoryType = item.categoryType as CategoryType
   if (categoryType) {
-    router.push(`/templates/edit/${categoryType.id}`)
+    router.push(`/types/edit/${categoryType.id}`)
   }
 }
 
@@ -266,7 +266,7 @@ watch(
       // Force refresh to get latest mock data
       await fetchCategoryTypes()
       // Remove the refresh param from URL without triggering another refresh
-      router.replace({ path: '/templates', query: {} })
+      router.replace({ path: '/types', query: {} })
     }
   },
   { immediate: false },

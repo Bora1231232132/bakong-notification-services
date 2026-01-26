@@ -322,7 +322,7 @@
                         // Note: v-model already handles the binding, but we log here for debugging
                         // Only update if value actually changed to avoid unnecessary updates
                         if (val !== formData.scheduleTime) {
-                          formData.scheduleTime = val
+                        formData.scheduleTime = val
                           console.log('🟢 [Time Picker Change] Updated formData.scheduleTime to:', val)
                         }
                       }
@@ -1501,10 +1501,10 @@ watch(
     } else if (isEnabled && !isLoadingData.value && wasEnabled === false && !hasLoadedScheduleTime.value && isEditMode.value) {
       // For editing mode, only set date/time if they're not already set
       if (!formData.scheduleDate || formData.scheduleDate === '') {
-        formData.scheduleDate = getTodayDateString()
+      formData.scheduleDate = getTodayDateString()
       }
       if (!formData.scheduleTime || formData.scheduleTime === '') {
-        formData.scheduleTime = getCurrentTimePlaceholder()
+      formData.scheduleTime = getCurrentTimePlaceholder()
       }
     } else if (!isEnabled) {
       // When schedule is turned OFF, clear time but keep date for next time
@@ -1995,19 +1995,19 @@ const handlePublishNowInternal = async () => {
             redirectTab = 'scheduled'
           } else {
             // User disabled schedule - convert to SEND_NOW but stay in scheduled tab
-            sendType = SendType.SEND_NOW
-            isSent = true
+        sendType = SendType.SEND_NOW
+        isSent = true
             redirectTab = 'scheduled'
           }
         } else if (isEditingFromPublished) {
           // Editing from Published tab - preserve published status
           sendType = SendType.SEND_NOW
           isSent = true // Keep as sent
-          redirectTab = 'published'
-          // Clear schedule fields to prevent any scheduling
-          formData.scheduleEnabled = false
-          formData.scheduleDate = ''
-          formData.scheduleTime = ''
+        redirectTab = 'published'
+        // Clear schedule fields to prevent any scheduling
+        formData.scheduleEnabled = false
+        formData.scheduleDate = ''
+        formData.scheduleTime = ''
         } else if (isEditingFromPending) {
           // Editing from Pending Approval tab - preserve pending status
           if (formData.scheduleEnabled) {
@@ -2021,7 +2021,7 @@ const handlePublishNowInternal = async () => {
             // Preserve PENDING status - keep isSent as it was (likely true for pending)
             isSent = originalIsSent.value ?? true
             redirectTab = 'pending'
-          } else {
+      } else {
             sendType = SendType.SEND_NOW
             // Preserve PENDING status - keep isSent as it was (likely true for pending)
             isSent = originalIsSent.value ?? true
@@ -2076,8 +2076,8 @@ const handlePublishNowInternal = async () => {
           // User disabled schedule or no schedule
           sendType = SendType.SEND_NOW
           // EDITOR and ADMIN submissions need approval first (not sent immediately)
-          // When submitting (not saving as draft), isSent should be true
-          isSent = true
+            // When submitting (not saving as draft), isSent should be true
+            isSent = true
           redirectTab = needsApproval ? 'pending' : 'published'
         }
       }
@@ -2390,7 +2390,7 @@ const handlePublishNowInternal = async () => {
         dangerouslyUseHTMLString: true,
       })
       // Stay in scheduled tab
-      redirectTab = 'scheduled'
+        redirectTab = 'scheduled'
     } else {
       // Use unified message handler for draft/failure cases
       const platformName = formatBakongApp(formData.platform)
@@ -2680,7 +2680,7 @@ const handlePublishNowInternal = async () => {
     } catch (error) {
       console.warn('Failed to update localStorage:', error)
     }
-    
+
     if (isEditMode.value) {
       // Add cache-busting query parameter to force fresh data fetch
       const cacheBuster = Date.now()
@@ -3146,14 +3146,15 @@ const handleApprovalFromView = async () => {
     const redirectTab = isScheduled ? 'scheduled' : 'published'
     
     const message = isScheduled 
-      ? 'Notification approved successfully! It will be sent at the scheduled time and moved to Published tab automatically.'
-      : 'Notification approved and published successfully! Users will receive it shortly.'
+      ? '<strong>Notification approved successfully</strong>, It will be sent at the scheduled time and moved to Published tab automatically.'
+      : '<strong>Notification approved and published successfully</strong>, Users will receive it shortly.'
     
     ElNotification({
       title: 'Success',
       message: message,
       type: 'success',
       duration: 3000,
+      dangerouslyUseHTMLString: true,
     })
     
     // Set localStorage immediately to ensure tab switches instantly

@@ -191,8 +191,8 @@ const route = useRoute()
 const categoryTypesStore = useCategoryTypesStore()
 
 // Check if in view or edit mode
-const isViewMode = computed(() => route.name === 'view-template')
-const isEditMode = computed(() => route.name === 'edit-template')
+const isViewMode = computed(() => route.name === 'view-type')
+const isEditMode = computed(() => route.name === 'edit-type')
 const categoryTypeId = computed(() => {
   if ((isViewMode.value || isEditMode.value) && route.params.id) {
     return parseInt(route.params.id as string)
@@ -289,9 +289,9 @@ const handleCreate = async () => {
 
     showSuccess(`Category type "${typeName.value}" created successfully`)
 
-    // Navigate back to templates list with refresh trigger
+    // Navigate back to types list with refresh trigger
     router.replace({
-      path: '/templates',
+      path: '/types',
       query: { refresh: Date.now().toString() },
     })
   } catch (error) {
@@ -341,9 +341,9 @@ const handleUpdate = async () => {
 
     showSuccess(`Category type "${typeName.value}" updated successfully`)
 
-    // Navigate back to templates list with refresh trigger
+    // Navigate back to types list with refresh trigger
     router.replace({
-      path: '/templates',
+      path: '/types',
       query: { refresh: Date.now().toString() },
     })
   } catch (error) {
