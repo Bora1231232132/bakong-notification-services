@@ -786,9 +786,10 @@ const handleSubmitClick = async (notification: Notification) => {
     
     ElNotification({
       title: 'Success',
-      message: 'Notification has been submitted for approval. It will appear in the Pending Approval tab.',
+      message: '<strong>Notification has been submitted for approval</strong>. It will appear in the Pending Approval tab.',
       type: 'success',
       duration: 3000,
+      dangerouslyUseHTMLString: true,
     })
     
     // Emit update event with the updated notification for immediate UI update
@@ -798,11 +799,37 @@ const handleSubmitClick = async (notification: Notification) => {
     // Refresh in background to get the latest data from server
     emit('refresh')
   } catch (error: any) {
+    // Extract error message
+    const errorMessage = error.response?.data?.responseMessage || error.message || 'Failed to submit template for approval'
+    
+    // Check if this is an expired template error - show as warning instead of error
+    const isExpiredTemplateError = 
+      errorMessage.includes('scheduled time was set') ||
+      errorMessage.includes('has now passed') ||
+      errorMessage.includes('expired') ||
+      error.response?.data?.data?.scheduleTimeDisplay
+    
+    // If expired template error, format the message with bold schedule time
+    let formattedMessage = errorMessage
+    if (isExpiredTemplateError) {
+      const scheduleTimeDisplay = error.response?.data?.data?.scheduleTimeDisplay
+      if (scheduleTimeDisplay) {
+        formattedMessage = `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`
+      } else if (errorMessage.includes('scheduled time was set')) {
+        // Extract time from message if available
+        formattedMessage = errorMessage.replace(
+          /The scheduled time was set to (.+?), and it has now passed/,
+          'The scheduled time was set to <strong>$1</strong>, and it has now passed'
+        )
+      }
+    }
+    
     ElNotification({
-      title: 'Error',
-      message: error.response?.data?.responseMessage || 'Failed to submit template for approval',
-      type: 'error',
-      duration: 3000,
+      title: isExpiredTemplateError ? 'Warning' : 'Error',
+      message: formattedMessage,
+      type: isExpiredTemplateError ? 'warning' : 'error',
+      duration: 5000,
+      dangerouslyUseHTMLString: isExpiredTemplateError && formattedMessage.includes('<strong>'),
     })
   }
 }

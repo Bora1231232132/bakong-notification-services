@@ -653,14 +653,26 @@ export class NotificationService {
 
         const trans = this.templateService.findBestTranslation(notification.template, dto.language)
         const imageUrl = trans?.imageId ? this.imageService.buildImageUrl(trans.imageId, req) : ''
+        
+        const baseUrl = this.baseFunctionHelper
+          ? this.baseFunctionHelper.getBaseUrl(req)
+          : 'http://localhost:4005'
+        
+        const language = (dto.language || 'EN') as Language
+        const categoryIcon = notification.template?.categoryTypeId
+          ? `${baseUrl}/api/v1/category-type/${notification.template.categoryTypeId}/icon`
+          : undefined
 
         const result = InboxResponseDto.buildSendApiNotificationData(
           notification.template,
           trans,
-          dto.language,
+          language,
           typeof imageUrl === 'string' ? imageUrl : '',
           notification.id,
           notification.sendCount,
+          baseUrl,
+          req,
+          categoryIcon,
         )
 
         return BaseResponseDto.success({
@@ -944,13 +956,30 @@ export class NotificationService {
       // Only mark as published if FCM send was successful
       await this.templateService.markAsPublished(template.id, req?.user)
 
+      // 12) response build
+      const baseUrl = this.baseFunctionHelper
+        ? this.baseFunctionHelper.getBaseUrl(req)
+        : 'http://localhost:4005'
+
+      const language = (dto.language || 'EN') as Language
+      
+      // Only build categoryIcon for v2
+      const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+      const categoryIcon = isV2 && template?.categoryTypeId
+        ? `${baseUrl}/api/v1/category-type/${template?.categoryTypeId}/icon`
+        : undefined
+      
       const whatNews = InboxResponseDto.buildSendApiNotificationData(
         template,
         responseTranslation,
-        dto.language,
+        language,
         typeof imageUrl === 'string' ? imageUrl : '',
         firstRecord.id,
         firstRecord.sendCount,
+        baseUrl,
+        req,
+        categoryIcon,
+        fcmResult && typeof fcmResult === 'object' && 'failedUsers' in fcmResult ? fcmResult.failedUsers : undefined,
       )
 
       // Include successful count and failed users in response
@@ -960,6 +989,24 @@ export class NotificationService {
         responseData.failedCount = fcmResult.failedCount
         responseData.failedUsers = fcmResult.failedUsers || []
         responseData.failedDueToInvalidTokens = fcmResult.failedDueToInvalidTokens || false
+        
+        // For v2: Add successfulUsers array (list of accountIds that received the notification)
+        const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+        if (isV2) {
+          // Get successful users from validUsers (users that were sent to successfully)
+          // We need to track which users were successful - this should come from fcmResult
+          // For now, we'll extract from validUsers that were sent to
+          // In shared mode, all validUsers are sent to, so successful users = validUsers - failedUsers
+          const successfulUsers: string[] = []
+          if (validUsers && Array.isArray(validUsers)) {
+            const failedUserAccountIds = new Set((fcmResult.failedUsers || []).map((u: string) => String(u)))
+            successfulUsers.push(...validUsers
+              .filter((u) => u.accountId && !failedUserAccountIds.has(String(u.accountId)))
+              .map((u) => String(u.accountId))
+            )
+          }
+          responseData.successfulUsers = successfulUsers
+        }
       }
 
       return BaseResponseDto.success({
@@ -2242,6 +2289,17 @@ export class NotificationService {
     const imageUrl = selectedTranslation?.imageId
       ? this.imageService.buildImageUrl(selectedTranslation.imageId, req)
       : ''
+    
+    const baseUrl = this.baseFunctionHelper
+      ? this.baseFunctionHelper.getBaseUrl(req)
+      : 'http://localhost:4005'
+    
+    // Only build categoryIcon for v2
+    const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+    const categoryIcon = isV2 && selectedTemplate?.categoryTypeId
+      ? `${baseUrl}/api/v1/category-type/${selectedTemplate.categoryTypeId}/icon`
+      : undefined
+    
     const whatNews = InboxResponseDto.buildSendApiNotificationData(
       selectedTemplate,
       selectedTranslation,
@@ -2249,6 +2307,9 @@ export class NotificationService {
       typeof imageUrl === 'string' ? imageUrl : '',
       saved.id,
       saved.sendCount,
+      baseUrl,
+      req,
+      categoryIcon,
     )
     return BaseResponseDto.success({
       data: { whatnews: whatNews },
@@ -2515,6 +2576,7 @@ export class NotificationService {
               this.baseFunctionHelper.getBaseUrl(req),
               this.templateService,
               this.imageService,
+              req,
             ),
         ),
         PaginationUtils.generateResponseMessage(

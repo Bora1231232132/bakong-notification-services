@@ -1,5 +1,6 @@
 import 'reflect-metadata'
 import { HttpAdapterHost, NestFactory, Reflector } from '@nestjs/core'
+import { VersioningType } from '@nestjs/common'
 import helmet from 'helmet'
 import express from 'express'
 import { AllExceptionsFilter } from './common/middleware/exception.filter'
@@ -68,7 +69,14 @@ async function bootstrap() {
   })
 
   app.use(helmet())
-  app.setGlobalPrefix('/api/v1')
+  app.setGlobalPrefix('/api')
+  
+  // Enable versioning: v1 and v2
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  })
+  
   app.useGlobalPipes(GlobalValidationPipe)
   app.useGlobalInterceptors(
     new ResponseFormatInterceptor(),

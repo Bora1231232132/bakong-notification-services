@@ -35,6 +35,8 @@ import {
   UserRole,
 } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
+import { InboxResponseDto } from '../notification/dto/inbox-response.dto'
+import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 
 @Injectable()
 export class TemplateService implements OnModuleInit {
@@ -53,13 +55,14 @@ export class TemplateService implements OnModuleInit {
     public readonly notificationService: NotificationService,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly imageService: ImageService,
+    private readonly baseFunctionHelper?: BaseFunctionHelper,
   ) {}
 
   async onModuleInit() {
     await this.pickPendingSchedule()
   }
 
-  async create(dto: CreateTemplateDto, currentUser?: any) {
+  async create(dto: CreateTemplateDto, currentUser?: any, req?: any) {
     console.log('🔵 [TEMPLATE CREATE] Starting template creation:', {
       notificationType: dto.notificationType,
       sendType: dto.sendType,
@@ -689,7 +692,7 @@ export class TemplateService implements OnModuleInit {
     return this.formatTemplateResponse(templateWithTranslations)
   }
 
-  async update(id: number, dto: UpdateTemplateDto, currentUser?: any) {
+  async update(id: number, dto: UpdateTemplateDto, currentUser?: any, req?: any) {
     console.log(`\n🔵 [UPDATE] ========== START UPDATE REQUEST ==========`)
     console.log(`🔵 [UPDATE] Template ID: ${id}`)
     console.log(`🔵 [UPDATE] Current User: ${currentUser?.username || 'NO USER'} (Role: ${currentUser?.role || 'NO ROLE'})`)
@@ -743,7 +746,7 @@ export class TemplateService implements OnModuleInit {
       console.log(`🔵 [UPDATE] Routing to editPublishedNotification (template is APPROVED and not approver publishing pending)`)
       // Always use editPublishedNotification for approved/published notifications
       // This method handles updates without re-sending FCM notifications
-      return await this.editPublishedNotification(id, dto, currentUser)
+      return await this.editPublishedNotification(id, dto, currentUser, req)
     }
     
     if (isApproverPublishingPending) {
@@ -1319,7 +1322,7 @@ export class TemplateService implements OnModuleInit {
             // Reload to get updated isSent value
             const reloadedTemplate = await this.findOneRaw(id)
             ;(reloadedTemplate as any).savedAsDraftNoUsers = true
-            return this.formatTemplateResponse(reloadedTemplate)
+            return this.formatTemplateResponse(reloadedTemplate, req)
           } else if (sendResult.successfulCount > 0 || isApproverPublishNow) {
             // Successfully sent to at least some users, mark as published
             // OR if approver used "Publish Now", mark as published even if no users (approver's explicit action)
@@ -1426,7 +1429,7 @@ export class TemplateService implements OnModuleInit {
             ;(reloadedTemplate as any).failedCount = sendResult.failedCount
             ;(reloadedTemplate as any).failedUsers = sendResult.failedUsers || []
             ;(reloadedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
-            return this.formatTemplateResponse(reloadedTemplate)
+            return this.formatTemplateResponse(reloadedTemplate, req)
           }
         }
       }
@@ -1492,7 +1495,7 @@ export class TemplateService implements OnModuleInit {
             ;(fixedTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
           }
           console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
-          return this.formatTemplateResponse(fixedTemplate)
+          return this.formatTemplateResponse(fixedTemplate, req)
         }
       }
       
@@ -1523,7 +1526,7 @@ export class TemplateService implements OnModuleInit {
       }
       
       console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
-      return this.formatTemplateResponse(finalTemplate)
+      return this.formatTemplateResponse(finalTemplate, req)
     } catch (error) {
       console.error('Error updating template:', error)
       if (error instanceof BadRequestException || error instanceof HttpException) {
@@ -1572,8 +1575,59 @@ export class TemplateService implements OnModuleInit {
       )
     }
 
+    // CRITICAL: Block submission of EXPIRED templates - user must update schedule time first
+    if (template.approvalStatus === ApprovalStatus.EXPIRED) {
+      // Check if sendSchedule is still in the past
+      if (template.sendSchedule) {
+        const scheduleDate = new Date(template.sendSchedule)
+        const nowUTC = new Date()
+        if (scheduleDate.getTime() <= nowUTC.getTime()) {
+          // Format the schedule time for the error message (convert UTC to Cambodia time)
+          const scheduleDateObj = new Date(template.sendSchedule)
+          const datePart = scheduleDateObj.toLocaleDateString('en-US', {
+            month: 'numeric',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'Asia/Phnom_Penh',
+          })
+          const timePart = scheduleDateObj.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: 'Asia/Phnom_Penh',
+          })
+          const scheduleTimeDisplay = `${datePart} at ${timePart}`
+          this.logger.warn(
+            `⏰ [SUBMIT] Blocking submission of expired template ${id}: scheduled time ${template.sendSchedule} has passed`,
+          )
+          throw new BadRequestException(
+            new BaseResponseDto({
+              responseCode: 1,
+              errorCode: ErrorCode.VALIDATION_FAILED,
+              responseMessage: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+              data: {
+                scheduleTimeDisplay: scheduleTimeDisplay,
+              },
+            }),
+          )
+        }
+      } else {
+        // Template is marked as EXPIRED but has no sendSchedule - still block it
+        this.logger.warn(
+          `⏰ [SUBMIT] Blocking submission of expired template ${id} (no sendSchedule)`,
+        )
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.VALIDATION_FAILED,
+            responseMessage: 'This template has expired. Please update the schedule time before resubmitting.',
+          }),
+        )
+      }
+    }
+
     // Allow submission if approvalStatus is null (DRAFT) or REJECTED
-    // No need to check for null explicitly - if it's not PENDING or APPROVED, it's allowed
+    // No need to check for null explicitly - if it's not PENDING, APPROVED, or EXPIRED, it's allowed
 
     await this.repo.update(id, {
       approvalStatus: ApprovalStatus.PENDING,
@@ -1807,7 +1861,7 @@ export class TemplateService implements OnModuleInit {
     return await this.findOneRaw(id)
   }
 
-  async editPublishedNotification(id: number, dto: UpdateTemplateDto, currentUser?: any) {
+  async editPublishedNotification(id: number, dto: UpdateTemplateDto, currentUser?: any, req?: any) {
     const oldTemplate = await this.findOneRaw(id)
 
     try {
@@ -1970,7 +2024,7 @@ export class TemplateService implements OnModuleInit {
 
         // Return the updated template (same ID)
         const templateToReturn = await this.findOneRaw(id)
-        return this.formatTemplateResponse(templateToReturn)
+        return this.formatTemplateResponse(templateToReturn, req)
       } else {
         // Handle non-published notifications (drafts being edited)
         const updatedTemplate = await this.findOneRaw(id)
@@ -2049,7 +2103,7 @@ export class TemplateService implements OnModuleInit {
 
         // Return the updated template (same ID)
         const templateToReturn = await this.findOneRaw(id)
-        return this.formatTemplateResponse(templateToReturn)
+        return this.formatTemplateResponse(templateToReturn, req)
       }
     } catch (error) {
       console.error('Error editing published notification:', error)
@@ -2072,7 +2126,7 @@ export class TemplateService implements OnModuleInit {
     }
   }
 
-  async remove(id: number) {
+  async remove(id: number, req?: any) {
     const template = await this.findOneRaw(id)
     this.validateModificationTemplate(template, true)
 
@@ -2081,7 +2135,7 @@ export class TemplateService implements OnModuleInit {
     }
 
     await this.repo.delete(id)
-    return this.formatTemplateResponse(template)
+    return this.formatTemplateResponse(template, req)
   }
 
   async forceDeleteTemplate(id: number) {
@@ -2095,7 +2149,7 @@ export class TemplateService implements OnModuleInit {
     return this.formatTemplateResponse(template)
   }
 
-  all(language?: string) {
+  all(language?: string, req?: any) {
     const defaultLanguage = language || 'KM'
 
     const templates = this.repo
@@ -2116,11 +2170,11 @@ export class TemplateService implements OnModuleInit {
           b.isSent && b.updatedAt ? b.updatedAt : b.sendSchedule || b.updatedAt || b.createdAt
         return dateB.getTime() - dateA.getTime()
       })
-      return items.map((item) => this.formatTemplateResponse(item))
+      return items.map((item) => this.formatTemplateResponse(item, req))
     })
   }
 
-  async findTemplates(page?: number, size?: number, isAscending?: boolean, language?: string) {
+  async findTemplates(page?: number, size?: number, isAscending?: boolean, language?: string, req?: any) {
     const { skip, take } = PaginationUtils.normalizePagination(page || 1, size || 12)
     const defaultLanguage = language || 'KM'
 
@@ -2142,7 +2196,7 @@ export class TemplateService implements OnModuleInit {
 
     const items = allItems.slice(skip, skip + take)
 
-    const formattedItems = items.map((item) => this.formatTemplateResponse(item))
+    const formattedItems = items.map((item) => this.formatTemplateResponse(item, req))
     const paginationMeta = PaginationUtils.calculatePaginationMeta(
       page || 1,
       size || 12,
@@ -2164,6 +2218,7 @@ export class TemplateService implements OnModuleInit {
     size?: number,
     _isAscending?: boolean,
     _language?: string,
+    req?: any,
   ) {
     try {
       const { skip, take } = PaginationUtils.normalizePagination(page || 1, size || 100)
@@ -2259,7 +2314,7 @@ export class TemplateService implements OnModuleInit {
     }
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, req?: any) {
     const template = await this.repo.findOne({
       where: { id },
       relations: ['translations', 'translations.image'],
@@ -2274,7 +2329,7 @@ export class TemplateService implements OnModuleInit {
       )
     }
 
-    return this.formatTemplateResponse(template)
+    return this.formatTemplateResponse(template, req)
   }
 
   async findOneRaw(id: number) {
@@ -2297,9 +2352,23 @@ export class TemplateService implements OnModuleInit {
 
     return template
   }
-  private formatTemplateResponse(template: Template) {
+  private formatTemplateResponse(template: Template, req?: any) {
     // Parse platforms to ensure it's always an array in the response
     const parsedPlatforms = ValidationHelper.parsePlatforms(template.platforms)
+
+    const baseUrl = this.baseFunctionHelper
+      ? this.baseFunctionHelper.getBaseUrl(req)
+      : 'http://localhost:4005'
+    
+    // Detect V2 version
+    const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+
+    const categoryIcon = (isV2 && template.categoryTypeId)
+      ? `${baseUrl}/api/v1/category-type/${template.categoryTypeId}/icon`
+      : undefined
+
+    // Determine request language for categoryType translation
+    const language = (req?.query?.language || req?.body?.language || 'EN') as Language
 
     const formattedTemplate: any = {
       templateId: template.id,
@@ -2307,8 +2376,11 @@ export class TemplateService implements OnModuleInit {
       bakongPlatform: template.bakongPlatform,
       sendType: template.sendType,
       notificationType: template.notificationType,
-      categoryType: template.categoryTypeEntity?.name,
+      categoryType: isV2
+        ? (InboxResponseDto.getCategoryDisplayName(template.categoryTypeEntity, language) || 'Other')
+        : template.categoryTypeEntity?.name,
       categoryTypeId: template.categoryTypeId,
+      categoryIcon: categoryIcon,
       priority: template.priority,
       sendInterval: template.sendInterval
         ? {

@@ -22,6 +22,21 @@
           resize="vertical"
         /> -->
       </div>
+      <!-- Expired Time Display: Only show for expired templates in draft tab -->
+      <div 
+        v-if="(isEditMode || isViewMode) && fromTab === 'draft' && expiredScheduleTime" 
+        class="reject-reason-container expired-time-container"
+      >
+        <div class="reject-reason-header">
+          <el-icon class="reject-reason-icon"><WarningFilled /></el-icon>
+          <div class="reject-reason-label">
+            Expired Time: 
+            <span class="reject-reason-text">
+              The scheduled time was set to <strong>{{ expiredScheduleTime }}</strong>, and it has now passed. Please update the schedule time before resubmitting.
+            </span>
+          </div>
+        </div>
+      </div>
         <div class="form-group">
           <ImageUpload
             :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
@@ -366,7 +381,7 @@
                       v-model="formData.showPerDay"
                       :min="1"
                       :max="10"
-                      :disabled="true"
+                      :disabled="isReadOnly"
                       controls-position="right"
                       class="flash-number-input"
                     />
@@ -384,7 +399,7 @@
                       v-model="formData.maxDayShowing"
                       :min="1"
                       :max="30"
-                      :disabled="true"
+                      :disabled="isReadOnly"
                       controls-position="right"
                       class="flash-number-input"
                     />
@@ -1039,6 +1054,10 @@ const scheduleTimeModel = computed({
 const templateCreatedAt = ref<Date | null>(null)
 // Store rejection reason for rejected templates
 const rejectReasonText = ref<string>('')
+// Store expired schedule time for expired templates
+const expiredScheduleTime = ref<string | null>(null)
+// Store original sendSchedule from template for validation
+const originalSendSchedule = ref<string | null>(null)
 
 const loadNotificationData = async () => {
   // Load data for both edit mode and view mode
@@ -1065,6 +1084,9 @@ const loadNotificationData = async () => {
       templateCreatedAt.value = null
     }
 
+    // Store original sendSchedule for validation
+    originalSendSchedule.value = template.sendSchedule || null
+
     // Check if editing a published notification
     // Only restrict fields if explicitly from Published tab (already sent to users)
     // Pending/Scheduled notifications haven't been sent yet, so allow full editing
@@ -1090,15 +1112,44 @@ const loadNotificationData = async () => {
     })
     if (template.approvalStatus === 'REJECTED') {
       rejectReasonText.value = template.reasonForRejection || ''
+      expiredScheduleTime.value = null // Clear expired time for rejected templates
       console.log('✅ [Load Data] Rejection reason loaded:', {
         approvalStatus: template.approvalStatus,
         reasonForRejection: template.reasonForRejection,
         rejectReasonText: rejectReasonText.value,
         fromTab: fromTab.value,
       })
+    } else if (template.approvalStatus === 'EXPIRED') {
+      // Store expired schedule time for expired templates
+      rejectReasonText.value = '' // Clear reject reason for expired templates
+      if (template.sendSchedule) {
+        try {
+          const { date, time } = DateUtils.formatUTCToCambodiaDateTime(template.sendSchedule)
+          if (date && time) {
+            // Format: "M/D/YYYY at HH:mm"
+            expiredScheduleTime.value = `${date} at ${time}`
+            console.log('✅ [Load Data] Expired schedule time loaded:', {
+              approvalStatus: template.approvalStatus,
+              sendSchedule: template.sendSchedule,
+              formattedDate: date,
+              formattedTime: time,
+              expiredScheduleTime: expiredScheduleTime.value,
+              fromTab: fromTab.value,
+            })
+          } else {
+            expiredScheduleTime.value = null
+          }
+        } catch (error) {
+          console.error('❌ [Load Data] Error formatting expired schedule time:', error)
+          expiredScheduleTime.value = null
+        }
+      } else {
+        expiredScheduleTime.value = null
+      }
     } else {
       rejectReasonText.value = ''
-      console.log('⚠️ [Load Data] No rejection reason found or not rejected:', {
+      expiredScheduleTime.value = null
+      console.log('⚠️ [Load Data] No rejection reason or expired time found:', {
         approvalStatus: template.approvalStatus,
       })
     }
@@ -1243,6 +1294,11 @@ const loadNotificationData = async () => {
         const linkPreview = t.linkPreview || ''
         const fileId = t.image?.fileId || t.image?.fileID || t.imageId || t.image?.id
 
+        // CRITICAL: Store existing image ID FIRST before setting imageUrl
+        // This ensures existingImageIds is always set even if imageUrl becomes null later
+        existingImageIds[lang] = fileId || null
+        originalImageIds[lang] = fileId || null
+
         // Set current values
         languageFormData[lang].title = title
         languageFormData[lang].description = description
@@ -1256,7 +1312,8 @@ const loadNotificationData = async () => {
         originalLanguageFormData[lang].linkToSeeMore = linkPreview
         originalLanguageFormData[lang].imageUrl = fileId ? `/api/v1/image/${fileId}` : null
         originalLanguageFormData[lang].imageFile = null
-        originalImageIds[lang] = fileId || null
+        
+        console.log('🖼️ [Load Data] Set existing image ID for', lang, ':', existingImageIds[lang])
 
         // Store translation ID to preserve it during updates
         existingTranslationIds[lang] = t.id || null
@@ -1678,6 +1735,199 @@ const isNotificationOld = (): boolean => {
 }
 
 const handlePublishNow = async () => {
+  // ========== EXPIRED TEMPLATE VALIDATION - MUST RUN FIRST ==========
+  // Check if template is expired or if current schedule time is in the past
+  // This prevents submission of expired templates
+  // Run this check for ALL submissions BEFORE any other logic
+  console.log('🔍 [Expired Check] Validating schedule time before submission:', {
+    scheduleEnabled: formData.scheduleEnabled,
+    scheduleDate: formData.scheduleDate,
+    scheduleTime: formData.scheduleTime,
+    isEditMode: isEditMode.value,
+    notificationId: notificationId.value,
+    expiredScheduleTime: expiredScheduleTime.value,
+    isTemplateExpired: isTemplateExpired.value,
+    originalSendSchedule: originalSendSchedule.value,
+  })
+
+  // CRITICAL: Check if template is already marked as EXPIRED - block submission immediately
+  if (isEditMode.value && isTemplateExpired.value) {
+    const scheduleTimeDisplay = expiredScheduleTime.value || 'the scheduled time'
+    console.error('❌ [Expired Check] BLOCKED - Template is already EXPIRED:', {
+      isTemplateExpired: isTemplateExpired.value,
+      expiredScheduleTime: expiredScheduleTime.value,
+      originalSendSchedule: originalSendSchedule.value,
+    })
+    ElNotification({
+      title: 'Warning',
+      message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+      type: 'warning',
+      duration: 5000,
+      dangerouslyUseHTMLString: true,
+    })
+    return
+  }
+
+  // Check if we have an original sendSchedule that's in the past (works even if scheduleEnabled is false)
+  if (isEditMode.value && originalSendSchedule.value) {
+    try {
+      const originalScheduleDate = new Date(originalSendSchedule.value)
+      const nowUTC = new Date()
+      if (originalScheduleDate.getTime() <= nowUTC.getTime()) {
+        // Original schedule is in the past - check if user has updated it
+        // If schedule is enabled, check if formData date/time is still in the past
+        if (formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime) {
+          const dateStr = String(formData.scheduleDate).trim()
+          const timeStr = String(formData.scheduleTime).trim()
+          const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
+          const timePattern = /^\d{2}:\d{2}$/
+          
+          if (datePattern.test(dateStr) && timePattern.test(timeStr)) {
+            try {
+              const currentScheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+              // Check if current schedule time is still in the past
+              if (currentScheduleDateTime.getTime() <= nowUTC.getTime()) {
+                const scheduleTimeDisplay = expiredScheduleTime.value || `${dateStr} at ${timeStr}`
+                console.error('❌ [Expired Check] BLOCKED - Schedule time is still in the past (fallback check):', {
+                  originalSendSchedule: originalSendSchedule.value,
+                  currentScheduleDateTime: currentScheduleDateTime.toISOString(),
+                  nowUTC: nowUTC.toISOString(),
+                  scheduleTimeDisplay,
+                })
+                ElNotification({
+                  title: 'Warning',
+                  message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+                  type: 'warning',
+                  duration: 5000,
+                  dangerouslyUseHTMLString: true,
+                })
+                return
+              }
+            } catch (error) {
+              // If parsing fails, continue with normal validation
+              console.warn('⚠️ [Expired Check] Could not parse current schedule, continuing with normal validation:', error)
+            }
+          }
+        } else if (!formData.scheduleEnabled) {
+          // Schedule is disabled BUT original sendSchedule is in the past - block submission
+          // User must update the schedule time before resubmitting
+          const scheduleTimeDisplay = expiredScheduleTime.value || DateUtils.formatUTCToCambodiaDateTime(originalSendSchedule.value).time
+          console.error('❌ [Expired Check] BLOCKED - Original schedule is expired and schedule is disabled:', {
+            originalSendSchedule: originalSendSchedule.value,
+            scheduleEnabled: formData.scheduleEnabled,
+            scheduleTimeDisplay,
+          })
+          ElNotification({
+            title: 'Warning',
+            message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+            type: 'warning',
+            duration: 5000,
+            dangerouslyUseHTMLString: true,
+          })
+          return
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [Expired Check] Could not parse original sendSchedule, continuing with normal validation:', error)
+    }
+  }
+
+  // Primary validation: Check if schedule is enabled and time is in the past
+  if (formData.scheduleEnabled) {
+    // Schedule is enabled - must check if time is in the past
+    if (formData.scheduleDate && formData.scheduleTime) {
+      const dateStr = String(formData.scheduleDate).trim()
+      const timeStr = String(formData.scheduleTime).trim()
+      const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
+      const timePattern = /^\d{2}:\d{2}$/
+
+      console.log('🔍 [Expired Check] Validating date/time format:', {
+        dateStr,
+        timeStr,
+        dateMatches: datePattern.test(dateStr),
+        timeMatches: timePattern.test(timeStr),
+      })
+
+      if (datePattern.test(dateStr) && timePattern.test(timeStr)) {
+        try {
+          const scheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+          const nowUTC = new Date()
+          const diffMs = scheduleDateTime.getTime() - nowUTC.getTime()
+
+          console.log('🔍 [Expired Check] Schedule time comparison:', {
+            scheduleDateTime: scheduleDateTime.toISOString(),
+            nowUTC: nowUTC.toISOString(),
+            diffMs,
+            isPast: diffMs <= 0,
+          })
+
+          if (diffMs <= 0) {
+            // Schedule time is in the past - show error message and prevent submission
+            const scheduleTimeDisplay = expiredScheduleTime.value || `${dateStr} at ${timeStr}`
+            console.error('❌ [Expired Check] BLOCKED - Schedule time is in the past:', {
+              scheduleTimeDisplay,
+              scheduleDateTime: scheduleDateTime.toISOString(),
+              nowUTC: nowUTC.toISOString(),
+            })
+            ElNotification({
+              title: 'Warning',
+              message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+              type: 'warning',
+              duration: 5000,
+              dangerouslyUseHTMLString: true,
+            })
+            return
+          }
+          // Schedule time is in the future - allow submission to proceed
+          console.log('✅ [Expired Check] Schedule time is valid (in the future)')
+        } catch (error) {
+          console.error('❌ [Expired Template Check] Error parsing schedule:', error)
+          ElNotification({
+            title: 'Error',
+            message: 'Invalid date or time format. Please check your schedule time.',
+            type: 'error',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          return
+        }
+      } else {
+        // Schedule is enabled but date/time format is invalid
+        console.error('❌ [Expired Check] Invalid date/time format:', { dateStr, timeStr })
+        ElNotification({
+          title: 'Error',
+          message: 'Please select both Date and Time for scheduling',
+          type: 'error',
+          duration: 3000,
+          dangerouslyUseHTMLString: true,
+        })
+        return
+      }
+    } else {
+      // Schedule is enabled but date or time is missing
+      console.error('❌ [Expired Check] Schedule enabled but date/time missing:', {
+        scheduleDate: formData.scheduleDate,
+        scheduleTime: formData.scheduleTime,
+      })
+      ElNotification({
+        title: 'Error',
+        message: 'Please select both Date and Time for scheduling',
+        type: 'error',
+        duration: 3000,
+        dangerouslyUseHTMLString: true,
+      })
+      return
+    }
+  } else {
+    // Schedule is disabled (SEND_NOW) - but we already checked for expired status above
+    // If we reach here, it means:
+    // 1. Template is not expired (isTemplateExpired is false)
+    // 2. Original sendSchedule is either null or in the future
+    // 3. Schedule is disabled (SEND_NOW) - this is valid
+    console.log('✅ [Expired Check] Schedule is disabled (SEND_NOW) - allowing submission (template is not expired)')
+  }
+  // ========== END EXPIRED TEMPLATE VALIDATION ==========
+
   // Check if current language tab has existing data
   const currentLangHasExistingData =
     isEditMode.value && existingTranslationIds[activeLanguage.value] !== null
@@ -2108,7 +2358,13 @@ const handlePublishNowInternal = async () => {
     const translations = []
 
     for (const [langKey, langData] of Object.entries(languageFormData)) {
-      if (langData.title && langData.description) {
+      // For edit mode, include ALL translations (even if title/description are empty) to preserve data
+      // For create mode, only include translations with both title and description
+      const shouldInclude = isEditMode.value
+        ? (langData.title || langData.description || existingTranslationIds[langKey]) // Include if has content OR existing translation
+        : (langData.title && langData.description) // Create mode: require both
+
+      if (shouldInclude) {
         if (langData.linkToSeeMore && !isValidUrl(langData.linkToSeeMore)) {
           ElNotification({
             title: 'Error',
@@ -2121,6 +2377,8 @@ const handlePublishNowInternal = async () => {
           return
         }
         let imageId: string | undefined = undefined
+        
+        // Priority 1: New image file to upload
         if (langData.imageFile) {
           try {
             // Compress to 2MB per image (safer for batch uploads)
@@ -2147,16 +2405,20 @@ const handlePublishNowInternal = async () => {
             isSavingOrPublishing.value = false
             return
           }
-        } else if (isEditMode.value && existingImageIds[langKey] && langData.imageUrl !== null) {
+        } 
+        // Priority 2: Preserve existing image (CRITICAL for edit mode)
+        // Always preserve if existingImageIds exists, regardless of imageUrl state
+        else if (isEditMode.value && existingImageIds[langKey]) {
           imageId = existingImageIds[langKey] || undefined
+          console.log('🖼️ [Update] Preserving existing image for', langKey, ':', imageId)
         }
 
         const translationData: any = {
           language: mapLanguageToEnum(langKey),
-          title: langData.title,
-          content: langData.description,
+          title: langData.title || '', // Always include title (empty string if missing)
+          content: langData.description || '', // Always include content (empty string if missing)
           linkPreview: langData.linkToSeeMore || undefined,
-          image: imageId || '',
+          image: imageId || '', // Include imageId if exists, otherwise empty string
         }
         // Include translation ID when updating to preserve the same record
         if (isEditMode.value && existingTranslationIds[langKey]) {
@@ -2227,10 +2489,18 @@ const handlePublishNowInternal = async () => {
         }
       }
     })
+    // Update translations with newly uploaded image IDs
     for (const [index, trans] of translations.entries()) {
       const fid = langToFileId.get(String(trans.language))
       if (fid) {
         translations[index].image = fid
+        // Also update existingImageIds to preserve it for future updates
+        const langKey = Object.keys(languageFormData).find(
+          (key) => mapLanguageToEnum(key) === trans.language
+        )
+        if (langKey) {
+          existingImageIds[langKey] = fid
+        }
       }
     }
 
@@ -2704,7 +2974,7 @@ const handlePublishNowInternal = async () => {
     }
   } catch (error: any) {
     isSavingOrPublishing.value = false
-    console.error('Error creating notification:', error)
+    console.error('Error creating/updating notification:', error)
     console.error('Error details:', {
       message: error.message,
       response: error.response,
@@ -2714,12 +2984,30 @@ const handlePublishNowInternal = async () => {
 
     loadingNotification.close()
 
+    // CRITICAL: On error, preserve existing image IDs to prevent data loss on retry
+    // Don't clear existingImageIds - they should remain for the next attempt
+    console.log('🔄 [Error] Preserving existing image IDs for retry:', existingImageIds)
+
     // Extract error message with better fallbacks
     let errorMessage =
       error.response?.data?.responseMessage ||
       error.response?.data?.message ||
       error.message ||
       'An unexpected error occurred while creating the notification'
+
+    // Check if this is an expired template error - show as warning instead of error
+    const isExpiredTemplateError = 
+      errorMessage.includes('scheduled time was set') ||
+      errorMessage.includes('has now passed') ||
+      errorMessage.includes('expired') ||
+      error.response?.data?.data?.scheduleTimeDisplay
+
+    // If expired template error, extract schedule time from data if available
+    let scheduleTimeDisplay = error.response?.data?.data?.scheduleTimeDisplay
+    if (isExpiredTemplateError && scheduleTimeDisplay) {
+      // Use the schedule time from backend response
+      errorMessage = `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`
+    }
 
     // If we still don't have a message, provide a status-based message
     if (!errorMessage || errorMessage === 'undefined' || errorMessage === 'null') {
@@ -2741,11 +3029,12 @@ const handlePublishNowInternal = async () => {
     }
 
     ElNotification({
-      title: 'Error',
+      title: isExpiredTemplateError ? 'Warning' : 'Error',
       message: errorMessage,
-      type: 'error',
+      type: isExpiredTemplateError ? 'warning' : 'error',
       duration: 5000, // Increased from 2000ms to 5000ms for better visibility
       showClose: true, // Allow user to manually close
+      dangerouslyUseHTMLString: isExpiredTemplateError && errorMessage.includes('<strong>'),
     })
   }
 }
@@ -2974,11 +3263,12 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
 
     loadingNotification.close()
 
+    // Show success notification
     ElNotification({
       title: 'Success',
       message: `Notification updated successfully!`,
       type: 'success',
-      duration: 2000,
+      duration: 3000,
     })
 
     // 5. Clear cache and redirect
@@ -3001,6 +3291,9 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
       // This shouldn't happen in saveAsDraft, but handle it just in case
       redirectTab = !useSchedule ? 'draft' : 'scheduled'
     }
+    
+    // Add a small delay to ensure the success notification is visible before redirecting
+    await new Promise((resolve) => setTimeout(resolve, 500))
     
     // If editing, preserve the original tab (fromTab) if it's draft, otherwise use calculated tab
     if (isEditMode.value && fromTab.value === 'draft') {
@@ -3436,7 +3729,8 @@ const handleLeaveDialogConfirm = async () => {
     // handlePublishNowInternal correctly handles the update and redirect logic
     await handlePublishNowInternal()
   } else {
-    // For Drafts or new notifications, "Save as draft & leave" saves as draft
+    // For draft notifications or new notifications, "Update and leave" / "Save as draft & leave"
+    // should just update/save the data and leave, not submit for approval
     // handleSaveDraft(true) forces the draft status and redirects to Draft tab
     await handleSaveDraft(true)
   }
@@ -3670,6 +3964,29 @@ body::-webkit-scrollbar {
   box-shadow: none;
 }
 
+/* Disabled field styles - gray appearance */
+.form-input:disabled,
+.form-input-title:disabled,
+.form-input-number:disabled,
+.form-input-link:disabled,
+.form-select:disabled,
+.form-textarea:disabled {
+  background-color: #f3f4f6 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
+.form-input[readonly],
+.form-input-title[readonly],
+.form-input-link[readonly],
+.form-textarea[readonly] {
+  background-color: #f3f4f6 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
 
 .form-textarea {
   resize: vertical;
@@ -3723,6 +4040,26 @@ body::-webkit-scrollbar {
   outline: none;
   border-color: #001346;
   box-shadow: 0 0 0 3px rgba(0, 19, 70, 0.1);
+}
+
+/* Disabled dropdown styles */
+.custom-dropdown.is-disabled .dropdown-trigger,
+.custom-dropdown:disabled .dropdown-trigger {
+  background-color: #f3f4f6 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  border-color: #d1d5db !important;
+}
+
+.custom-dropdown.is-disabled .dropdown-trigger:hover,
+.custom-dropdown:disabled .dropdown-trigger:hover {
+  border-color: #d1d5db !important;
+}
+
+.custom-dropdown.is-disabled .dropdown-icon,
+.custom-dropdown:disabled .dropdown-icon {
+  color: #9ca3af !important;
 }
 
 .dropdown-icon {
@@ -3864,6 +4201,22 @@ input:checked + .toggle-slider:before {
   transform: translateX(20px);
 }
 
+/* Disabled toggle switch styles */
+.toggle-switch input:disabled + .toggle-slider {
+  background-color: #d1d5db !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
+.toggle-switch input:disabled + .toggle-slider:before {
+  background-color: #f3f4f6 !important;
+}
+
+.toggle-switch input:disabled:checked + .toggle-slider {
+  background-color: #9ca3af !important;
+  opacity: 0.6;
+}
+
 .schedule-options-container {
   display: flex;
   flex-direction: column;
@@ -3968,6 +4321,40 @@ input:checked + .toggle-slider:before {
 
 .flash-number-input.is-disabled :deep(.el-input__inner) {
   color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+
+/* Disabled styles for Element Plus date/time pickers */
+.schedule-date-picker.is-disabled :deep(.el-input__wrapper),
+.schedule-time-picker.is-disabled :deep(.el-input__wrapper) {
+  background-color: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
+.schedule-date-picker.is-disabled :deep(.el-input__inner),
+.schedule-time-picker.is-disabled :deep(.el-input__inner) {
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+}
+
+/* Element Plus disabled state */
+.el-date-editor.is-disabled,
+.el-time-picker.is-disabled {
+  opacity: 0.6;
+}
+
+.el-date-editor.is-disabled :deep(.el-input__wrapper),
+.el-time-picker.is-disabled :deep(.el-input__wrapper) {
+  background-color: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  cursor: not-allowed !important;
+}
+
+.el-date-editor.is-disabled :deep(.el-input__inner),
+.el-time-picker.is-disabled :deep(.el-input__inner) {
+  color: #6b7280 !important;
   cursor: not-allowed !important;
 }
 
@@ -4309,6 +4696,34 @@ input:checked + .toggle-slider:before {
 .reject-reason-textarea :deep(.el-textarea__inner):focus {
   border-color: #e42323;
   outline: none;
+}
+
+.expired-time-container .reject-reason-header {
+  gap: 10px;
+}
+
+.expired-time-container .reject-reason-icon {
+  color: #e0ab0e;
+  font-size: 18px;
+}
+
+.expired-time-container .reject-reason-label {
+  color: #e0ab0e;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.expired-time-container .reject-reason-text {
+  font-weight: 600;
+  color: #e0ab0e;
+  word-wrap: break-word;
+  display: inline;
+}
+
+.expired-time-container .reject-reason-text strong {
+  font-weight: 800;
+  color: #e0ab0e;
 }
 
 </style>

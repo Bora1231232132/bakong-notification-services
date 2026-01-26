@@ -30,8 +30,32 @@ export class ValidationHelper {
 
     if (Array.isArray(platforms)) {
       // Already an array - normalize values, ensuring they're strings first
+      // Handle edge case: ["{\"ALL\"}"] -> parse nested JSON strings
       parsedArray = platforms
-        .map((p) => (p != null ? String(p) : ''))
+        .map((p) => {
+          if (p == null) return ''
+          const str = String(p).trim()
+          // Check if it's a JSON string like "{\"ALL\"}" or '{"ALL"}'
+          if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('["') && str.endsWith('"]'))) {
+            try {
+              const parsed = JSON.parse(str)
+              // If parsed is an object, try to extract the value
+              if (typeof parsed === 'object' && parsed !== null) {
+                // Handle {"ALL"} or {"platform": "ALL"}
+                return parsed.ALL || parsed.platform || parsed[0] || String(parsed)
+              }
+              // If parsed is an array, get first element
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                return String(parsed[0])
+              }
+              return String(parsed)
+            } catch (e) {
+              // If JSON parsing fails, use the string as-is
+              return str
+            }
+          }
+          return str
+        })
         .map((p) => this.normalizeEnum(p))
         .filter((p) => p.length > 0)
     } else if (typeof platforms === 'string') {
