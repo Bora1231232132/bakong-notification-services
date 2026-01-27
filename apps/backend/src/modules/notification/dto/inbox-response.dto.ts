@@ -317,7 +317,7 @@ export class InboxResponseDto implements NotificationData {
 
   static buildCategoryIconUrl(baseUrl: string, categoryTypeId?: number | null): string {
     const id = categoryTypeId ?? InboxResponseDto.DEFAULT_OTHER_CATEGORY_ID
-    return `${baseUrl}/api/v1/category-type/${id}/icon`
+    return `${baseUrl}/api/v2/category-type/${id}/icon`
   }
 
   static buildFCMResult(

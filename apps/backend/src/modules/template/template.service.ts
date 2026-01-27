@@ -223,6 +223,52 @@ export class TemplateService implements OnModuleInit {
       approvalStatus = ApprovalStatus.APPROVED
     }
 
+    // CRITICAL: Validate if users exist BEFORE allowing submission (PENDING status)
+    // Check BEFORE creating the template - if no users found, prevent submission and keep in draft
+    // This check happens when user is trying to SUBMIT (approvalStatus will be PENDING)
+    if (approvalStatus === ApprovalStatus.PENDING) {
+      console.log(`🔵 [CREATE] User is trying to submit - validating users BEFORE creating template...`)
+      
+      // Create a temporary template object with the values to check
+      const tempTemplate = {
+        platforms: normalizedPlatforms,
+        bakongPlatform: dto.bakongPlatform,
+      } as Template
+      
+      const hasMatchingUsers = await this.validateMatchingUsers(tempTemplate)
+      
+      if (!hasMatchingUsers) {
+        // No users match the platform requirements - prevent submission, keep in draft
+        const platformInfo = `OS platform: ${tempTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${tempTemplate.bakongPlatform}`
+        const platformName =
+          tempTemplate.bakongPlatform === 'BAKONG_TOURIST'
+            ? 'Bakong Tourist'
+            : tempTemplate.bakongPlatform === 'BAKONG_JUNIOR'
+            ? 'Bakong Junior'
+            : 'Bakong'
+        
+        // Format: "No users found for Using {Platform} on {Bakong App} app."
+        const osPlatforms = tempTemplate.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
+        const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
+        
+        this.logger.error(
+          `❌ [CREATE] No users match platform requirements (${platformInfo}). Preventing template creation, keeping as draft.`,
+        )
+        
+        // DON'T create the template - just throw error to prevent creation
+        // Template will NOT be created in database
+        throw new BadRequestException(
+          new BaseResponseDto({
+            responseCode: 1,
+            errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+            responseMessage: errorMessage,
+          }),
+        )
+      }
+      
+      console.log(`🔵 [CREATE] ✅ Users validated - template creation can proceed`)
+    }
+
     // Determine initialIsSent based on sendType and approvalStatus
     // For SEND_SCHEDULE: always set isSent to false initially (will be sent at scheduled time)
     // For SEND_NOW: 
@@ -889,11 +935,20 @@ export class TemplateService implements OnModuleInit {
             updateFields.approvedAt = null
             updateFields.reasonForRejection = null
           }
-          // If editing a DRAFT template (null), keep it as DRAFT (null) - preserve draft status
+          // If editing a DRAFT template (null)
           else if (existingTemplate.approvalStatus === null || existingTemplate.approvalStatus === undefined) {
-            // Keep approvalStatus as null (DRAFT) - don't change it
-            // Clear any rejection reason if it exists
-            updateFields.reasonForRejection = null
+            // If submitting (isSent=true), change to PENDING for approval
+            // If just updating (isSent=false or undefined), keep as DRAFT
+            if (isSent === true) {
+              console.log(`🔄 [UPDATE] Submitting DRAFT template ${id} - setting approvalStatus to PENDING`)
+              updateFields.approvalStatus = ApprovalStatus.PENDING
+              updateFields.approvedBy = null
+              updateFields.approvedAt = null
+              updateFields.reasonForRejection = null
+            } else {
+              // Just updating draft - keep it as DRAFT
+              updateFields.reasonForRejection = null
+            }
           }
           // If editing a PENDING template, keep it as PENDING (don't reset to DRAFT)
           // This allows editor to update pending templates without needing to resubmit
@@ -939,6 +994,24 @@ export class TemplateService implements OnModuleInit {
         }
       }
 
+      // CRITICAL: Check if user is trying to submit
+      // This check happens when user is trying to SUBMIT (isSent: true or will set to PENDING)
+      const isTryingToSubmit = 
+        (isSent !== undefined && isSent === true) || 
+        (isSent === undefined && dto.isSent === true) ||
+        updateFields.approvalStatus === ApprovalStatus.PENDING ||
+        (template.approvalStatus === ApprovalStatus.REJECTED && isSent !== undefined && isSent === true) ||
+        (template.approvalStatus === ('EXPIRED' as ApprovalStatus) && isSent !== undefined && isSent === true)
+      
+      // Save approvalStatus separately - we'll update it after validation
+      const pendingApprovalStatus = updateFields.approvalStatus
+      // Temporarily remove approvalStatus from updateFields so we can save data first
+      if (isTryingToSubmit && updateFields.approvalStatus === ApprovalStatus.PENDING) {
+        delete updateFields.approvalStatus
+      }
+
+      // STEP 1: Save data changes first (fields and translations)
+      // This ensures data is updated even if validation fails
       if (Object.keys(updateFields).length > 0) {
         await this.repo.update(id, updateFields)
       }
@@ -948,6 +1021,11 @@ export class TemplateService implements OnModuleInit {
         translations.forEach((t) => {
           translationsMap.set(t.language, t)
         })
+
+        // Check if this is a draft (isSent === false)
+        // Get the current template state to determine if it's a draft
+        const existingTemplate = await this.repo.findOne({ where: { id } })
+        const isDraft = existingTemplate?.isSent === false
 
         const getFallbackValue = (field: 'title' | 'content', language: Language): string => {
           const current = translationsMap.get(language)
@@ -973,22 +1051,26 @@ export class TemplateService implements OnModuleInit {
           return ''
         }
 
-        translations.forEach((translation) => {
-          if (
-            translation.title === undefined ||
-            translation.title === null ||
-            String(translation.title).trim() === ''
-          ) {
-            translation.title = getFallbackValue('title', translation.language)
-          }
-          if (
-            translation.content === undefined ||
-            translation.content === null ||
-            String(translation.content).trim() === ''
-          ) {
-            translation.content = getFallbackValue('content', translation.language)
-          }
-        })
+        // Only apply fallback logic for published notifications, not drafts
+        // This prevents empty translations from being filled with data from other languages
+        if (!isDraft) {
+          translations.forEach((translation) => {
+            if (
+              translation.title === undefined ||
+              translation.title === null ||
+              String(translation.title).trim() === ''
+            ) {
+              translation.title = getFallbackValue('title', translation.language)
+            }
+            if (
+              translation.content === undefined ||
+              translation.content === null ||
+              String(translation.content).trim() === ''
+            ) {
+              translation.content = getFallbackValue('content', translation.language)
+            }
+          })
+        }
 
         for (const translation of translations) {
           const { language, title, content, image, linkPreview, id: translationId } = translation
@@ -1091,6 +1173,66 @@ export class TemplateService implements OnModuleInit {
         }
       }
 
+      // STEP 2: If trying to submit, validate users AFTER data is saved
+      // This ensures data changes are preserved even if validation fails
+      if (isTryingToSubmit && pendingApprovalStatus === ApprovalStatus.PENDING) {
+        console.log(`🔵 [UPDATE] User is trying to submit - validating users AFTER data is saved...`)
+        
+        // Get the updated template with new platform values
+        const updatedTemplate = await this.findOneRaw(id)
+        
+        // Create a template object with the updated values to check
+        const tempTemplate = {
+          ...updatedTemplate,
+          platforms: updateFields.platforms !== undefined ? updateFields.platforms : updatedTemplate.platforms,
+          bakongPlatform: updateFields.bakongPlatform !== undefined ? updateFields.bakongPlatform : updatedTemplate.bakongPlatform,
+        } as Template
+        
+        const hasMatchingUsers = await this.validateMatchingUsers(tempTemplate)
+        
+        if (!hasMatchingUsers) {
+          // No users match the platform requirements - keep data changes but set status to draft
+          const platformInfo = `OS platform: ${tempTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${tempTemplate.bakongPlatform}`
+          const platformName =
+            tempTemplate.bakongPlatform === 'BAKONG_TOURIST'
+              ? 'Bakong Tourist'
+              : tempTemplate.bakongPlatform === 'BAKONG_JUNIOR'
+              ? 'Bakong Junior'
+              : 'Bakong'
+          
+          // Format: "No users found for Using {Platform} on {Bakong App} app."
+          const osPlatforms = tempTemplate.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
+          const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
+          
+          this.logger.error(
+            `❌ [UPDATE] No users match platform requirements (${platformInfo}). Data saved but keeping template in draft.`,
+          )
+          
+          // Update approvalStatus to null (draft) - data changes are already saved
+          await this.repo.update(id, {
+            approvalStatus: null,
+            reasonForRejection: null,
+          })
+          
+          // Throw error to inform frontend
+          throw new BadRequestException(
+            new BaseResponseDto({
+              responseCode: 1,
+              errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+              responseMessage: errorMessage,
+            }),
+          )
+        }
+        
+        console.log(`🔵 [UPDATE] ✅ Users validated - updating approvalStatus to PENDING`)
+        
+        // Validation passed - update approvalStatus to PENDING
+        await this.repo.update(id, {
+          approvalStatus: ApprovalStatus.PENDING,
+          reasonForRejection: null, // Clear any previous rejection reason
+        })
+      }
+
       const updatedTemplate = await this.findOneRaw(id)
       console.log(`🔵 [UPDATE] Template after field updates:`, {
         id: updatedTemplate.id,
@@ -1128,23 +1270,28 @@ export class TemplateService implements OnModuleInit {
       })
       
       // Don't send immediately if this is a resubmission from rejected state (wait for approver)
+      // Don't send if approvalStatus is PENDING (wait for approval)
       // Only send if:
       // 1. Approver is using "Publish Now" (isApproverPublishNow), OR
-      // 2. It's SEND_NOW with isSent=true AND it's NOT a resubmission from rejected state
+      // 2. It's SEND_NOW with isSent=true AND it's NOT a resubmission from rejected state AND it's NOT PENDING
       const shouldSendImmediately = 
         isApproverPublishNow ||
         (updatedTemplate.sendType === SendType.SEND_NOW && 
          updatedTemplate.isSent === true && 
-         !isResubmissionFromRejected)
+         !isResubmissionFromRejected &&
+         updatedTemplate.approvalStatus !== ApprovalStatus.PENDING)
       
       console.log(`🔵 [UPDATE] shouldSendImmediately: ${shouldSendImmediately}`, {
         reason: isApproverPublishNow 
           ? 'Approver publish now' 
           : isResubmissionFromRejected 
-            ? 'Resubmission from rejected - waiting for approver' 
-            : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
-              ? 'SEND_NOW with isSent=true'
-              : 'Conditions not met',
+            ? 'Resubmission from rejected - waiting for approver'
+            : updatedTemplate.approvalStatus === ApprovalStatus.PENDING
+              ? 'PENDING status - waiting for approval'
+              : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
+                ? 'SEND_NOW with isSent=true'
+                : 'Conditions not met',
+        approvalStatus: updatedTemplate.approvalStatus,
       })
       
       if (shouldSendImmediately) {
@@ -1629,6 +1776,42 @@ export class TemplateService implements OnModuleInit {
     // Allow submission if approvalStatus is null (DRAFT) or REJECTED
     // No need to check for null explicitly - if it's not PENDING, APPROVED, or EXPIRED, it's allowed
 
+    // CRITICAL: Validate if users exist BEFORE allowing submission
+    // Check BEFORE updating the template - if no users found, prevent submission and keep in draft
+    console.log(`🔵 [SUBMIT] Validating users for platform before allowing submission...`)
+    const hasMatchingUsers = await this.validateMatchingUsers(template)
+    
+    if (!hasMatchingUsers) {
+      // No users match the platform requirements - prevent submission, keep in draft
+      const platformInfo = `OS platform: ${template.platforms?.join(', ') || 'ALL'}, Bakong platform: ${template.bakongPlatform}`
+      const platformName =
+        template.bakongPlatform === 'BAKONG_TOURIST'
+          ? 'Bakong Tourist'
+          : template.bakongPlatform === 'BAKONG_JUNIOR'
+          ? 'Bakong Junior'
+          : 'Bakong'
+      
+      // Format: "No users found for Using {Platform} on {Bakong App} app."
+      const osPlatforms = template.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
+      const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
+      
+      this.logger.error(
+        `❌ [SUBMIT] No users match platform requirements (${platformInfo}). Preventing submission, keeping template in draft.`,
+      )
+      
+      // DON'T update the template - just throw error to prevent submission
+      // Template will remain in draft/rejected status
+      throw new BadRequestException(
+        new BaseResponseDto({
+          responseCode: 1,
+          errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+          responseMessage: errorMessage,
+        }),
+      )
+    }
+    
+    console.log(`🔵 [SUBMIT] ✅ Users validated - submission can proceed`)
+
     await this.repo.update(id, {
       approvalStatus: ApprovalStatus.PENDING,
       updatedBy: currentUser?.username,
@@ -1792,16 +1975,108 @@ export class TemplateService implements OnModuleInit {
         this.logger.log(
           `📤 [APPROVE] Template ${id} is ready to send after approval - sending automatically`,
         )
+        this.logger.log(
+          `📤 [APPROVE] Template ${id} platform info: OS platforms: ${updatedTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${updatedTemplate.bakongPlatform}`,
+        )
         try {
-          await this.notificationService.sendWithTemplate(updatedTemplate)
-          // Mark as sent after successful send
+          const sendResult = await this.notificationService.sendWithTemplate(updatedTemplate)
+          this.logger.log(
+            `📤 [APPROVE] Template ${id} send result: successfulCount: ${sendResult.successfulCount}, failedCount: ${sendResult.failedCount}`,
+          )
+          
+          // Check if no users received the notification successfully
+          // This happens when:
+          // 1. No users match the OS platform filter (Android/iOS) - returns { successfulCount: 0, failedCount: 0 }
+          // 2. No users match the Bakong platform filter - throws error (caught below)
+          // 3. All users have invalid tokens - returns { successfulCount: 0, failedCount > 0 }
+          // In ALL cases where successfulCount is 0, we should revert approval
+          if (sendResult.successfulCount === 0) {
+            const platformInfo = `OS platform: ${updatedTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${updatedTemplate.bakongPlatform}`
+            
+            // Determine rejection reason based on the scenario
+            const rejectionReason = sendResult.failedCount === 0
+              ? `No users found matching the platform requirements (${platformInfo}). Please ensure there are registered users for the specified platforms before approving.`
+              : `No users received the notification. ${sendResult.failedCount} user(s) matched the platform requirements but all failed (likely invalid tokens). Please ensure there are registered users with valid tokens for the specified platforms before approving.`
+            
+            if (sendResult.failedCount === 0) {
+              // No users matched the platform filter at all (OS platform or Bakong platform mismatch)
+              this.logger.error(
+                `❌ [APPROVE] Failed to send template ${id} - no users match platform requirements (${platformInfo}). Rejecting template.`,
+              )
+            } else {
+              // Users matched but all failed (likely invalid tokens or other issues)
+              this.logger.error(
+                `❌ [APPROVE] Failed to send template ${id} - ${sendResult.failedCount} user(s) matched but all failed. No users received the notification. Rejecting template.`,
+              )
+            }
+            
+            // Reject the template with the reason instead of just reverting to PENDING
+            await this.repo.update(id, {
+              approvalStatus: ApprovalStatus.REJECTED,
+              isSent: false,
+              approvedBy: null,
+              approvedAt: null,
+              reasonForRejection: rejectionReason,
+            })
+            
+            throw new BadRequestException(
+              new BaseResponseDto({
+                responseCode: 1,
+                errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+                responseMessage: rejectionReason,
+              }),
+            )
+          }
+          
+          // Mark as sent after successful send (only if at least one user received it)
           await this.repo.update(id, { isSent: true })
-          this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully`)
-        } catch (error) {
-          this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
-          // Don't throw error - approval was successful, just log the send failure
-          // Still mark as published (isSent: true) even if send failed
-          await this.repo.update(id, { isSent: true })
+          this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully to ${sendResult.successfulCount} user(s)`)
+        } catch (error: any) {
+          // Check if error is about no users found (platform mismatch)
+          // For BadRequestException with BaseResponseDto, check error.response structure
+          const errorResponse = error?.response || error
+          const errorCode = errorResponse?.errorCode
+          const errorMessage = errorResponse?.responseMessage || error?.message || String(error)
+          
+          // Check by errorCode first (most reliable), then by message content
+          const isNoUsersError =
+            errorCode === ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM ||
+            errorMessage.includes('No users found matching the platform requirements') ||
+            errorMessage.includes('No users found for') ||
+            errorMessage.includes('no users found') ||
+            errorMessage.includes('No users match')
+
+          if (isNoUsersError) {
+            // CRITICAL: Reject the template if no users found
+            // This prevents templates from being marked as approved when they can't be sent
+            // Note: We may have already rejected it above, but do it again to be safe
+            const rejectionReason = errorResponse?.responseMessage || errorMessage || 'No users found for the specified platform. Please ensure there are registered users for this platform before approving.'
+            
+            this.logger.error(
+              `❌ [APPROVE] Failed to send template ${id} - no users found for platform. Rejecting template.`,
+            )
+            await this.repo.update(id, {
+              approvalStatus: ApprovalStatus.REJECTED,
+              isSent: false,
+              approvedBy: null,
+              approvedAt: null,
+              reasonForRejection: rejectionReason,
+            })
+            // Throw error so frontend can show warning message
+            throw new BadRequestException(
+              new BaseResponseDto({
+                responseCode: 1,
+                errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+                responseMessage: rejectionReason,
+              }),
+            )
+          } else {
+            // Other errors - log and re-throw so controller can handle it
+            // Don't mark as sent if there was an error during sending
+            this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
+            // Re-throw the error so the controller can return proper error response
+            throw error
+          }
         }
       } else {
         // Already sent and not pending - this means it was already published before
@@ -2030,15 +2305,30 @@ export class TemplateService implements OnModuleInit {
         const updatedTemplate = await this.findOneRaw(id)
 
         // Check if this is converting a scheduled notification to immediate send (Publish now from Schedule page)
+        // OR if approver is clicking "Publish Now" on an APPROVED scheduled template
+        const isApproverPublishingScheduled = 
+          currentUser?.role === UserRole.APPROVAL &&
+          oldTemplate.approvalStatus === ApprovalStatus.APPROVED &&
+          oldTemplate.sendType === SendType.SEND_SCHEDULE &&
+          oldTemplate.isSent === false &&
+          dto.isSent === true // Approver clicked "Publish Now"
+        
         const isConvertingToImmediateSend = 
-          updatedTemplate.sendType === SendType.SEND_NOW && 
-          updatedTemplate.isSent === true &&
-          oldTemplate.isSent === false // Was not sent before
+          (updatedTemplate.sendType === SendType.SEND_NOW && 
+           updatedTemplate.isSent === true &&
+           oldTemplate.isSent === false) || // Was not sent before
+          isApproverPublishingScheduled // OR approver publishing scheduled template
 
         if (isConvertingToImmediateSend) {
-          console.log(
-            `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
-          )
+          if (isApproverPublishingScheduled) {
+            console.log(
+              `🚀 [editPublishedNotification] Approver clicking "Publish Now" on APPROVED scheduled template ${id} - sending immediately`,
+            )
+          } else {
+            console.log(
+              `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
+            )
+          }
 
           // Fetch template with translations for sending
           const templateWithTranslations = await this.repo.findOne({
@@ -2054,7 +2344,21 @@ export class TemplateService implements OnModuleInit {
               )
 
               if (sendResult && sendResult.successfulCount > 0) {
-                await this.markAsPublished(id)
+                // If approver is publishing scheduled template, change sendType to SEND_NOW and clear schedule
+                if (isApproverPublishingScheduled) {
+                  await this.repo.update(id, {
+                    sendType: SendType.SEND_NOW,
+                    sendSchedule: null,
+                    isSent: true,
+                    publishedBy: currentUser?.username,
+                    updatedAt: new Date(),
+                  })
+                  console.log(
+                    `✅ [editPublishedNotification] Template ${id} sent immediately and changed to SEND_NOW (schedule cleared)`,
+                  )
+                } else {
+                  await this.markAsPublished(id)
+                }
                 console.log(
                   `✅ [editPublishedNotification] Template ${id} sent immediately to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`,
                 )
@@ -2364,7 +2668,7 @@ export class TemplateService implements OnModuleInit {
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
 
     const categoryIcon = (isV2 && template.categoryTypeId)
-      ? `${baseUrl}/api/v1/category-type/${template.categoryTypeId}/icon`
+      ? `${baseUrl}/api/v2/category-type/${template.categoryTypeId}/icon`
       : undefined
 
     // Determine request language for categoryType translation

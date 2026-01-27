@@ -131,6 +131,104 @@ export const getNoUsersAvailableMessage = (platformName: string): string => {
 }
 
 /**
+ * Parses backend error message to extract platform information
+ * @param backendErrorMessage - The error message from backend
+ * @returns Object with formatted OS platform and Bakong app, or null if parsing fails
+ */
+const parsePlatformFromErrorMessage = (backendErrorMessage: string): { osPlatform: string; bakongApp: string } | null => {
+  if (!backendErrorMessage || typeof backendErrorMessage !== 'string') {
+    return null
+  }
+
+  // Parse backend message format: "No users found for Using {Platform} on {Bakong App} app."
+  // Examples:
+  // - "No users found for Using ANDROID on Bakong app."
+  // - "No users found for Using IOS on Bakong Tourist app."
+  // - "No users found for Using ALL on Bakong Junior app."
+  
+  const match = backendErrorMessage.match(/No users found for Using (.+?) on (.+?) app\.?/i)
+  
+  if (match) {
+    const osPlatform = match[1].trim()
+    const bakongApp = match[2].trim()
+    return { osPlatform, bakongApp }
+  }
+  
+  return null
+}
+
+/**
+ * Formats OS platform name for display
+ * @param osPlatform - Raw OS platform (e.g., "ANDROID", "IOS", "ALL")
+ * @returns Formatted platform name (e.g., "Android", "iOS", "All Platforms")
+ */
+const formatOSPlatform = (osPlatform: string): string => {
+  const upper = osPlatform.toUpperCase()
+  if (upper === 'ANDROID') {
+    return 'Android'
+  } else if (upper === 'IOS') {
+    return 'iOS'
+  } else if (upper === 'ALL') {
+    return 'All Platforms'
+  }
+  return osPlatform
+}
+
+/**
+ * Formats the "no users found" error message for submission failures
+ * Extracts platform information from backend error message and formats it clearly
+ * @param backendErrorMessage - The error message from backend (e.g., "No users found for Using ANDROID on Bakong app.")
+ * @returns HTML-formatted message string for "Cannot submit notification" warning
+ */
+export const formatNoUsersFoundMessage = (backendErrorMessage: string): string => {
+  // Default message if parsing fails
+  const defaultMessage = 'No users found matching the selected platform requirements. Please ensure there are registered users for the specified platforms before submitting.'
+  
+  const parsed = parsePlatformFromErrorMessage(backendErrorMessage)
+  
+  if (parsed) {
+    const formattedOSPlatform = formatOSPlatform(parsed.osPlatform)
+    const formattedBakongApp = formatBakongApp(parsed.bakongApp)
+    
+    return `<strong>Cannot submit notification:</strong> No users found for <strong>${formattedOSPlatform}</strong> on <strong>${formattedBakongApp}</strong> app. The notification has been saved as draft.`
+  }
+  
+  // If parsing fails, use the backend message but format it nicely
+  if (!backendErrorMessage || typeof backendErrorMessage !== 'string') {
+    return `<strong>Cannot submit notification:</strong> ${defaultMessage} The notification has been saved as draft.`
+  }
+  
+  return `<strong>Cannot submit notification:</strong> ${backendErrorMessage} The notification has been saved as draft.`
+}
+
+/**
+ * Formats the "no users found" error message for approval rejection
+ * Extracts platform information from backend error message and formats it clearly
+ * @param backendErrorMessage - The error message from backend (e.g., "No users found for Using ANDROID on Bakong app.")
+ * @returns HTML-formatted message string for "Notification rejected" warning
+ */
+export const formatNoUsersFoundRejectionMessage = (backendErrorMessage: string): string => {
+  // Default message if parsing fails
+  const defaultMessage = 'No users found matching the platform requirements. Please ensure there are registered users for the specified platforms before approving.'
+  
+  const parsed = parsePlatformFromErrorMessage(backendErrorMessage)
+  
+  if (parsed) {
+    const formattedOSPlatform = formatOSPlatform(parsed.osPlatform)
+    const formattedBakongApp = formatBakongApp(parsed.bakongApp)
+    
+    return `<strong>Notification rejected:</strong> No users found for <strong>${formattedOSPlatform}</strong> on <strong>${formattedBakongApp}</strong> app. Please ensure there are registered users for this platform before approving.`
+  }
+  
+  // If parsing fails, use the backend message but format it nicely
+  if (!backendErrorMessage || typeof backendErrorMessage !== 'string') {
+    return `<strong>Notification rejected:</strong> ${defaultMessage}`
+  }
+  
+  return `<strong>Notification rejected:</strong> ${backendErrorMessage}`
+}
+
+/**
  * Notification message result interface
  */
 export interface NotificationMessageResult {

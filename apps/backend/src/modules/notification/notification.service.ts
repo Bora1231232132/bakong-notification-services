@@ -660,7 +660,7 @@ export class NotificationService {
         
         const language = (dto.language || 'EN') as Language
         const categoryIcon = notification.template?.categoryTypeId
-          ? `${baseUrl}/api/v1/category-type/${notification.template.categoryTypeId}/icon`
+          ? InboxResponseDto.buildCategoryIconUrl(baseUrl, notification.template.categoryTypeId)
           : undefined
 
         const result = InboxResponseDto.buildSendApiNotificationData(
@@ -966,7 +966,7 @@ export class NotificationService {
       // Only build categoryIcon for v2
       const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
       const categoryIcon = isV2 && template?.categoryTypeId
-        ? `${baseUrl}/api/v1/category-type/${template?.categoryTypeId}/icon`
+        ? InboxResponseDto.buildCategoryIconUrl(baseUrl, template.categoryTypeId)
         : undefined
       
       const whatNews = InboxResponseDto.buildSendApiNotificationData(
@@ -2297,7 +2297,7 @@ export class NotificationService {
     // Only build categoryIcon for v2
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
     const categoryIcon = isV2 && selectedTemplate?.categoryTypeId
-      ? `${baseUrl}/api/v1/category-type/${selectedTemplate.categoryTypeId}/icon`
+      ? InboxResponseDto.buildCategoryIconUrl(baseUrl, selectedTemplate.categoryTypeId)
       : undefined
     
     const whatNews = InboxResponseDto.buildSendApiNotificationData(

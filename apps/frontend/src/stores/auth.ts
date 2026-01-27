@@ -246,6 +246,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   const updateUserAvatar = (avatarUrl: string | null) => {
     userAvatar.value = avatarUrl
+    // Also update the user object's image property to keep it in sync
+    if (user.value) {
+      user.value.image = avatarUrl
+    }
   }
 
   const clearError = () => {

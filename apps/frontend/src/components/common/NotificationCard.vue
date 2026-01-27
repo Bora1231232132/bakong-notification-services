@@ -170,9 +170,9 @@ import { Search, Calendar, Edit2, Trash2 } from 'lucide-vue-next'
 import type { Notification } from '@/types/notification'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
-import { containsKhmer } from '@/utils/helpers'
+import { containsKhmer, formatNoUsersFoundMessage, formatNoUsersFoundRejectionMessage } from '@/utils/helpers'
 import { useAuthStore } from '@/stores/auth'
-import { UserRole } from '@bakong/shared'
+import { UserRole, ErrorCode } from '@bakong/shared'
 import { notificationApi } from '@/services/notificationApi'
 import { ElNotification } from 'element-plus'
 import emptyStateImage from '@/assets/image/jomreadsur.png'
@@ -684,6 +684,33 @@ const handleApproveClick = async (notification: Notification) => {
       statusText: error.response?.statusText,
     })
     
+    // Check if this is a "no users found" error (platform mismatch)
+    const errorMessage = error.response?.data?.responseMessage || error.message || ''
+    const isNoUsersError = 
+      error.response?.data?.errorCode === 31 || // ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM
+      errorMessage.includes('No users found') ||
+      errorMessage.includes('no users found') ||
+      errorMessage.includes('No users match') ||
+      errorMessage.includes('registered users for this platform')
+    
+    if (isNoUsersError) {
+      // Template was rejected due to no users matching platform requirements
+      // Show warning message and redirect to draft tab (where rejected templates are shown)
+      ElNotification({
+        title: 'Warning',
+        message: formatNoUsersFoundRejectionMessage(errorMessage),
+        type: 'warning',
+        duration: 8000,
+        dangerouslyUseHTMLString: true,
+      })
+      // Redirect to Draft tab (where rejected templates are shown) and refresh
+      emit('switch-tab', 'draft')
+      setTimeout(() => {
+        emit('refresh', true) // Force refresh to show updated status (REJECTED)
+      }, 500) // Small delay to ensure backend has updated
+      return
+    }
+    
     // Check if this is an auto-expiration or auto-rejection due to passed scheduled time
     const isAutoExpired = error.response?.data?.data?.autoExpired === true
     const isAutoRejected = error.response?.data?.data?.autoRejected === true
@@ -802,6 +829,27 @@ const handleSubmitClick = async (notification: Notification) => {
     // Extract error message
     const errorMessage = error.response?.data?.responseMessage || error.message || 'Failed to submit template for approval'
     
+    // Check if this is a "no users found" error
+    const isNoUsersError =
+      error.response?.data?.errorCode === ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM ||
+      errorMessage.includes('No users found for') ||
+      errorMessage.includes('No users match')
+    
+    if (isNoUsersError) {
+      console.warn('⚠️ [SUBMIT CLICK] Blocking submission due to no matching users for platform.')
+      ElNotification({
+        title: 'Warning',
+        message: formatNoUsersFoundMessage(errorMessage),
+        type: 'warning',
+        duration: 8000,
+        dangerouslyUseHTMLString: true,
+        showClose: true,
+      })
+      // Refresh the list to show the template still in draft/rejected status
+      emit('refresh', true)
+      return
+    }
+    
     // Check if this is an expired template error - show as warning instead of error
     const isExpiredTemplateError = 
       errorMessage.includes('scheduled time was set') ||
@@ -905,6 +953,7 @@ const handlePublishNowClick = async (notification: Notification) => {
           message: `<strong>Notification published and sent to ${successfulCount} user(s) immediately.</strong>${failedCount > 0 ? ` (${failedCount} failed)` : ''} please wait for a moment to see the notification on the user's device.`,
           type: 'success',
           duration: 3000,
+          dangerouslyUseHTMLString: true,
         })
       } else {
         ElNotification({

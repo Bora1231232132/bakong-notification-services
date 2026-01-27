@@ -124,7 +124,7 @@ export class DateUtils {
     const day = this.convertToKhmerNumbers(date.getDate().toString())
     const year = this.convertToKhmerNumbers(date.getFullYear().toString())
 
-    return `${month} ${day}, ${year}`
+    return `${month} ${day} ${year}`
   }
 
   private static formatEnglishDate(date: Date): string {
@@ -139,7 +139,7 @@ export class DateUtils {
     const year = date.getFullYear()
     const month = date.getMonth() + 1
     const day = date.getDate()
-    return `${month}月 ${day}日, ${year}年`
+    return `${month}月 ${day}日 ${year}年`
   }
 
   private static convertToKhmerNumbers(arabicNumber: string): string {

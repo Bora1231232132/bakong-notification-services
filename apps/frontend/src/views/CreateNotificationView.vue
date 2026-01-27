@@ -577,10 +577,12 @@ import {
   getNoUsersAvailableMessage,
   getNotificationMessage,
   containsKhmer,
+  formatNoUsersFoundMessage,
+  formatNoUsersFoundRejectionMessage,
 } from '@/utils/helpers'
 import { useCategoryTypesStore } from '@/stores/categoryTypes'
 import type { CategoryType as CategoryTypeData } from '@/services/categoryTypeApi'
-import { DateUtils, UserRole } from '@bakong/shared'
+import { DateUtils, UserRole, ErrorCode } from '@bakong/shared'
 import { useAuthStore } from '@/stores/auth'
 import {
   getCurrentDateTimeInCambodia,
@@ -1134,8 +1136,8 @@ const loadNotificationData = async () => {
               formattedDate: date,
               formattedTime: time,
               expiredScheduleTime: expiredScheduleTime.value,
-              fromTab: fromTab.value,
-            })
+        fromTab: fromTab.value,
+      })
           } else {
             expiredScheduleTime.value = null
           }
@@ -1735,6 +1737,10 @@ const isNotificationOld = (): boolean => {
 }
 
 const handlePublishNow = async () => {
+  // CRITICAL: Set saving flag IMMEDIATELY to prevent navigation guard from showing dialog
+  // This must be set before any validation or API calls
+  isSavingOrPublishing.value = true
+  
   // ========== EXPIRED TEMPLATE VALIDATION - MUST RUN FIRST ==========
   // Check if template is expired or if current schedule time is in the past
   // This prevents submission of expired templates
@@ -1750,22 +1756,40 @@ const handlePublishNow = async () => {
     originalSendSchedule: originalSendSchedule.value,
   })
 
-  // CRITICAL: Check if template is already marked as EXPIRED - block submission immediately
-  if (isEditMode.value && isTemplateExpired.value) {
-    const scheduleTimeDisplay = expiredScheduleTime.value || 'the scheduled time'
-    console.error('❌ [Expired Check] BLOCKED - Template is already EXPIRED:', {
-      isTemplateExpired: isTemplateExpired.value,
-      expiredScheduleTime: expiredScheduleTime.value,
-      originalSendSchedule: originalSendSchedule.value,
-    })
-    ElNotification({
-      title: 'Warning',
-      message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
-      type: 'warning',
-      duration: 5000,
-      dangerouslyUseHTMLString: true,
-    })
-    return
+  // CRITICAL: Check if schedule time is actually in the past (not just if template is rejected)
+  // Only block if the schedule time is actually in the past, not just because template is rejected
+  if (isEditMode.value && formData.scheduleEnabled && formData.scheduleDate && formData.scheduleTime) {
+    const dateStr = String(formData.scheduleDate).trim()
+    const timeStr = String(formData.scheduleTime).trim()
+    const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/
+    const timePattern = /^\d{2}:\d{2}$/
+    
+    if (datePattern.test(dateStr) && timePattern.test(timeStr)) {
+      try {
+        const currentScheduleDateTime = DateUtils.parseScheduleDateTime(dateStr, timeStr)
+        const nowUTC = new Date()
+        // Check if current schedule time is in the past
+        if (currentScheduleDateTime.getTime() <= nowUTC.getTime()) {
+          const scheduleTimeDisplay = expiredScheduleTime.value || `${dateStr} at ${timeStr}`
+          console.error('❌ [Expired Check] BLOCKED - Schedule time is in the past:', {
+            currentScheduleDateTime: currentScheduleDateTime.toISOString(),
+            nowUTC: nowUTC.toISOString(),
+            scheduleTimeDisplay,
+          })
+          ElNotification({
+            title: 'Warning',
+            message: `The scheduled time was set to <strong>${scheduleTimeDisplay}</strong>, and it has now passed. Please go to update the schedule time and resubmitting again.`,
+            type: 'warning',
+            duration: 5000,
+            dangerouslyUseHTMLString: true,
+          })
+          isSavingOrPublishing.value = false
+          return
+        }
+      } catch (error) {
+        console.error('❌ [Expired Check] Error parsing schedule time:', error)
+      }
+    }
   }
 
   // Check if we have an original sendSchedule that's in the past (works even if scheduleEnabled is false)
@@ -1801,6 +1825,7 @@ const handlePublishNow = async () => {
                   duration: 5000,
                   dangerouslyUseHTMLString: true,
                 })
+                isSavingOrPublishing.value = false
                 return
               }
             } catch (error) {
@@ -1824,6 +1849,7 @@ const handlePublishNow = async () => {
             duration: 5000,
             dangerouslyUseHTMLString: true,
           })
+          isSavingOrPublishing.value = false
           return
         }
       }
@@ -1876,12 +1902,14 @@ const handlePublishNow = async () => {
               duration: 5000,
               dangerouslyUseHTMLString: true,
             })
+            isSavingOrPublishing.value = false // Reset flag on expired check failure
             return
           }
           // Schedule time is in the future - allow submission to proceed
           console.log('✅ [Expired Check] Schedule time is valid (in the future)')
         } catch (error) {
           console.error('❌ [Expired Template Check] Error parsing schedule:', error)
+          isSavingOrPublishing.value = false // Reset flag on parsing error
           ElNotification({
             title: 'Error',
             message: 'Invalid date or time format. Please check your schedule time.',
@@ -1916,6 +1944,7 @@ const handlePublishNow = async () => {
         duration: 3000,
         dangerouslyUseHTMLString: true,
       })
+      isSavingOrPublishing.value = false
       return
     }
   } else {
@@ -1980,6 +2009,7 @@ const handlePublishNow = async () => {
     if (!hasAnyChanges) {
       // No changes at all - just navigate to home without updating or showing notification
       const redirectTab = fromTab.value || 'published'
+      isSavingOrPublishing.value = false // Reset flag before navigation
       setTimeout(() => {
         window.location.href = `/?tab=${redirectTab}`
       }, 100)
@@ -1989,6 +2019,7 @@ const handlePublishNow = async () => {
     // There are changes in other languages - proceed with update
     const token = localStorage.getItem('auth_token')
     if (!token || token.trim() === '') {
+      isSavingOrPublishing.value = false // Reset flag before navigation
       ElNotification({
         title: 'Error',
         message: 'Please login first',
@@ -2054,6 +2085,7 @@ const handlePublishNow = async () => {
 
       // Don't show notification - errors are already visible inline below the form fields
       // Just prevent publishing
+      isSavingOrPublishing.value = false // Reset flag on validation error
       return
     }
   } else {
@@ -2064,6 +2096,7 @@ const handlePublishNow = async () => {
 
   const token = localStorage.getItem('auth_token')
   if (!token || token.trim() === '') {
+    isSavingOrPublishing.value = false // Reset flag before navigation
     ElNotification({
       title: 'Error',
       message: 'Please login first',
@@ -2109,11 +2142,14 @@ const handlePublishNow = async () => {
 
     // Only show confirmation if there are actual changes
     if (hasAnyChanges) {
+      // Note: Don't reset flag here - we want to prevent navigation guard while showing dialog
+      // The flag will be reset when user confirms or cancels the dialog
       showUpdateConfirmationDialog.value = true
       return
     } else {
       // No changes at all - just navigate to home without updating or showing notification
       const redirectTab = fromTab.value || 'published'
+      isSavingOrPublishing.value = false // Reset flag before navigation
       setTimeout(() => {
         window.location.href = `/?tab=${redirectTab}`
       }, 100)
@@ -2620,20 +2656,92 @@ const handlePublishNowInternal = async () => {
     })
 
     let result
-    if (isEditMode.value) {
-      result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
-    } else {
-      result = await notificationApi.createTemplate(templateData)
-    }
+    try {
+      if (isEditMode.value) {
+        result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
+      } else {
+        result = await notificationApi.createTemplate(templateData)
+      }
 
-    console.log('📥 [Submit] Backend Response:', {
-      responseCode: result?.data?.responseCode,
-      responseMessage: result?.data?.responseMessage,
-      returnedSendSchedule: result?.data?.data?.sendSchedule,
-      returnedSendType: result?.data?.data?.sendType,
-      returnedIsSent: result?.data?.data?.isSent,
-      fullResponse: result?.data?.data,
-    })
+      console.log('📥 [Submit] Backend Response:', {
+        responseCode: result?.data?.responseCode,
+        responseMessage: result?.data?.responseMessage,
+        returnedSendSchedule: result?.data?.data?.sendSchedule,
+        returnedSendType: result?.data?.data?.sendType,
+        returnedIsSent: result?.data?.data?.isSent,
+        fullResponse: result?.data?.data,
+      })
+    } catch (error: any) {
+      loadingNotification.close()
+      console.log('❌ [Submit] Error caught:', {
+        error: error,
+        response: error.response,
+        responseData: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+      })
+
+      const isNoUsersError =
+        error.response?.data?.errorCode === ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM ||
+        error.response?.data?.responseMessage?.includes('No users found for') ||
+        error.response?.data?.responseMessage?.includes('No users match')
+
+      if (isNoUsersError) {
+        console.warn('⚠️ [Submit] Blocking submission due to no matching users for platform. Automatically saving as draft...')
+        const errorMessage = error.response?.data?.responseMessage || 'No users found matching the platform requirements (OS platform or Bakong platform). Please ensure there are registered users for the specified platforms before submitting.'
+        
+        // Show warning message (no dialog)
+        ElNotification({
+          title: 'Warning',
+          message: formatNoUsersFoundMessage(errorMessage),
+          type: 'warning',
+          duration: 8000,
+          dangerouslyUseHTMLString: true,
+          showClose: true,
+        })
+
+        // Automatically save as draft instead of showing dialog
+        // Keep flag true throughout to prevent navigation guard dialog
+        // Use forceRun=true to bypass handleSaveDraft's isSavingOrPublishing check
+        // Use skipRedirect=true to prevent handleSaveDraft from redirecting (we'll handle it)
+        try {
+          // Save as draft - suppress notifications since we already showed the warning
+          // forceRun=true allows handleSaveDraft to run even when isSavingOrPublishing is true
+          // skipRedirect=true prevents handleSaveDraft from redirecting and resetting the flag
+          await handleSaveDraft(true, true, true, true) // forceDraft=true, suppressNotifications=true, forceRun=true, skipRedirect=true
+          // Flag remains true to prevent navigation guard dialog during redirect
+          
+          // Redirect to draft tab and refresh
+          localStorage.setItem('notification_active_tab', 'draft')
+          localStorage.removeItem('notifications_cache')
+          localStorage.removeItem('notifications_cache_timestamp')
+          
+          const cacheBuster = Date.now()
+          setTimeout(() => {
+            router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+            // Reset flag after navigation starts
+            setTimeout(() => {
+              isSavingOrPublishing.value = false
+            }, 1000)
+          }, 500) // Small delay to ensure notification is seen
+        } catch (saveError) {
+          console.error('❌ [Submit] Failed to save as draft:', saveError)
+          // Even if save fails, redirect to draft tab
+          const cacheBuster = Date.now()
+          setTimeout(() => {
+            router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+            // Reset flag after navigation starts
+            setTimeout(() => {
+              isSavingOrPublishing.value = false
+            }, 1000)
+          }, 500)
+        }
+        return
+      }
+
+      // Re-throw other errors
+      throw error
+    }
 
     loadingNotification.close()
 
@@ -2758,7 +2866,7 @@ const handlePublishNowInternal = async () => {
           redirectTab = 'pending'
           // Skip the rest of the success/error handling - continue to navigation logic below
         }
-        // For EDITOR submitting for approval, show special message and skip message handling
+        // For EDITOR submitting for approval (CREATE mode), show special message and skip message handling
         else if (needsApproval && !isEditMode.value) {
           const platformNameForSubmit = formatBakongApp(formData.platform)
           ElNotification({
@@ -2768,6 +2876,25 @@ const handlePublishNowInternal = async () => {
             duration: 3000,
             dangerouslyUseHTMLString: true,
           })
+          redirectTab = 'pending'
+          // Skip the rest of the success/error handling - continue to navigation logic below
+        }
+        // For EDITOR submitting draft for approval (EDIT mode), show special message
+        // Check both redirectTab and backend response approvalStatus to ensure it's actually PENDING
+        else if (
+          needsApproval && 
+          isEditMode.value && 
+          (redirectTab === 'pending' || result?.data?.approvalStatus === 'PENDING')
+        ) {
+          const platformNameForSubmit = formatBakongApp(formData.platform)
+          ElNotification({
+            title: 'Success',
+            message: `Notification for <strong>${platformNameForSubmit}</strong> has been submitted for approval. It will appear in the Pending tab.`,
+            type: 'success',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          // Ensure redirectTab is set to 'pending' if not already set
           redirectTab = 'pending'
           // Skip the rest of the success/error handling - continue to navigation logic below
         } else {
@@ -2995,6 +3122,70 @@ const handlePublishNowInternal = async () => {
       error.message ||
       'An unexpected error occurred while creating the notification'
 
+    // Check if this is a "no users found" error - automatically save as draft
+    const isNoUsersError =
+      error.response?.data?.errorCode === ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM ||
+      errorMessage.includes('No users found for') ||
+      errorMessage.includes('No users match') ||
+      errorMessage.includes('no users found')
+
+    if (isNoUsersError) {
+      console.warn('⚠️ [Submit] No users found error. Automatically saving as draft...')
+      
+      // Show warning message (no dialog)
+      ElNotification({
+        title: 'Warning',
+        message: formatNoUsersFoundMessage(errorMessage),
+        type: 'warning',
+        duration: 8000,
+        dangerouslyUseHTMLString: true,
+        showClose: true,
+      })
+
+      // Automatically save as draft instead of showing dialog
+      // Keep flag true throughout to prevent navigation guard dialog
+      // Use forceRun=true to bypass handleSaveDraft's isSavingOrPublishing check
+      // Use skipRedirect=true to prevent handleSaveDraft from redirecting (we'll handle it)
+      try {
+        // Save as draft - suppress notifications since we already showed the warning
+        // forceRun=true allows handleSaveDraft to run even when isSavingOrPublishing is true
+        // skipRedirect=true prevents handleSaveDraft from redirecting and resetting the flag
+        await handleSaveDraft(true, true, true, true) // forceDraft=true, suppressNotifications=true, forceRun=true, skipRedirect=true
+        // Flag remains true to prevent navigation guard dialog during redirect
+        
+        // Redirect to draft tab and refresh
+        localStorage.setItem('notification_active_tab', 'draft')
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+        
+        const cacheBuster = Date.now()
+        setTimeout(() => {
+          router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+          // Reset flag after navigation starts
+          setTimeout(() => {
+            isSavingOrPublishing.value = false
+          }, 1000)
+        }, 500) // Small delay to ensure notification is seen
+      } catch (saveError) {
+        console.error('❌ [Submit] Failed to save as draft:', saveError)
+        // Even if save fails, redirect to draft tab
+        const cacheBuster = Date.now()
+        setTimeout(() => {
+          router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+          // Reset flag after navigation starts
+          setTimeout(() => {
+            isSavingOrPublishing.value = false
+          }, 1000)
+        }, 500)
+      } finally {
+        // Reset flag after navigation starts
+        setTimeout(() => {
+          isSavingOrPublishing.value = false
+        }, 1000)
+      }
+      return
+    }
+
     // Check if this is an expired template error - show as warning instead of error
     const isExpiredTemplateError = 
       errorMessage.includes('scheduled time was set') ||
@@ -3043,9 +3234,14 @@ const handleFinishLater = () => {
   showConfirmationDialog.value = true
 }
 
-const handleSaveDraft = async (forceDraft: boolean = false) => {
-  if (isSavingOrPublishing.value) return
-  isSavingOrPublishing.value = true
+const handleSaveDraft = async (forceDraft: boolean = false, suppressNotifications: boolean = false, forceRun: boolean = false, skipRedirect: boolean = false) => {
+  // Allow forceRun to bypass the isSavingOrPublishing check (used when called from error handlers)
+  if (!forceRun && isSavingOrPublishing.value) return
+  // Only set flag if not already set (to prevent resetting during error handling)
+  const wasFlagSet = isSavingOrPublishing.value
+  if (!wasFlagSet) {
+    isSavingOrPublishing.value = true
+  }
 
   // Sync current language data before saving
   const currentLang = activeLanguage.value
@@ -3079,9 +3275,9 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
 
   if (hasValidationError) {
     // Set errors for active language if they exist
-    const activeTitle = currentTitle.value?.trim() || ''
-    if (activeTitle && activeTitle.length > DB_TITLE_MAX_LENGTH) {
-      titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${activeTitle.length}.`
+      const activeTitle = currentTitle.value?.trim() || ''
+      if (activeTitle && activeTitle.length > DB_TITLE_MAX_LENGTH) {
+        titleError.value = `Title is too long (max ${DB_TITLE_MAX_LENGTH}), current length: ${activeTitle.length}.`
     }
 
     // Show notification with all validation errors
@@ -3109,14 +3305,16 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
     return
   }
 
-  const loadingNotification = ElNotification({
-    title: isEditMode.value ? 'Updating draft...' : 'Saving draft...',
-    message: isEditMode.value
-      ? 'Please wait while we update your notification'
-      : 'Please wait while we save your notification',
-    type: 'warning',
-    duration: 0,
-  })
+  const loadingNotification = suppressNotifications
+    ? null
+    : ElNotification({
+        title: isEditMode.value ? 'Updating draft...' : 'Saving draft...',
+        message: isEditMode.value
+          ? 'Please wait while we update your notification'
+          : 'Please wait while we save your notification',
+        type: 'warning',
+        duration: 0,
+      })
 
   try {
     const imagesToUpload: { file: File; language: string }[] = []
@@ -3159,6 +3357,25 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
           console.error('Compression failed for', langKey, e)
           throw new Error(`Failed to prepare image for ${langKey.toUpperCase()}`)
         }
+      }
+
+      // Check if this translation should be included
+      // Only include translations that have:
+      // 1. Title OR content (not both empty), OR
+      // 2. Existing image, OR
+      // 3. New image file to upload
+      const hasTitle = title && title.trim() !== ''
+      const hasContent = content && content.trim() !== ''
+      const hasExistingImage = existingImageIds[langKey] && existingImageIds[langKey].trim() !== ''
+      const hasNewImage = imageFile !== null
+
+      const shouldIncludeTranslation = hasTitle || hasContent || hasExistingImage || hasNewImage
+
+      if (!shouldIncludeTranslation) {
+        // Skip empty translations to prevent backend from creating empty records
+        // or applying fallback logic that copies data from other languages
+        console.log(`⏭️ [Save Draft] Skipping empty translation for ${langKey}`)
+        continue
       }
 
       const translationData: any = {
@@ -3207,9 +3424,9 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
               translations[transIndex].image = u.fileId
             }
 
-            if (languageFormData[langKey]) {
-              languageFormData[langKey].imageFile = null
-              languageFormData[langKey].imageUrl = `/api/v1/image/${u.fileId}`
+        if (languageFormData[langKey]) {
+          languageFormData[langKey].imageFile = null
+          languageFormData[langKey].imageUrl = `/api/v1/image/${u.fileId}`
               if (langKey === activeLanguage.value) {
                 currentImageFile.value = null
                 currentImageUrl.value = `/api/v1/image/${u.fileId}`
@@ -3217,7 +3434,7 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
             }
           }
         })
-      } catch (error) {
+        } catch (error) {
         console.error('Error uploading images during draft save:', error)
         throw new Error('Failed to upload images. Please try again.')
       }
@@ -3261,15 +3478,19 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
       result = await notificationApi.createTemplate(templateData)
     }
 
-    loadingNotification.close()
+    if (loadingNotification) {
+      loadingNotification.close()
+    }
 
-    // Show success notification
-    ElNotification({
-      title: 'Success',
-      message: `Notification updated successfully!`,
-      type: 'success',
-      duration: 3000,
-    })
+    // Show success notification only if not suppressed
+    if (!suppressNotifications) {
+      ElNotification({
+        title: 'Success',
+        message: `Notification updated successfully!`,
+        type: 'success',
+        duration: 3000,
+      })
+    }
 
     // 5. Clear cache and redirect
     try {
@@ -3292,14 +3513,22 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
       redirectTab = !useSchedule ? 'draft' : 'scheduled'
     }
     
-    // Add a small delay to ensure the success notification is visible before redirecting
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    // Add a small delay to ensure the success notification is visible before redirecting (only if showing notifications)
+    if (!suppressNotifications) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
     
     // If editing, preserve the original tab (fromTab) if it's draft, otherwise use calculated tab
     if (isEditMode.value && fromTab.value === 'draft') {
       redirectTab = 'draft'
     }
 
+    // Skip redirect if skipRedirect is true (caller will handle redirect)
+    if (skipRedirect) {
+      // Don't reset flag - caller will handle it
+      return
+    }
+    
     if (isEditMode.value) {
       setTimeout(() => {
         window.location.href = `/?tab=${redirectTab}`
@@ -3307,20 +3536,25 @@ const handleSaveDraft = async (forceDraft: boolean = false) => {
       }, 500)
     } else {
       router.push(`/?tab=${redirectTab}`).then(() => {
-        isSavingOrPublishing.value = false
-      })
+          isSavingOrPublishing.value = false
+        })
     }
   } catch (error: any) {
     isSavingOrPublishing.value = false
-    loadingNotification.close()
+    if (loadingNotification) {
+      loadingNotification.close()
+    }
     console.error('Error saving draft:', error)
 
-    ElNotification({
-      title: 'Error',
-      message: error.message || 'An unexpected error occurred while saving the draft',
-      type: 'error',
-      duration: 5000,
-    })
+    // Show error notification only if not suppressed
+    if (!suppressNotifications) {
+      ElNotification({
+        title: 'Error',
+        message: error.message || 'An unexpected error occurred while saving the draft',
+        type: 'error',
+        duration: 5000,
+      })
+    }
   }
 }
 
@@ -3471,6 +3705,40 @@ const handleApprovalFromView = async () => {
       status: error.response?.status,
       statusText: error.response?.statusText,
     })
+    
+    // Check if this is a "no users found" error (platform mismatch)
+    const errorMessage = error.response?.data?.responseMessage || error.message || ''
+    const isNoUsersError = 
+      error.response?.data?.errorCode === 31 || // ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM
+      errorMessage.includes('No users found') ||
+      errorMessage.includes('no users found') ||
+      errorMessage.includes('No users match') ||
+      errorMessage.includes('registered users for this platform')
+    
+    if (isNoUsersError) {
+      // Template was rejected due to no users matching platform requirements
+      // Show warning message and redirect to draft tab (where rejected templates are shown)
+      ElNotification({
+        title: 'Warning',
+        message: formatNoUsersFoundRejectionMessage(errorMessage),
+        type: 'warning',
+        duration: 8000,
+        dangerouslyUseHTMLString: true,
+      })
+      // Redirect to Draft tab (where rejected templates are shown) and refresh
+      try {
+        localStorage.setItem('notification_active_tab', 'draft')
+        localStorage.removeItem('notifications_cache')
+        localStorage.removeItem('notifications_cache_timestamp')
+      } catch (error) {
+        console.warn('Failed to update localStorage:', error)
+      }
+      const cacheBuster = Date.now()
+      setTimeout(() => {
+        router.push(`/?tab=draft&_refresh=${cacheBuster}`)
+      }, 500) // Small delay to ensure notification is seen
+      return
+    }
     
     // Check if this is an auto-expiration or auto-rejection due to passed scheduled time
     const isAutoExpired = error.response?.data?.data?.autoExpired === true

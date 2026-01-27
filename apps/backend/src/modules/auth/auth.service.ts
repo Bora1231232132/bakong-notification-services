@@ -116,7 +116,7 @@ export class AuthService implements OnModuleInit {
             username: user.username,
             role: user.role,
             displayName: user.displayName,
-            image: null,
+            image: image, // Use the computed image path instead of hardcoded null
             mustChangePassword: user.mustChangePassword || false,
           },
         },
