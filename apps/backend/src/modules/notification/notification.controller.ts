@@ -15,12 +15,15 @@ export class NotificationController {
   constructor(
     private readonly service: NotificationService,
     private readonly baseFunctionHelper: BaseFunctionHelper,
-  ) {}
+  ) { }
 
   @Post('send')
   @ApiKeyRequired()
   @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
   async sendNotification(@Body() dto: SentNotificationDto, @Req() req: any) {
+    // mark request as v1 for downstream
+    req.version = '1'
+
     console.log('📤 /send API endpoint called with:', {
       templateId: dto.templateId,
       notificationId: dto.notificationId,
@@ -28,22 +31,30 @@ export class NotificationController {
       notificationType: dto.notificationType,
       bakongPlatform: dto.bakongPlatform,
       accountId: dto.accountId || 'N/A',
+      accountIdType: Array.isArray(dto.accountId) ? 'Array' : typeof dto.accountId,
       fcmToken: dto.fcmToken
         ? `${dto.fcmToken.substring(0, 30)}...`
         : dto.fcmToken === ''
-        ? 'EMPTY (explicitly cleared)'
-        : 'NOT PROVIDED',
+          ? 'EMPTY (explicitly cleared)'
+          : 'NOT PROVIDED',
     })
 
     try {
-      if (dto.accountId) {
+      const accountIdList = Array.isArray(dto.accountId)
+        ? dto.accountId.map((x: any) => String(x).trim()).filter(Boolean)
+        : undefined
+
+      const singleAccountId =
+        typeof dto.accountId === 'string' && dto.accountId.trim() ? dto.accountId.trim() : undefined
+
+      if (singleAccountId) {
         // CRITICAL: Sync user data FIRST when FCM push is received (before any other operations)
         // This ensures we have the latest user data (fcmToken, bakongPlatform, etc.) immediately
         // Mobile app always provides all data when receiving FCM push (all notification types)
         // IMPORTANT: Do NOT force notificationType - let it come from mobile's FCM payload
         const notificationTypeLabel = dto.notificationType || 'UNKNOWN'
         console.log(
-          `🔄 [sendNotification] FCM push received - Syncing user data FIRST for ${dto.accountId} before processing ${notificationTypeLabel} notification`,
+          `🔄 [sendNotification] FCM push received - Syncing user data FIRST for ${singleAccountId} before processing ${notificationTypeLabel} notification`,
         )
 
         // Mobile app ALWAYS provides bakongPlatform in the request
@@ -51,11 +62,11 @@ export class NotificationController {
         if (!dto.bakongPlatform) {
           const inferredBakongPlatform = this.inferBakongPlatform(
             dto.participantCode,
-            dto.accountId,
+            singleAccountId,
           )
           if (inferredBakongPlatform) {
             console.warn(
-              `⚠️ [sendNotification] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId} -> ${inferredBakongPlatform}`,
+              `⚠️ [sendNotification] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${singleAccountId} -> ${inferredBakongPlatform}`,
             )
             dto.bakongPlatform = inferredBakongPlatform
           }
@@ -72,34 +83,26 @@ export class NotificationController {
 
         // Check fcmToken status for logging
         if (dto.fcmToken === undefined) {
-          const existingUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+          const existingUser = await this.baseFunctionHelper.findUserByAccountId(singleAccountId)
           if (existingUser?.fcmToken) {
             console.warn(
-              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
-                dto.accountId
-              } but fcmToken NOT PROVIDED. User has existing token: ${existingUser.fcmToken.substring(
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${singleAccountId} but fcmToken NOT PROVIDED. User has existing token: ${existingUser.fcmToken.substring(
                 0,
                 30,
               )}... (This might be an old/invalid token if app was reinstalled)`,
             )
           } else {
             console.warn(
-              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
-                dto.accountId
-              } but fcmToken NOT PROVIDED. User has no existing token.`,
+              `⚠️ [sendNotification] ${dto.notificationType || 'Notification'} for ${singleAccountId} but fcmToken NOT PROVIDED. User has no existing token.`,
             )
           }
         } else if (dto.fcmToken === '') {
           console.log(
-            `ℹ️ [sendNotification] ${dto.notificationType || 'Notification'} for ${
-              dto.accountId
-            } with EMPTY fcmToken (app deleted/reinstalled - will clear old token)`,
+            `ℹ️ [sendNotification] ${dto.notificationType || 'Notification'} for ${singleAccountId} with EMPTY fcmToken (app deleted/reinstalled - will clear old token)`,
           )
         } else {
           console.log(
-            `✅ [sendNotification] ${dto.notificationType || 'Notification'} for ${
-              dto.accountId
-            } with NEW fcmToken: ${dto.fcmToken.substring(0, 30)}...`,
+            `✅ [sendNotification] ${dto.notificationType || 'Notification'} for ${singleAccountId} with NEW fcmToken: ${dto.fcmToken.substring(0, 30)}...`,
           )
         }
 
@@ -108,17 +111,14 @@ export class NotificationController {
         // Only update fields that have actual values - this prevents data loss
         // This applies to ALL fields including fcmToken - if null/empty, keep the old token
         const syncData: any = {
-          accountId: dto.accountId,
+          accountId: singleAccountId,
         }
 
         // Only add fields if they have actual values - if not provided/null/empty, keep old data
         if (dto.fcmToken !== undefined && dto.fcmToken !== null && dto.fcmToken !== '') {
           syncData.fcmToken = dto.fcmToken
         }
-        if (
-          dto.bakongPlatform !== undefined &&
-          dto.bakongPlatform !== null
-        ) {
+        if (dto.bakongPlatform !== undefined && dto.bakongPlatform !== null) {
           syncData.bakongPlatform = dto.bakongPlatform
         }
         if (dto.language !== undefined && dto.language !== null) {
@@ -138,10 +138,26 @@ export class NotificationController {
         await this.baseFunctionHelper.updateUserData(syncData)
 
         console.log(
-          `✅ [sendNotification] User data synced successfully for ${
-            dto.accountId
-          }. Proceeding with ${dto.notificationType || 'notification'}...`,
+          `✅ [sendNotification] User data synced successfully for ${singleAccountId}. Proceeding with ${dto.notificationType || 'notification'}...`,
         )
+      } else if (accountIdList?.length) {
+        console.log(
+          `📌 [sendNotification] accountId list provided (${accountIdList.length}) -> skip sync user step, send only to these users`,
+        )
+
+        // Infer bakongPlatform from the first accountId in the list if not provided
+        if (!dto.bakongPlatform && accountIdList.length > 0) {
+          const inferred = this.inferBakongPlatform(undefined, accountIdList[0])
+          if (inferred) {
+            console.log(`📌 [sendNotification] Inferred bakongPlatform for list: ${inferred}`)
+            dto.bakongPlatform = inferred
+          }
+        }
+
+        // For list sending, if notificationType is not provided, default to ANNOUNCEMENT (typical for multiple users)
+        if (!dto.notificationType) {
+          dto.notificationType = NotificationType.ANNOUNCEMENT
+        }
       } else {
         if (!dto.notificationType) {
           dto.notificationType = NotificationType.ANNOUNCEMENT

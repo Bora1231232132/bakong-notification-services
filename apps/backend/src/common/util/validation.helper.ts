@@ -418,7 +418,7 @@ export class ValidationHelper {
       return false
     }
 
-    return token.length >= 100 && /^[A-Za-z0-9:_-]+$/.test(token)
+    return token.length >= 30 && /^[A-Za-z0-9:_-]+$/.test(token)
   }
 
   /**
@@ -527,31 +527,42 @@ export class ValidationHelper {
       const newToken = updates.fcmToken || ''
       const tokensAreDifferent = currentToken.trim() !== newToken.trim()
 
-      // Always update fcmToken when provided, even if it's the same
-      // This ensures database stays in sync with mobile app and updates the timestamp
-      user.fcmToken = updates.fcmToken
-
-      if (tokensAreDifferent) {
-        console.log(`🔄 [updateUserFields] fcmToken CHANGED for user ${user.accountId}:`, {
-          current: currentToken
-            ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
-            : 'EMPTY',
-          new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
-          willUpdate: true,
-        })
-        hasChanges = true
-      } else {
+      // If existing token is valid and new token is empty/short, PRESERVE existing token
+      // This prevents overwriting with null or empty if we already have good data
+      if (currentToken.length >= 30 && (newToken === '' || newToken.length < 30)) {
         console.log(
-          `🔄 [updateUserFields] fcmToken SAME for user ${user.accountId}, but updating anyway to sync timestamp:`,
-          {
-            token: newToken
-              ? `${newToken.substring(0, 30)}... (length: ${newToken.length})`
-              : 'EMPTY',
-            reason: 'Ensuring database stays in sync with mobile app',
-          },
+          `⚠️ [updateUserFields] PRESERVING valid existing token for user ${user.accountId}. Incoming token is empty or too short: "${newToken}"`,
         )
-        // Still mark as changed to ensure save happens and updatedAt timestamp is updated
+      } else {
+        // Always update fcmToken when provided and valid (or if we didn't have one before)
+        // This ensures database stays in sync with mobile app and updates the timestamp
+        user.fcmToken = updates.fcmToken
         hasChanges = true
+      }
+
+      if (hasChanges) {
+        if (tokensAreDifferent) {
+          console.log(`🔄 [updateUserFields] fcmToken CHANGED for user ${user.accountId}:`, {
+            current: currentToken
+              ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
+              : 'EMPTY',
+            new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+            willUpdate: true,
+          })
+          hasChanges = true
+        } else {
+          console.log(
+            `🔄 [updateUserFields] fcmToken SAME for user ${user.accountId}, but updating anyway to sync timestamp:`,
+            {
+              token: newToken
+                ? `${newToken.substring(0, 30)}... (length: ${newToken.length})`
+                : 'EMPTY',
+              reason: 'Ensuring database stays in sync with mobile app',
+            },
+          )
+          // Still mark as changed to ensure save happens and updatedAt timestamp is updated
+          hasChanges = true
+        }
       }
     }
 
@@ -561,8 +572,7 @@ export class ValidationHelper {
         const normalizedPlatform = platformValidation.normalizedValue
         if (user.platform !== normalizedPlatform) {
           console.log(
-            `🔄 [updateUserFields] platform changed for user ${user.accountId}: ${
-              user.platform || 'NULL'
+            `🔄 [updateUserFields] platform changed for user ${user.accountId}: ${user.platform || 'NULL'
             } -> ${normalizedPlatform}`,
           )
         }
@@ -578,8 +588,7 @@ export class ValidationHelper {
         const normalizedLanguage = languageValidation.normalizedValue
         if (user.language !== normalizedLanguage) {
           console.log(
-            `🔄 [updateUserFields] language changed for user ${user.accountId}: ${
-              user.language || 'NULL'
+            `🔄 [updateUserFields] language changed for user ${user.accountId}: ${user.language || 'NULL'
             } -> ${normalizedLanguage}`,
           )
         }
@@ -592,8 +601,7 @@ export class ValidationHelper {
     if (updates.participantCode !== undefined) {
       if (user.participantCode !== updates.participantCode) {
         console.log(
-          `🔄 [updateUserFields] participantCode changed for user ${user.accountId}: ${
-            user.participantCode || 'NULL'
+          `🔄 [updateUserFields] participantCode changed for user ${user.accountId}: ${user.participantCode || 'NULL'
           } -> ${updates.participantCode}`,
         )
       }
@@ -605,8 +613,7 @@ export class ValidationHelper {
     if (updates.bakongPlatform !== undefined) {
       if (user.bakongPlatform !== updates.bakongPlatform) {
         console.log(
-          `🔄 [updateUserFields] bakongPlatform changed for user ${user.accountId}: ${
-            user.bakongPlatform || 'NULL'
+          `🔄 [updateUserFields] bakongPlatform changed for user ${user.accountId}: ${user.bakongPlatform || 'NULL'
           } -> ${updates.bakongPlatform}`,
         )
       }

@@ -15,7 +15,7 @@
 
 DO $$
 DECLARE
-    expected_tables TEXT[] := ARRAY['user', 'bakong_user', 'image', 'category_type', 'template', 'template_translation', 'notification'];
+    expected_tables TEXT[] := ARRAY['user', 'bakong_user', 'image', 'category_type', 'template', 'template_translation', 'notification', 'verification_token'];
     missing_tables TEXT[];
     tbl_name TEXT;
 BEGIN
@@ -31,7 +31,7 @@ BEGIN
     END LOOP;
     
     IF array_length(missing_tables, 1) IS NULL THEN
-        RAISE NOTICE '✅ All 7 tables exist';
+        RAISE NOTICE '✅ All 8 tables exist';
     ELSE
         RAISE EXCEPTION '❌ Missing tables: %', array_to_string(missing_tables, ', ');
     END IF;
@@ -76,6 +76,46 @@ BEGIN
         WHERE table_name = 'template' AND column_name = 'categoryTypeId'
     ) THEN
         issues := array_append(issues, 'template.categoryTypeId missing');
+    END IF;
+
+    -- Check user.email
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' AND column_name = 'email'
+    ) THEN
+        issues := array_append(issues, 'user.email missing');
+    END IF;
+
+    -- Check user.mustChangePassword
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'user' AND column_name = 'mustChangePassword'
+    ) THEN
+        issues := array_append(issues, 'user.mustChangePassword missing');
+    END IF;
+
+    -- Check template.approvalStatus
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' AND column_name = 'approvalStatus'
+    ) THEN
+        issues := array_append(issues, 'template.approvalStatus missing');
+    END IF;
+
+    -- Check template.reasonForRejection
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' AND column_name = 'reasonForRejection'
+    ) THEN
+        issues := array_append(issues, 'template.reasonForRejection missing');
+    END IF;
+
+    -- Check notification.language
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'notification' AND column_name = 'language'
+    ) THEN
+        issues := array_append(issues, 'notification.language missing');
     END IF;
     
     IF array_length(issues, 1) IS NULL THEN
@@ -294,7 +334,9 @@ DECLARE
         'platform_enum',
         'language_enum',
         'bakong_platform_enum',
-        'notification_type_enum'
+        'notification_type_enum',
+        'approval_status_enum',
+        'verification_token_type_enum'
     ];
     missing_enums TEXT[];
     enum_name TEXT;
@@ -309,7 +351,29 @@ BEGIN
     END LOOP;
     
     IF array_length(missing_enums, 1) IS NULL THEN
-        RAISE NOTICE '✅ All enum types exist';
+        RAISE NOTICE '✅ All % enum types exist', array_length(expected_enums, 1);
+        
+        -- Check for ADMINISTRATOR role
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_enum 
+            WHERE enumlabel = 'ADMINISTRATOR' 
+            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role_enum')
+        ) THEN
+             RAISE EXCEPTION '❌ ADMINISTRATOR role missing from user_role_enum';
+        ELSE
+            RAISE NOTICE '✅ ADMINISTRATOR role exists in user_role_enum';
+        END IF;
+
+        -- Check for EXPIRED status
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_enum 
+            WHERE enumlabel = 'EXPIRED' 
+            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'approval_status_enum')
+        ) THEN
+             RAISE EXCEPTION '❌ EXPIRED status missing from approval_status_enum';
+        ELSE
+            RAISE NOTICE '✅ EXPIRED status exists in approval_status_enum';
+        END IF;
     ELSE
         RAISE EXCEPTION '❌ Missing enum types: %', array_to_string(missing_enums, ', ');
     END IF;
@@ -372,6 +436,74 @@ BEGIN
 END$$;
 
 -- ============================================================================
+-- 9. Verify Data Consistency
+-- ============================================================================
+\echo '🔍 Step 9: Verifying data consistency...'
+
+DO $$
+DECLARE
+    issues TEXT[] := ARRAY[]::TEXT[];
+    orphaned_count INTEGER;
+    null_category_count INTEGER;
+    null_language_count INTEGER;
+BEGIN
+    -- Check for orphaned notifications (templateId doesn't exist)
+    SELECT COUNT(*) INTO orphaned_count
+    FROM notification n
+    WHERE NOT EXISTS (
+        SELECT 1 FROM template t WHERE t.id = n."templateId"
+    );
+    
+    IF orphaned_count > 0 THEN
+        issues := array_append(issues, format('Found % orphaned notification(s) with invalid templateId', orphaned_count));
+    END IF;
+    
+    -- Check for templates without categoryTypeId
+    SELECT COUNT(*) INTO null_category_count
+    FROM template
+    WHERE "categoryTypeId" IS NULL
+    AND "deletedAt" IS NULL;
+    
+    IF null_category_count > 0 THEN
+        issues := array_append(issues, format('Found % template(s) with NULL categoryTypeId', null_category_count));
+    END IF;
+    
+    -- Check for notifications without language (should be rare but possible)
+    SELECT COUNT(*) INTO null_language_count
+    FROM notification
+    WHERE language IS NULL;
+    
+    IF null_language_count > 0 THEN
+        -- This is acceptable for old records, just log it
+        RAISE NOTICE 'ℹ️  Found % notification(s) with NULL language (acceptable for old records)', null_language_count;
+    END IF;
+    
+    IF array_length(issues, 1) IS NULL THEN
+        RAISE NOTICE '✅ Data consistency check passed';
+    ELSE
+        RAISE WARNING '⚠️  Data consistency issues: %', array_to_string(issues, ', ');
+    END IF;
+END$$;
+
+-- ============================================================================
+-- 10. Verify Backup Recommendation
+-- ============================================================================
+\echo ''
+\echo '💾 Step 10: Backup recommendation...'
+
+DO $$
+DECLARE
+    last_backup_age INTERVAL;
+    backup_recommended BOOLEAN := FALSE;
+BEGIN
+    -- Check if backup directory exists and has recent backups
+    -- Note: This is informational only, actual backup check is done by utils-server.sh
+    RAISE NOTICE '💡 Recommendation: Ensure you have a recent backup before deploying';
+    RAISE NOTICE '   Run: bash utils-server.sh db-backup [environment]';
+    RAISE NOTICE '   Backup location: backups/backup_[env]_latest.sql';
+END$$;
+
+-- ============================================================================
 -- Summary
 -- ============================================================================
 \echo ''
@@ -385,7 +517,14 @@ END$$;
 \echo '   - All indexes are created'
 \echo '   - Data integrity verified'
 \echo '   - All enum types exist'
+\echo '   - Data consistency checked'
 \echo ''
 \echo '🚀 Database is ready for application deployment!'
+\echo ''
+\echo '🔒 Data Safety Reminders:'
+\echo '   - Always backup before major changes'
+\echo '   - Test migrations in dev/staging first'
+\echo '   - Monitor application logs after deployment'
+\echo '   - Keep backups for at least 30 days'
 \echo ''
 

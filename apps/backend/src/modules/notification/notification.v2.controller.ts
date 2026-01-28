@@ -88,6 +88,15 @@ export class NotificationControllerV2 {
           `📌 [v2 sendNotification] accountId list provided (${accountIdList.length}) -> skip sync user step, send only to these users`,
         )
 
+        // Infer bakongPlatform from the first accountId in the list if not provided
+        if (!dto.bakongPlatform && accountIdList.length > 0) {
+          const inferred = this.inferBakongPlatform(undefined, accountIdList[0])
+          if (inferred) {
+            console.log(`📌 [v2 sendNotification] Inferred bakongPlatform for list: ${inferred}`)
+            dto.bakongPlatform = inferred
+          }
+        }
+
         // optional: default type when none provided
         if (!dto.notificationType) {
           dto.notificationType = NotificationType.ANNOUNCEMENT
@@ -165,5 +174,41 @@ export class NotificationControllerV2 {
       data: result,
       message: `User sync completed: ${result.updatedCount} of ${result.totalCount} users updated`,
     })
+  }
+
+  /**
+   * Infer bakongPlatform from participantCode or accountId
+   * Priority: participantCode > accountId domain
+   */
+  private inferBakongPlatform(participantCode?: string, accountId?: string): BakongApp | undefined {
+    // Check participantCode first (higher priority)
+    if (participantCode) {
+      const normalized = participantCode.toUpperCase()
+      if (normalized.startsWith('BKRT')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.startsWith('BKJR')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.startsWith('TOUR')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    // Check accountId domain
+    if (accountId) {
+      const normalized = accountId.toLowerCase()
+      if (normalized.includes('@bkrt')) {
+        return BakongApp.BAKONG
+      }
+      if (normalized.includes('@bkjr')) {
+        return BakongApp.BAKONG_JUNIOR
+      }
+      if (normalized.includes('@tour')) {
+        return BakongApp.BAKONG_TOURIST
+      }
+    }
+
+    return undefined
   }
 }

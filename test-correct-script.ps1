@@ -40,6 +40,7 @@ Write-Host "----------------------------------"
 
 $MIGRATION_FILE        = "apps/backend/scripts/unified-migration.sql"
 $VERIFY_MIGRATION_FILE = "apps/backend/scripts/verify-migration.sql"
+$VERIFY_ALL_FILE       = "apps/backend/scripts/verify-all.sql"
 $UTILS_FILE            = "utils-server.sh"
 
 if (-not (Test-Path $MIGRATION_FILE)) {
@@ -59,6 +60,10 @@ if (-not (Test-Path $UTILS_FILE)) {
     Write-Host "Warning: Utils script not found: $UTILS_FILE (optional)"
 } else {
     Write-Host "Found: $UTILS_FILE"
+}
+
+if (Test-Path $VERIFY_ALL_FILE) {
+    Write-Host "Found: $VERIFY_ALL_FILE"
 }
 
 Write-Host ""
@@ -235,6 +240,31 @@ if ($DB_RUNNING) {
         if ($checkBakong -match "t") {
             Write-Host "Verified: bakong_user.syncStatus column exists."
         }
+
+        $checkUserEmail = docker exec $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'email');" 2>$null
+        if ($checkUserEmail -match "t") {
+            Write-Host "Verified: user.email column exists."
+        }
+
+        $checkUserMustChange = docker exec $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'mustChangePassword');" 2>$null
+        if ($checkUserMustChange -match "t") {
+            Write-Host "Verified: user.mustChangePassword column exists."
+        }
+
+        $checkTemplateApproval = docker exec $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'approvalStatus');" 2>$null
+        if ($checkTemplateApproval -match "t") {
+            Write-Host "Verified: template.approvalStatus column exists."
+        }
+
+        $checkTemplateRejection = docker exec $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'reasonForRejection');" 2>$null
+        if ($checkTemplateRejection -match "t") {
+            Write-Host "Verified: template.reasonForRejection column exists."
+        }
+
+        $checkNotificationLang = docker exec $DB_CONTAINER psql -U $DB_USER -d $DB_NAME -tAc "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'notification' AND column_name = 'language');" 2>$null
+        if ($checkNotificationLang -match "t") {
+            Write-Host "Verified: notification.language column exists."
+        }
     }
     else {
         Write-Host ""
@@ -340,19 +370,22 @@ Write-Host ""
 Write-Host "Step 7: Verifying Data Integrity..."
 Write-Host "-----------------------------------"
 
-if (Test-Path $UTILS_FILE) {
-    if (Test-Path "apps/backend/scripts/verify-all.sql") {
-        Write-Host "Running comprehensive data verification (verify-all.sql)..."
-        bash utils-server.sh verify-all
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Warning: Data verification reported issues (check manually if needed)."
+if ($DB_RUNNING) {
+    if (Test-Path $VERIFY_ALL_FILE) {
+        Write-Host "Running comprehensive verification (verify-all.sql)..."
+        $env:PGPASSWORD = $DB_PASSWORD
+        Get-Content $VERIFY_ALL_FILE | docker exec -i $DB_CONTAINER psql -U $DB_USER -d $DB_NAME
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ All verification checks passed."
+        } else {
+            Write-Host "⚠️  Some verification checks had warnings or errors."
         }
+        $env:PGPASSWORD = $null
     } else {
         Write-Host "verify-all.sql not found - migration verification already completed in Step 4."
-        Write-Host "All verification checks passed using verify-migration.sql."
     }
 } else {
-    Write-Host "Warning: utils-server.sh not found, skipping comprehensive verification."
+    Write-Host "Warning: Database not running, skipping comprehensive verification."
 }
 
 Write-Host ""

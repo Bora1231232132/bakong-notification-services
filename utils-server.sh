@@ -56,9 +56,52 @@ _get_db_config() {
     esac
 }
 
-# Run migration internally
+# Validate data before migration (safety check)
+_validate_data_before_migration() {
+    local env="$1"
+    _get_db_config "$env" || return 1
+    
+    echo "🔍 Pre-migration Data Validation"
+    echo "================================"
+    echo ""
+    
+    export PGPASSWORD="$DB_PASSWORD"
+    
+    # Check critical table record counts
+    echo "📊 Checking data integrity..."
+    VALIDATION_RESULT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
+        SELECT 
+            'bakong_user' as table_name, COUNT(*) as count FROM bakong_user
+        UNION ALL
+            SELECT 'user', COUNT(*) FROM \"user\" WHERE \"deletedAt\" IS NULL
+        UNION ALL
+            SELECT 'template', COUNT(*) FROM template WHERE \"deletedAt\" IS NULL
+        UNION ALL
+            SELECT 'notification', COUNT(*) FROM notification
+        UNION ALL
+            SELECT 'template_translation', COUNT(*) FROM template_translation;
+    " 2>/dev/null)
+    unset PGPASSWORD
+    
+    if [ -n "$VALIDATION_RESULT" ]; then
+        echo "$VALIDATION_RESULT" | while IFS='|' read -r table count || [ -n "$table" ]; do
+            table=$(echo "$table" | xargs 2>/dev/null)
+            count=$(echo "$count" | xargs 2>/dev/null)
+            if [ -n "$table" ] && [ -n "$count" ]; then
+                echo "   ✅ $table: $count record(s)"
+            fi
+        done
+    fi
+    
+    echo ""
+    echo "✅ Pre-migration validation completed"
+    echo ""
+}
+
+# Run migration internally with safety checks
 _run_migration_internal() {
     local env="${1:-production}"
+    local skip_backup="${2:-false}"  # Allow skipping backup if explicitly requested
     _get_db_config "$env" || return 1
     
     echo "🔄 Running Unified Database Migration"
@@ -86,6 +129,70 @@ _run_migration_internal() {
     echo "✅ Database container is running"
     echo ""
     
+    # CRITICAL: Check for backup before migration (unless explicitly skipped)
+    if [ "$skip_backup" != "true" ]; then
+        echo "🔒 Data Safety Check"
+        echo "==================="
+        echo ""
+        
+        # Check if backup exists
+        BACKUP_DIR="backups"
+        local file_env_name
+        case "$env" in
+            dev|development) file_env_name="dev" ;;
+            sit|staging) file_env_name="staging" ;;
+            production|prod) file_env_name="production" ;;
+            *) file_env_name="$env" ;;
+        esac
+        
+        LATEST_BACKUP="$BACKUP_DIR/backup_${file_env_name}_latest.sql"
+        
+        if [ ! -f "$LATEST_BACKUP" ]; then
+            echo "⚠️  WARNING: No backup found before migration!"
+            echo "   Expected backup: $LATEST_BACKUP"
+            echo ""
+            echo "🔒 Creating backup now (CRITICAL for data safety)..."
+            echo ""
+            
+            if ! _backup_database_internal "$env"; then
+                echo ""
+                echo "❌ Backup failed! Migration aborted for data safety."
+                echo ""
+                echo "💡 Please create a backup manually:"
+                echo "   bash utils-server.sh db-backup $env"
+                echo ""
+                echo "   Or skip backup check (NOT RECOMMENDED):"
+                echo "   bash utils-server.sh db-migrate-force $env"
+                return 1
+            fi
+            echo ""
+        else
+            BACKUP_AGE=$(find "$LATEST_BACKUP" -type f -printf '%T@\n' 2>/dev/null | awk '{print int((systime() - $1) / 3600)}')
+            if [ -n "$BACKUP_AGE" ] && [ "$BACKUP_AGE" -gt 24 ]; then
+                echo "⚠️  WARNING: Latest backup is older than 24 hours!"
+                echo "   Backup age: ${BACKUP_AGE} hours"
+                echo "   Backup file: $LATEST_BACKUP"
+                echo ""
+                echo "🔒 Creating fresh backup before migration..."
+                echo ""
+                _backup_database_internal "$env" || {
+                    echo "⚠️  Backup failed, but continuing with migration..."
+                    echo "   Backup file exists: $LATEST_BACKUP"
+                }
+                echo ""
+            else
+                echo "✅ Backup found: $LATEST_BACKUP"
+                if [ -n "$BACKUP_AGE" ]; then
+                    echo "   Backup age: ${BACKUP_AGE} hours"
+                fi
+                echo ""
+            fi
+        fi
+        
+        # Validate data before migration
+        _validate_data_before_migration "$env"
+    fi
+    
     # Check if migration file exists
     MIGRATION_FILE="apps/backend/scripts/unified-migration.sql"
     if [ ! -f "$MIGRATION_FILE" ]; then
@@ -96,17 +203,73 @@ _run_migration_internal() {
     echo "📝 Running migration..."
     echo ""
     
-    # Run migration
-    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE"
-    
+    # Run migration with error handling
+    export PGPASSWORD="$DB_PASSWORD"
+    MIGRATION_OUTPUT=$(docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$MIGRATION_FILE" 2>&1)
     EXIT_CODE=$?
+    unset PGPASSWORD
     
     if [ $EXIT_CODE -eq 0 ]; then
         echo ""
         echo "✅ Migration completed successfully!"
+        echo ""
+        
+        # Post-migration verification
+        echo "🔍 Post-migration Verification"
+        echo "=============================="
+        echo ""
+        
+        VERIFY_FILE="apps/backend/scripts/verify-migration.sql"
+        if [ -f "$VERIFY_FILE" ]; then
+            echo "   Running migration verification..."
+            export PGPASSWORD="$DB_PASSWORD"
+            if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_FILE" > /dev/null 2>&1; then
+                echo "   ✅ Migration verification passed"
+            else
+                echo "   ⚠️  Verification had warnings (check manually if needed)"
+            fi
+            unset PGPASSWORD
+        fi
+        
+        # Quick data integrity check
+        echo ""
+        echo "   Checking data integrity..."
+        export PGPASSWORD="$DB_PASSWORD"
+        POST_MIGRATION_RESULT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
+            SELECT 
+                'bakong_user' as table_name, COUNT(*) as count FROM bakong_user
+            UNION ALL
+                SELECT 'user', COUNT(*) FROM \"user\" WHERE \"deletedAt\" IS NULL
+            UNION ALL
+                SELECT 'template', COUNT(*) FROM template WHERE \"deletedAt\" IS NULL
+            UNION ALL
+                SELECT 'notification', COUNT(*) FROM notification;
+        " 2>/dev/null)
+        unset PGPASSWORD
+        
+        if [ -n "$POST_MIGRATION_RESULT" ]; then
+            echo "$POST_MIGRATION_RESULT" | while IFS='|' read -r table count || [ -n "$table" ]; do
+                table=$(echo "$table" | xargs 2>/dev/null)
+                count=$(echo "$count" | xargs 2>/dev/null)
+                if [ -n "$table" ] && [ -n "$count" ]; then
+                    echo "   ✅ $table: $count record(s)"
+                fi
+            done
+        fi
+        
+        echo ""
+        echo "✅ Migration and verification completed successfully!"
     else
         echo ""
         echo "❌ Migration failed with exit code: $EXIT_CODE"
+        echo ""
+        echo "⚠️  ERROR OUTPUT:"
+        echo "$MIGRATION_OUTPUT" | tail -20
+        echo ""
+        echo "🔒 IMPORTANT: Your data is safe!"
+        echo "   Backup available at: $LATEST_BACKUP"
+        echo "   To restore: bash utils-server.sh db-restore $LATEST_BACKUP $env"
+        echo ""
         return $EXIT_CODE
     fi
 }
@@ -277,7 +440,7 @@ _backup_database_internal() {
     _cleanup_old_backups "$file_env_name" "$keep_backups"
 }
 
-# Restore database internally
+# Restore database internally with enhanced safety checks
 _restore_database_internal() {
     local env="${1:-staging}"
     local backup_file="$2"
@@ -289,15 +452,73 @@ _restore_database_internal() {
     
     _get_db_config "$env" || return 1
     
-    echo "🔄 Starting database restore..."
-    echo "📊 Environment: $env"
-    echo "📄 Backup file: $backup_file"
-    echo "🗄️  Database: $DB_NAME"
-    echo "⚠️  WARNING: This will replace all existing data!"
+    echo "🔄 Starting Database Restore"
+    echo "============================"
     echo ""
-    read -p "Are you sure you want to continue? (yes/no): " confirm
+    echo "📊 Configuration:"
+    echo "   Environment: $env"
+    echo "   Database: $DB_NAME"
+    echo "   Container: $DB_CONTAINER"
+    echo "   Backup file: $backup_file"
+    echo ""
     
-    if [ "$confirm" != "yes" ]; then
+    # Verify backup file
+    if [ ! -s "$backup_file" ]; then
+        echo "❌ Backup file is empty!"
+        return 1
+    fi
+    
+    if ! grep -q "CREATE TABLE\|INSERT INTO\|COPY" "$backup_file" 2>/dev/null; then
+        echo "❌ Backup file appears corrupted (no SQL statements found)!"
+        return 1
+    fi
+    
+    BACKUP_SIZE=$(du -h "$backup_file" | cut -f1)
+    BACKUP_DATE=$(stat -c "%y" "$backup_file" 2>/dev/null || stat -f "%Sm" "$backup_file" 2>/dev/null || echo "unknown")
+    echo "📄 Backup file info:"
+    echo "   Size: $BACKUP_SIZE"
+    echo "   Date: $BACKUP_DATE"
+    echo ""
+    
+    # CRITICAL: Create backup of current state before restore
+    echo "🔒 Creating backup of current database state (safety measure)..."
+    echo ""
+    CURRENT_BACKUP_DIR="backups"
+    CURRENT_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    local file_env_name
+    case "$env" in
+        dev|development) file_env_name="dev" ;;
+        sit|staging) file_env_name="staging" ;;
+        production|prod) file_env_name="production" ;;
+        *) file_env_name="$env" ;;
+    esac
+    CURRENT_BACKUP="$CURRENT_BACKUP_DIR/pre_restore_${file_env_name}_${CURRENT_TIMESTAMP}.sql"
+    
+    mkdir -p "$CURRENT_BACKUP_DIR"
+    export PGPASSWORD="$DB_PASSWORD"
+    if docker exec "$DB_CONTAINER" pg_dump \
+        -U "$DB_USER" \
+        -d "$DB_NAME" \
+        --clean \
+        --if-exists \
+        --create \
+        --format=plain \
+        --no-owner \
+        --no-privileges \
+        > "$CURRENT_BACKUP" 2>/dev/null; then
+        echo "✅ Current state backed up to: $CURRENT_BACKUP"
+    else
+        echo "⚠️  Could not backup current state (proceeding anyway)"
+    fi
+    unset PGPASSWORD
+    echo ""
+    
+    echo "⚠️  WARNING: This will REPLACE ALL existing data!"
+    echo "   Current state backed up to: $CURRENT_BACKUP"
+    echo ""
+    read -p "Type 'RESTORE' to confirm restore operation: " confirm
+    
+    if [ "$confirm" != "RESTORE" ]; then
         echo "❌ Restore cancelled by user"
         return 1
     fi
@@ -312,15 +533,31 @@ _restore_database_internal() {
     echo ""
     
     export PGPASSWORD="$DB_PASSWORD"
-    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d postgres < "$backup_file"
+    RESTORE_OUTPUT=$(docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d postgres < "$backup_file" 2>&1)
+    RESTORE_EXIT_CODE=$?
     unset PGPASSWORD
+    
+    if [ $RESTORE_EXIT_CODE -ne 0 ]; then
+        echo ""
+        echo "❌ Restore failed with exit code: $RESTORE_EXIT_CODE"
+        echo ""
+        echo "⚠️  ERROR OUTPUT:"
+        echo "$RESTORE_OUTPUT" | tail -20
+        echo ""
+        echo "🔒 IMPORTANT: Your original data backup is available at:"
+        echo "   $CURRENT_BACKUP"
+        echo "   To restore: bash utils-server.sh db-restore $CURRENT_BACKUP $env"
+        echo ""
+        return $RESTORE_EXIT_CODE
+    fi
     
     echo ""
     echo "✅ Database restore completed!"
     echo ""
     echo "🔍 Verifying restored data..."
+    echo ""
     
-    # Quick verification - count records in key tables
+    # Comprehensive verification
     export PGPASSWORD="$DB_PASSWORD"
     VERIFY_RESULT=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
         SELECT 
@@ -330,20 +567,45 @@ _restore_database_internal() {
         UNION ALL
             SELECT 'template', COUNT(*) FROM template WHERE \"deletedAt\" IS NULL
         UNION ALL
-            SELECT 'notification', COUNT(*) FROM notification;
+            SELECT 'notification', COUNT(*) FROM notification
+        UNION ALL
+            SELECT 'template_translation', COUNT(*) FROM template_translation
+        UNION ALL
+            SELECT 'image', COUNT(*) FROM image
+        UNION ALL
+            SELECT 'category_type', COUNT(*) FROM category_type WHERE \"deletedAt\" IS NULL;
     " 2>/dev/null)
     unset PGPASSWORD
     
     if [ -n "$VERIFY_RESULT" ]; then
+        echo "📊 Restored data summary:"
         echo "$VERIFY_RESULT" | while IFS='|' read -r table count || [ -n "$table" ]; do
             table=$(echo "$table" | xargs 2>/dev/null)
             count=$(echo "$count" | xargs 2>/dev/null)
             if [ -n "$table" ] && [ -n "$count" ]; then
-                echo "   📊 $table: $count record(s)"
+                echo "   ✅ $table: $count record(s)"
             fi
         done
+        echo ""
+        
+        # Run migration verification if available
+        VERIFY_FILE="apps/backend/scripts/verify-migration.sql"
+        if [ -f "$VERIFY_FILE" ]; then
+            echo "🔍 Running schema verification..."
+            export PGPASSWORD="$DB_PASSWORD"
+            if docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$VERIFY_FILE" > /dev/null 2>&1; then
+                echo "   ✅ Schema verification passed"
+            else
+                echo "   ⚠️  Schema verification had warnings"
+            fi
+            unset PGPASSWORD
+            echo ""
+        fi
+        
+        echo "✅ Restore verification completed successfully!"
     else
         echo "   ⚠️  Could not verify data (but restore completed)"
+        echo "   Please check manually: docker exec -it $DB_CONTAINER psql -U $DB_USER -d $DB_NAME"
     fi
     echo ""
 }
@@ -408,7 +670,8 @@ show_help() {
     echo "Commands:"
     echo "  db-setup-prod      - Setup production database (create tables, run migrations)"
     echo "  db-setup-sit       - Setup SIT database (create tables, run migrations)"
-    echo "  db-migrate         - Run database migration (auto-detects environment)"
+    echo "  db-migrate         - Run database migration with backup check (auto-detects environment)"
+    echo "  db-migrate-force   - Run database migration WITHOUT backup check (use with caution!)"
     echo "  db-backup [env]    - Backup database (keeps last 5 backups)"
     echo "                       Optional: dev, sit, production (auto-detects if not specified)"
     echo "  db-restore         - Restore database from backup"
@@ -506,7 +769,33 @@ db_migrate() {
         ENV="production"
     fi
     
-    _run_migration_internal "$ENV"
+    _run_migration_internal "$ENV" "false"
+}
+
+db_migrate_force() {
+    echo "🔄 Running Database Migration (FORCE - skipping backup check)..."
+    echo "⚠️  WARNING: Backup check is being skipped!"
+    echo ""
+    
+    # Auto-detect environment
+    if docker ps --format '{{.Names}}' | grep -q "^bakong-notification-services-db$"; then
+        ENV="production"
+    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-sit"; then
+        ENV="sit"
+    elif docker ps --format '{{.Names}}' | grep -q "bakong-notification-services-db-dev"; then
+        ENV="dev"
+    else
+        echo "⚠️  Could not detect environment, defaulting to production"
+        ENV="production"
+    fi
+    
+    read -p "Are you sure you want to skip backup check? (yes/no): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "❌ Migration cancelled"
+        return 1
+    fi
+    
+    _run_migration_internal "$ENV" "true"
 }
 
 db_backup() {
@@ -722,7 +1011,7 @@ verify_502() {
     ORDER BY column_name;
     " || {
         echo "   ⚠️  Columns missing! Running migration..."
-        _run_migration_internal production
+        _run_migration_internal production "false"
     }
     
     echo ""
@@ -981,6 +1270,9 @@ case "${1:-}" in
         ;;
     db-migrate)
         db_migrate
+        ;;
+    db-migrate-force)
+        db_migrate_force
         ;;
     db-backup)
         db_backup

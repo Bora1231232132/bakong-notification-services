@@ -54,10 +54,10 @@ export class InboxResponseDto implements NotificationData {
     req?: any,
   ) {
     const template = (data as any).template as Template | undefined
-  
+
     const userTranslation =
       (template && templateService?.findBestTranslation(template, language)) || null
-  
+
     this.id = Number((data as any).id)
     this.templateId = Number((data as any).templateId || template?.id || 0)
 
@@ -74,38 +74,24 @@ export class InboxResponseDto implements NotificationData {
     }
     this.language = String(storedLanguage)
 
-    // For categoryType and date: Use the stored language (what was actually sent)
-    // But check if template has translation in stored language, if not fallback to KM
-    let displayLanguage: Language = storedLanguage // Use stored language for categoryType/date
-    // Check if template has translation in stored language
+    // For categoryType and date: Use user's preferred language (with KM fallback)
+    // This ensures users see labels in their preferred language even if content is KM
+    let displayLanguage: Language = language
+    // Check if template has translation in user's language
     if (template?.translations && Array.isArray(template.translations)) {
-      const availableLanguages = template.translations.map((t: any) => t.language)
-      const storedLangExists = template.translations.some((t: any) => t.language === storedLanguage)
-      console.log(
-        `🌐 [InboxResponseDto] Language check for template ${template?.id}: stored=${storedLanguage}, available=${availableLanguages.join(',')}, exists=${storedLangExists}`,
-      )
-      if (!storedLangExists) {
-        // Stored language not available in template, fallback to KM
-        console.log(
-          `🌐 [InboxResponseDto] Stored language ${storedLanguage} not found in template, falling back to KM for categoryType/date`,
-        )
+      const userLangExists = template.translations.some((t: any) => t.language === language)
+      if (!userLangExists) {
+        // User's language not available, fallback to KM
         displayLanguage = Language.KM
-      } else {
-        console.log(
-          `🌐 [InboxResponseDto] Using stored language ${storedLanguage} for categoryType/date`,
-        )
       }
     } else {
       // No translations available, use KM as fallback
-      console.log(
-        `🌐 [InboxResponseDto] No translations available for template ${template?.id}, using KM fallback`,
-      )
       displayLanguage = Language.KM
     }
-    
+
     // Find best translation for user's language (for content display)
     const userLangTranslation = template && templateService?.findBestTranslation(template, language)
-  
+
     this.notificationType = ((template as any)?.notificationType ||
       NotificationType.ANNOUNCEMENT) as any
 
@@ -117,54 +103,48 @@ export class InboxResponseDto implements NotificationData {
       // ✅ V2: categoryIcon per record
       this.categoryIcon = baseUrl
         ? InboxResponseDto.buildCategoryIconUrl(
-            baseUrl,
-            template?.categoryTypeId ?? template?.categoryTypeEntity?.id ?? null,
-          )
+          baseUrl,
+          template?.categoryTypeId ?? template?.categoryTypeEntity?.id ?? null,
+        )
         : undefined
     } else {
-      // ✅ V1: categoryType is raw enum value from database, converted to UPPERCASE (e.g., "NEWS", "OTHER", "EVENT", "PRODUCT_AND_FEATURE")
-      // Use the name field directly from categoryTypeEntity and convert to uppercase
-      // Special case: "Product & Feature" → "PRODUCT_AND_FEATURE"
-      const rawName = template?.categoryTypeEntity?.name || 'Other'
-      let upperName = rawName.toUpperCase()
-      // Replace " & " with "_AND_" for Product & Feature
-      upperName = upperName.replace(/\s+&\s+/g, '_AND_')
-      // Replace spaces with underscores for consistency
-      upperName = upperName.replace(/\s+/g, '_')
-      this.categoryType = upperName
-      
-      // ✅ V1: No categoryIcon field (should not be present in response)
+      // ✅ V1: categoryType MUST be translated display string using the notification's STORED language (storedLanguage)
+      // This ensures if a notification is in KM, the category type is also in KM, regardless of user's preferred language
+      this.categoryType =
+        InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, storedLanguage) || 'Other'
+
+      // ✅ V1: No categoryIcon field
       this.categoryIcon = undefined
     }
 
-  
+
     this.bakongPlatform =
       (template as any)?.bakongPlatform ||
       (data as any)?.userBakongPlatform ||
       'BAKONG'
-  
+
     // Use displayLanguage (user's preference with KM fallback) for date formatting
     this.createdDate = DateFormatter.formatDateByLanguage((data as any).createdAt, displayLanguage)
     this.timestamp = (data as any).createdAt.toISOString()
-  
+
     // Title and content: Use user's preferred language if available, otherwise use stored language (KM)
     // This ensures users see content in their preferred language in the inbox, but falls back to what was sent
     const storedTranslation = template && templateService?.findBestTranslation(template, storedLanguage)
     const contentTranslation = userLangTranslation || storedTranslation || userTranslation
     this.title = contentTranslation?.title || ''
     this.content = contentTranslation?.content || ''
-  
+
     const imageId =
       (userTranslation as any)?.imageId ??
       (template as any)?.imageId ??
       null
-  
+
     this.imageUrl =
       imageId
         ? (imageService?.buildImageUrl(imageId, req, baseUrl) ||
           `${baseUrl}/api/v1/image/${imageId}`)
         : ''
-  
+
     this.linkPreview = storedTranslation?.linkPreview || ''
   }
 
@@ -205,7 +185,7 @@ export class InboxResponseDto implements NotificationData {
           ? n.categoryType
           : 'Other',
     }))
-                                                                                                                                 
+
     const response = this.getResponse(sanitized, message, pagination)
 
     // attach extra field
@@ -256,7 +236,7 @@ export class InboxResponseDto implements NotificationData {
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
 
     // Language field: Show the actual translation language used (KM for FCM push)
-    const storedLanguage: Language = translation?.language 
+    const storedLanguage: Language = translation?.language
       ? (translation.language as Language)
       : Language.KM
 
@@ -280,10 +260,8 @@ export class InboxResponseDto implements NotificationData {
 
     if (isV2) {
       // ✅ V2: categoryType MUST be translated display string using user's preferred language (with KM fallback)
-      categoryType = InboxResponseDto.getCategoryDisplayName(
-        template?.categoryTypeEntity,
-        displayLanguage,
-      ) || 'Other'
+      categoryType =
+        InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, displayLanguage) || 'Other'
 
       // ✅ V2: categoryIcon per record
       finalCategoryIcon = baseUrl
@@ -291,17 +269,13 @@ export class InboxResponseDto implements NotificationData {
         : undefined
     } else {
       // ✅ V1: categoryType is raw enum value from database, converted to UPPERCASE (e.g., "NEWS", "OTHER", "EVENT", "PRODUCT_AND_FEATURE")
-      // Use the name field directly from categoryTypeEntity and convert to uppercase
-      // Special case: "Product & Feature" → "PRODUCT_AND_FEATURE"
       const rawName = template?.categoryTypeEntity?.name || 'Other'
       let upperName = rawName.toUpperCase()
-      // Replace " & " with "_AND_" for Product & Feature
       upperName = upperName.replace(/\s+&\s+/g, '_AND_')
-      // Replace spaces with underscores for consistency
       upperName = upperName.replace(/\s+/g, '_')
       categoryType = upperName
-      
-      // ✅ V1: No categoryIcon field (should not be present in response)
+
+      // ✅ V1: No categoryIcon field
       finalCategoryIcon = undefined
     }
 
@@ -475,7 +449,7 @@ export class InboxResponseDto implements NotificationData {
       notification_title: extra?.notification_title || title,
       notification_body: extra?.notification_body || body,
     }
-  
+
     const stringDataPayload: Record<string, string> = {}
     Object.entries(dataPayload).forEach(([key, value]) => {
       // CRITICAL: Ensure categoryType is never empty string
@@ -485,7 +459,7 @@ export class InboxResponseDto implements NotificationData {
         stringDataPayload[key] = String(value || '')
       }
     })
-  
+
     return {
       token,
       data: dataPayload,
@@ -494,7 +468,7 @@ export class InboxResponseDto implements NotificationData {
       },
     }
   }
-  
+
 
   static buildAndroidDataOnlyPayload(
     token: string,
@@ -511,8 +485,8 @@ export class InboxResponseDto implements NotificationData {
       timestamp: new Date().toISOString(),
       ...(extra
         ? Object.fromEntries(
-            Object.entries(extra).map(([key, value]) => [key, String(value || '')]),
-          )
+          Object.entries(extra).map(([key, value]) => [key, String(value || '')]),
+        )
         : {}),
     }
 
@@ -543,7 +517,7 @@ export class InboxResponseDto implements NotificationData {
       sound: 'default',
       badge: 1,
       type: 'NOTIFICATION',
-      notification : notification || [] // Mobile app reads this from aps payload (non-standard but was working before)
+      notification: notification || [] // Mobile app reads this from aps payload (non-standard but was working before)
       // Removed content-available - it's only for silent background notifications
       // When combined with alert, it can prevent notification from displaying
     }

@@ -56,7 +56,7 @@ export class TemplateService implements OnModuleInit {
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly imageService: ImageService,
     private readonly baseFunctionHelper?: BaseFunctionHelper,
-  ) {}
+  ) { }
 
   async onModuleInit() {
     await this.pickPendingSchedule()
@@ -228,15 +228,15 @@ export class TemplateService implements OnModuleInit {
     // This check happens when user is trying to SUBMIT (approvalStatus will be PENDING)
     if (approvalStatus === ApprovalStatus.PENDING) {
       console.log(`🔵 [CREATE] User is trying to submit - validating users BEFORE creating template...`)
-      
+
       // Create a temporary template object with the values to check
       const tempTemplate = {
         platforms: normalizedPlatforms,
         bakongPlatform: dto.bakongPlatform,
       } as Template
-      
+
       const hasMatchingUsers = await this.validateMatchingUsers(tempTemplate)
-      
+
       if (!hasMatchingUsers) {
         // No users match the platform requirements - prevent submission, keep in draft
         const platformInfo = `OS platform: ${tempTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${tempTemplate.bakongPlatform}`
@@ -244,17 +244,17 @@ export class TemplateService implements OnModuleInit {
           tempTemplate.bakongPlatform === 'BAKONG_TOURIST'
             ? 'Bakong Tourist'
             : tempTemplate.bakongPlatform === 'BAKONG_JUNIOR'
-            ? 'Bakong Junior'
-            : 'Bakong'
-        
+              ? 'Bakong Junior'
+              : 'Bakong'
+
         // Format: "No users found for Using {Platform} on {Bakong App} app."
         const osPlatforms = tempTemplate.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
         const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
-        
+
         this.logger.error(
           `❌ [CREATE] No users match platform requirements (${platformInfo}). Preventing template creation, keeping as draft.`,
         )
-        
+
         // DON'T create the template - just throw error to prevent creation
         // Template will NOT be created in database
         throw new BadRequestException(
@@ -265,7 +265,7 @@ export class TemplateService implements OnModuleInit {
           }),
         )
       }
-      
+
       console.log(`🔵 [CREATE] ✅ Users validated - template creation can proceed`)
     }
 
@@ -295,10 +295,10 @@ export class TemplateService implements OnModuleInit {
       sendSchedule: dto.sendSchedule ? moment.utc(dto.sendSchedule).toDate() : null,
       sendInterval: dto.sendInterval
         ? {
-            ...dto.sendInterval,
-            startAt: moment(dto.sendInterval.startAt).toDate(),
-            endAt: moment(dto.sendInterval.endAt).toDate(),
-          }
+          ...dto.sendInterval,
+          startAt: moment(dto.sendInterval.startAt).toDate(),
+          endAt: moment(dto.sendInterval.endAt).toDate(),
+        }
         : null,
       // Flash notification limit fields (default: 1 per day, 1 day max)
       showPerDay: dto.showPerDay !== undefined ? dto.showPerDay : 1,
@@ -371,11 +371,11 @@ export class TemplateService implements OnModuleInit {
       // Note: We need to check image in the original translation object before processing
       const translationsToProcess = isDraft
         ? dto.translations.filter((t) => {
-            const hasTitle = t.title && String(t.title).trim() !== ''
-            const hasContent = t.content && String(t.content).trim() !== ''
-            const hasImage = t.image && String(t.image).trim() !== ''
-            return hasTitle || hasContent || hasImage
-          })
+          const hasTitle = t.title && String(t.title).trim() !== ''
+          const hasContent = t.content && String(t.content).trim() !== ''
+          const hasImage = t.image && String(t.image).trim() !== ''
+          return hasTitle || hasContent || hasImage
+        })
         : dto.translations
 
       for (const translation of translationsToProcess) {
@@ -617,8 +617,8 @@ export class TemplateService implements OnModuleInit {
           // Update isSent to false to ensure it's a draft
           await this.repo.update(template.id, { isSent: false })
           console.log('✅ Template kept as draft due to no users for target platform')
-          // Set flag to indicate saved as draft due to no users
-          ;(template as any).savedAsDraftNoUsers = true
+            // Set flag to indicate saved as draft due to no users
+            ; (template as any).savedAsDraftNoUsers = true
           break
         }
 
@@ -661,7 +661,7 @@ export class TemplateService implements OnModuleInit {
             console.warn('   3. FCM token validation failed')
             console.warn('   4. Firebase FCM not initialized')
             console.warn('   5. No users in database')
-            ;(template as any).savedAsDraftNoUsers = true
+              ; (template as any).savedAsDraftNoUsers = true
           } else if (failedDueToInvalidTokens && failedCount > 0) {
             // Users existed but all had invalid tokens - don't set savedAsDraftNoUsers
             console.warn(
@@ -684,10 +684,10 @@ export class TemplateService implements OnModuleInit {
         }
 
         // Include send result in template response
-        ;(template as any).successfulCount = sendResult.successfulCount
-        ;(template as any).failedCount = sendResult.failedCount
-        ;(template as any).failedUsers = sendResult.failedUsers || []
-        ;(template as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
+        ; (template as any).successfulCount = sendResult.successfulCount
+          ; (template as any).failedCount = sendResult.failedCount
+          ; (template as any).failedUsers = sendResult.failedUsers || []
+          ; (template as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
         break
       case SendType.SEND_SCHEDULE:
         console.log('Executing SEND_SCHEDULE for template:', template.id)
@@ -706,8 +706,8 @@ export class TemplateService implements OnModuleInit {
             // Update isSent to false to ensure it's a draft
             await this.repo.update(template.id, { isSent: false })
             console.log('✅ Template kept as draft due to no matching users')
-            // Set flag to indicate saved as draft due to no users
-            ;(template as any).savedAsDraftNoUsers = true
+              // Set flag to indicate saved as draft due to no users
+              ; (template as any).savedAsDraftNoUsers = true
             break
           }
         }
@@ -727,13 +727,13 @@ export class TemplateService implements OnModuleInit {
     const templateWithTranslations = await this.findOneRaw(template.id)
     // Preserve the savedAsDraftNoUsers flag if it was set
     if ((template as any).savedAsDraftNoUsers) {
-      ;(templateWithTranslations as any).savedAsDraftNoUsers = true
+      ; (templateWithTranslations as any).savedAsDraftNoUsers = true
     }
     // Preserve send result properties if they were set
     if ((template as any).successfulCount !== undefined) {
-      ;(templateWithTranslations as any).successfulCount = (template as any).successfulCount
-      ;(templateWithTranslations as any).failedCount = (template as any).failedCount
-      ;(templateWithTranslations as any).failedUsers = (template as any).failedUsers
+      ; (templateWithTranslations as any).successfulCount = (template as any).successfulCount
+        ; (templateWithTranslations as any).failedCount = (template as any).failedCount
+        ; (templateWithTranslations as any).failedUsers = (template as any).failedUsers
     }
     return this.formatTemplateResponse(templateWithTranslations)
   }
@@ -749,7 +749,7 @@ export class TemplateService implements OnModuleInit {
       hasTranslations: !!dto.translations?.length,
       platforms: dto.platforms,
     })
-    
+
     const {
       platforms,
       bakongPlatform,
@@ -771,7 +771,7 @@ export class TemplateService implements OnModuleInit {
 
     // Check if this is an approver using "Publish Now" on a PENDING template
     // In this case, we want to send the notification, not just edit it
-    const isApproverPublishingPending = 
+    const isApproverPublishingPending =
       currentUser?.role === UserRole.APPROVAL &&
       template.approvalStatus === ApprovalStatus.PENDING &&
       dto.isSent === true
@@ -794,7 +794,7 @@ export class TemplateService implements OnModuleInit {
       // This method handles updates without re-sending FCM notifications
       return await this.editPublishedNotification(id, dto, currentUser, req)
     }
-    
+
     if (isApproverPublishingPending) {
       console.log(`🔵 [UPDATE] ✅ Approver publishing PENDING template - will go through send flow (not editPublishedNotification)`)
     }
@@ -845,7 +845,7 @@ export class TemplateService implements OnModuleInit {
         if (sendSchedule) {
           const scheduledTime = moment.utc(sendSchedule)
           const existingScheduleTime = template.sendSchedule ? moment.utc(template.sendSchedule) : null
-          
+
           if (!scheduledTime.isValid()) {
             throw new BadRequestException(
               new BaseResponseDto({
@@ -859,10 +859,10 @@ export class TemplateService implements OnModuleInit {
               }),
             )
           }
-          
+
           // Check if this is the same schedule time as existing (preserving original schedule)
           const isPreservingExistingSchedule = existingScheduleTime && scheduledTime.isSame(existingScheduleTime)
-          
+
           if (!isPreservingExistingSchedule) {
             // Only validate new schedule times (not when preserving existing)
             const now = moment.utc()
@@ -886,7 +886,7 @@ export class TemplateService implements OnModuleInit {
               cambodia: scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss'),
             })
           }
-          
+
           updateFields.sendSchedule = scheduledTime.toDate()
           console.log(`🔵 [UPDATE] ✅ Setting sendSchedule to:`, {
             utc: scheduledTime.toISOString(),
@@ -947,7 +947,7 @@ export class TemplateService implements OnModuleInit {
               updateFields.reasonForRejection = null
             } else {
               // Just updating draft - keep it as DRAFT
-            updateFields.reasonForRejection = null
+              updateFields.reasonForRejection = null
             }
           }
           // If editing a PENDING template, keep it as PENDING (don't reset to DRAFT)
@@ -967,7 +967,7 @@ export class TemplateService implements OnModuleInit {
             const newIsScheduled = sendSchedule !== null && sendSchedule !== undefined
             const isScheduledTemplate = existingIsScheduled || newIsScheduled // Template is/was scheduled
             const isPublishedTemplate = existingTemplate.isSent === true && !existingIsScheduled
-            
+
             if (isScheduledTemplate || isPublishedTemplate) {
               // Preserve APPROVED status - don't change it when editing from Scheduled/Published tabs
               console.log(
@@ -996,13 +996,13 @@ export class TemplateService implements OnModuleInit {
 
       // CRITICAL: Check if user is trying to submit
       // This check happens when user is trying to SUBMIT (isSent: true or will set to PENDING)
-      const isTryingToSubmit = 
-        (isSent !== undefined && isSent === true) || 
+      const isTryingToSubmit =
+        (isSent !== undefined && isSent === true) ||
         (isSent === undefined && dto.isSent === true) ||
         updateFields.approvalStatus === ApprovalStatus.PENDING ||
         (template.approvalStatus === ApprovalStatus.REJECTED && isSent !== undefined && isSent === true) ||
         (template.approvalStatus === ('EXPIRED' as ApprovalStatus) && isSent !== undefined && isSent === true)
-      
+
       // Save approvalStatus separately - we'll update it after validation
       const pendingApprovalStatus = updateFields.approvalStatus
       // Temporarily remove approvalStatus from updateFields so we can save data first
@@ -1054,22 +1054,22 @@ export class TemplateService implements OnModuleInit {
         // Only apply fallback logic for published notifications, not drafts
         // This prevents empty translations from being filled with data from other languages
         if (!isDraft) {
-        translations.forEach((translation) => {
-          if (
-            translation.title === undefined ||
-            translation.title === null ||
-            String(translation.title).trim() === ''
-          ) {
-            translation.title = getFallbackValue('title', translation.language)
-          }
-          if (
-            translation.content === undefined ||
-            translation.content === null ||
-            String(translation.content).trim() === ''
-          ) {
-            translation.content = getFallbackValue('content', translation.language)
-          }
-        })
+          translations.forEach((translation) => {
+            if (
+              translation.title === undefined ||
+              translation.title === null ||
+              String(translation.title).trim() === ''
+            ) {
+              translation.title = getFallbackValue('title', translation.language)
+            }
+            if (
+              translation.content === undefined ||
+              translation.content === null ||
+              String(translation.content).trim() === ''
+            ) {
+              translation.content = getFallbackValue('content', translation.language)
+            }
+          })
         }
 
         for (const translation of translations) {
@@ -1107,8 +1107,7 @@ export class TemplateService implements OnModuleInit {
                   imageId = image
                   if (oldImageId !== imageId) {
                     this.logger.log(
-                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${
-                        oldImageId || 'null'
+                      `🖼️ [Template Update] Updating imageId for template ${id}, language ${language}: ${oldImageId || 'null'
                       } -> ${imageId}`,
                     )
                   }
@@ -1145,8 +1144,7 @@ export class TemplateService implements OnModuleInit {
 
               if (oldImageId !== imageId) {
                 this.logger.log(
-                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${
-                    oldImageId || 'null'
+                  `✅ [Template Update] Successfully updated imageId for template ${id}, language ${language}: ${oldImageId || 'null'
                   } -> ${imageId || 'null'}`,
                 )
               }
@@ -1177,19 +1175,19 @@ export class TemplateService implements OnModuleInit {
       // This ensures data changes are preserved even if validation fails
       if (isTryingToSubmit && pendingApprovalStatus === ApprovalStatus.PENDING) {
         console.log(`🔵 [UPDATE] User is trying to submit - validating users AFTER data is saved...`)
-        
+
         // Get the updated template with new platform values
         const updatedTemplate = await this.findOneRaw(id)
-        
+
         // Create a template object with the updated values to check
         const tempTemplate = {
           ...updatedTemplate,
           platforms: updateFields.platforms !== undefined ? updateFields.platforms : updatedTemplate.platforms,
           bakongPlatform: updateFields.bakongPlatform !== undefined ? updateFields.bakongPlatform : updatedTemplate.bakongPlatform,
         } as Template
-        
+
         const hasMatchingUsers = await this.validateMatchingUsers(tempTemplate)
-        
+
         if (!hasMatchingUsers) {
           // No users match the platform requirements - keep data changes but set status to draft
           const platformInfo = `OS platform: ${tempTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${tempTemplate.bakongPlatform}`
@@ -1197,23 +1195,23 @@ export class TemplateService implements OnModuleInit {
             tempTemplate.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : tempTemplate.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
-          
+                ? 'Bakong Junior'
+                : 'Bakong'
+
           // Format: "No users found for Using {Platform} on {Bakong App} app."
           const osPlatforms = tempTemplate.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
           const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
-          
+
           this.logger.error(
             `❌ [UPDATE] No users match platform requirements (${platformInfo}). Data saved but keeping template in draft.`,
           )
-          
+
           // Update approvalStatus to null (draft) - data changes are already saved
           await this.repo.update(id, {
             approvalStatus: null,
             reasonForRejection: null,
           })
-          
+
           // Throw error to inform frontend
           throw new BadRequestException(
             new BaseResponseDto({
@@ -1223,9 +1221,9 @@ export class TemplateService implements OnModuleInit {
             }),
           )
         }
-        
+
         console.log(`🔵 [UPDATE] ✅ Users validated - updating approvalStatus to PENDING`)
-        
+
         // Validation passed - update approvalStatus to PENDING
         await this.repo.update(id, {
           approvalStatus: ApprovalStatus.PENDING,
@@ -1245,19 +1243,19 @@ export class TemplateService implements OnModuleInit {
       // Check if trying to publish a draft
       // For APPROVAL role using "Publish Now": send immediately regardless of sendType (keep original sendType in DB)
       // For others: only send if SEND_NOW with isSent=true
-      const isApproverPublishNow = 
-        currentUser?.role === UserRole.APPROVAL && 
+      const isApproverPublishNow =
+        currentUser?.role === UserRole.APPROVAL &&
         updatedTemplate.isSent === true
-      
+
       // Check if this is a resubmission from rejected/expired state
       // If admin/editor resubmits a rejected template, it should NOT send immediately - wait for approver
       // Use `template` (original state before update) to check if it was REJECTED/EXPIRED
-      const isResubmissionFromRejected = 
-        (template.approvalStatus === ApprovalStatus.REJECTED || 
-         template.approvalStatus === ('EXPIRED' as ApprovalStatus)) &&
+      const isResubmissionFromRejected =
+        (template.approvalStatus === ApprovalStatus.REJECTED ||
+          template.approvalStatus === ('EXPIRED' as ApprovalStatus)) &&
         updatedTemplate.approvalStatus === ApprovalStatus.PENDING &&
         (currentUser?.role === UserRole.ADMINISTRATOR || currentUser?.role === UserRole.EDITOR)
-      
+
       console.log(`🔵 [UPDATE] Send Decision Logic:`, {
         isApproverPublishNow,
         userRole: currentUser?.role,
@@ -1268,32 +1266,32 @@ export class TemplateService implements OnModuleInit {
         originalApprovalStatus: template.approvalStatus,
         newApprovalStatus: updatedTemplate.approvalStatus,
       })
-      
+
       // Don't send immediately if this is a resubmission from rejected state (wait for approver)
       // Don't send if approvalStatus is PENDING (wait for approval)
       // Only send if:
       // 1. Approver is using "Publish Now" (isApproverPublishNow), OR
       // 2. It's SEND_NOW with isSent=true AND it's NOT a resubmission from rejected state AND it's NOT PENDING
-      const shouldSendImmediately = 
+      const shouldSendImmediately =
         isApproverPublishNow ||
-        (updatedTemplate.sendType === SendType.SEND_NOW && 
-         updatedTemplate.isSent === true && 
-         !isResubmissionFromRejected &&
-         updatedTemplate.approvalStatus !== ApprovalStatus.PENDING)
-      
+        (updatedTemplate.sendType === SendType.SEND_NOW &&
+          updatedTemplate.isSent === true &&
+          !isResubmissionFromRejected &&
+          updatedTemplate.approvalStatus !== ApprovalStatus.PENDING)
+
       console.log(`🔵 [UPDATE] shouldSendImmediately: ${shouldSendImmediately}`, {
-        reason: isApproverPublishNow 
-          ? 'Approver publish now' 
-          : isResubmissionFromRejected 
-            ? 'Resubmission from rejected - waiting for approver' 
+        reason: isApproverPublishNow
+          ? 'Approver publish now'
+          : isResubmissionFromRejected
+            ? 'Resubmission from rejected - waiting for approver'
             : updatedTemplate.approvalStatus === ApprovalStatus.PENDING
               ? 'PENDING status - waiting for approval'
-            : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
-              ? 'SEND_NOW with isSent=true'
-              : 'Conditions not met',
+              : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
+                ? 'SEND_NOW with isSent=true'
+                : 'Conditions not met',
         approvalStatus: updatedTemplate.approvalStatus,
       })
-      
+
       if (shouldSendImmediately) {
         console.log(`🔵 [UPDATE] ✅ Entering send block - will attempt to send notification`)
         // FLASH_NOTIFICATION now sends FCM push like other notification types
@@ -1340,10 +1338,10 @@ export class TemplateService implements OnModuleInit {
           // Check approval status before sending
           // ADMINISTRATOR and APPROVAL roles can bypass approval check
           // APPROVAL role can auto-approve and send immediately when using "Publish Now"
-          const canBypassApproval = 
-            currentUser?.role === UserRole.ADMINISTRATOR || 
+          const canBypassApproval =
+            currentUser?.role === UserRole.ADMINISTRATOR ||
             currentUser?.role === UserRole.APPROVAL
-          
+
           if (!canBypassApproval && templateWithTranslations.approvalStatus !== ApprovalStatus.APPROVED) {
             throw new BadRequestException(
               new BaseResponseDto({
@@ -1357,7 +1355,7 @@ export class TemplateService implements OnModuleInit {
               }),
             )
           }
-          
+
           // If APPROVAL role is publishing, ALWAYS auto-approve it first (regardless of current status)
           // This ensures the notification can be sent
           console.log(`🔵 [UPDATE] Checking auto-approval conditions:`, {
@@ -1368,7 +1366,7 @@ export class TemplateService implements OnModuleInit {
             isSent: isSent,
             isApproverPublishNow,
           })
-          
+
           if (
             currentUser?.role === UserRole.APPROVAL &&
             isSent === true // Only auto-approve when actually sending
@@ -1385,7 +1383,7 @@ export class TemplateService implements OnModuleInit {
             const updateResult = await this.repo.update(templateWithTranslations.id, approvalUpdate)
             console.log(`🔵 [UPDATE] Auto-approval update result:`, updateResult)
             console.log(`🔵 [UPDATE] ✅ Auto-approval update completed`)
-            
+
             // Re-fetch to get updated approval status - CRITICAL: use this for sending
             const refreshedTemplate = await this.repo.findOne({
               where: { id: templateWithTranslations.id },
@@ -1412,7 +1410,7 @@ export class TemplateService implements OnModuleInit {
             failedDueToInvalidTokens?: boolean
           } = { successfulCount: 0, failedCount: 0, failedUsers: [] }
           let noUsersForPlatform = false
-          
+
           console.log(`🔵 [UPDATE] ========== CALLING sendWithTemplate ==========`)
           console.log(`🔵 [UPDATE] Template details for sending:`, {
             id: templateWithTranslations.id,
@@ -1422,7 +1420,7 @@ export class TemplateService implements OnModuleInit {
             bakongPlatform: templateWithTranslations.bakongPlatform,
             translationsCount: templateWithTranslations.translations?.length || 0,
           })
-          
+
           try {
             sendResult = await this.notificationService.sendWithTemplate(templateWithTranslations)
             console.log(`🔵 [UPDATE] ✅ sendWithTemplate completed successfully:`, {
@@ -1464,11 +1462,11 @@ export class TemplateService implements OnModuleInit {
           if (noUsersForPlatform) {
             await this.repo.update(updatedTemplate.id, { isSent: false, updatedAt: new Date() })
             console.log(`[UPDATE] Template kept as draft due to no users for target platform`)
-            // Set flag to indicate saved as draft due to no users
-            ;(updatedTemplate as any).savedAsDraftNoUsers = true
+              // Set flag to indicate saved as draft due to no users
+              ; (updatedTemplate as any).savedAsDraftNoUsers = true
             // Reload to get updated isSent value
             const reloadedTemplate = await this.findOneRaw(id)
-            ;(reloadedTemplate as any).savedAsDraftNoUsers = true
+              ; (reloadedTemplate as any).savedAsDraftNoUsers = true
             return this.formatTemplateResponse(reloadedTemplate, req)
           } else if (sendResult.successfulCount > 0 || isApproverPublishNow) {
             // Successfully sent to at least some users, mark as published
@@ -1478,7 +1476,7 @@ export class TemplateService implements OnModuleInit {
             console.log(
               `[UPDATE] ✅ Template ${updatedTemplate.id} published successfully - sent to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}${wasApproverAction ? ' (Approver published, marking as published)' : ''}`,
             )
-            
+
             // Mark as published - ensure approvalStatus is also set to APPROVED if approver used "Publish Now"
             console.log(`🔵 [UPDATE] ========== MARKING AS PUBLISHED ==========`)
             const publishUpdateFields: any = {
@@ -1509,7 +1507,7 @@ export class TemplateService implements OnModuleInit {
             const publishUpdateResult = await this.repo.update(updatedTemplate.id, publishUpdateFields)
             console.log(`🔵 [UPDATE] Publish update result:`, publishUpdateResult)
             console.log(`🔵 [UPDATE] ✅ Template marked as published in database`)
-            
+
             // CRITICAL: Re-fetch template to verify approvalStatus was set correctly
             const verifyAfterPublish = await this.repo.findOne({
               where: { id: updatedTemplate.id },
@@ -1521,7 +1519,7 @@ export class TemplateService implements OnModuleInit {
               approvedBy: verifyAfterPublish?.approvedBy,
               approvedAt: verifyAfterPublish?.approvedAt,
             })
-            
+
             // If approvalStatus is still not APPROVED, force update it one more time
             if (isApproverPublishNow && verifyAfterPublish?.approvalStatus !== ApprovalStatus.APPROVED) {
               console.error(`🔵 [UPDATE] ❌ approvalStatus not set correctly, forcing update again`)
@@ -1532,15 +1530,15 @@ export class TemplateService implements OnModuleInit {
               })
               console.log(`🔵 [UPDATE] ✅ Forced approvalStatus update completed`)
             }
-            
+
             console.log(
               `[UPDATE] Template published successfully, sent to ${sendResult.successfulCount} users`,
             )
-            // Include send result in template response
-            ;(updatedTemplate as any).successfulCount = sendResult.successfulCount
-            ;(updatedTemplate as any).failedCount = sendResult.failedCount
-            ;(updatedTemplate as any).failedUsers = sendResult.failedUsers || []
-            ;(updatedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
+              // Include send result in template response
+              ; (updatedTemplate as any).successfulCount = sendResult.successfulCount
+              ; (updatedTemplate as any).failedCount = sendResult.failedCount
+              ; (updatedTemplate as any).failedUsers = sendResult.failedUsers || []
+              ; (updatedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
           } else {
             // No users received the notification - revert to draft
             // This happens when successfulCount === 0
@@ -1567,15 +1565,15 @@ export class TemplateService implements OnModuleInit {
             // If failedCount > 0, it means users exist but all failed - this is NOT "no users"
             // Explicitly set to false if failedCount > 0 to prevent incorrect flag persistence
             if (sendResult.failedCount > 0) {
-              ;(reloadedTemplate as any).savedAsDraftNoUsers = false
+              ; (reloadedTemplate as any).savedAsDraftNoUsers = false
             } else {
-              ;(reloadedTemplate as any).savedAsDraftNoUsers = sendResult.successfulCount === 0 && sendResult.failedCount === 0
+              ; (reloadedTemplate as any).savedAsDraftNoUsers = sendResult.successfulCount === 0 && sendResult.failedCount === 0
             }
             // Include send result in template response
-            ;(reloadedTemplate as any).successfulCount = sendResult.successfulCount
-            ;(reloadedTemplate as any).failedCount = sendResult.failedCount
-            ;(reloadedTemplate as any).failedUsers = sendResult.failedUsers || []
-            ;(reloadedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
+            ; (reloadedTemplate as any).successfulCount = sendResult.successfulCount
+              ; (reloadedTemplate as any).failedCount = sendResult.failedCount
+              ; (reloadedTemplate as any).failedUsers = sendResult.failedUsers || []
+              ; (reloadedTemplate as any).failedDueToInvalidTokens = sendResult.failedDueToInvalidTokens || false
             return this.formatTemplateResponse(reloadedTemplate, req)
           }
         }
@@ -1583,11 +1581,11 @@ export class TemplateService implements OnModuleInit {
 
       // Only schedule if it wasn't already sent immediately by approver
       // If approver used "Publish Now", it was already sent above, so don't schedule it
-      const wasSentByApprover = 
-        currentUser?.role === UserRole.APPROVAL && 
+      const wasSentByApprover =
+        currentUser?.role === UserRole.APPROVAL &&
         updatedTemplate.isSent === true &&
         (updatedTemplate as any).successfulCount > 0
-      
+
       if (updatedTemplate.sendType === SendType.SEND_SCHEDULE && updatedTemplate.sendSchedule && !wasSentByApprover) {
         if (this.schedulerRegistry.doesExist('cron', id.toString())) {
           this.schedulerRegistry.deleteCronJob(id.toString())
@@ -1601,12 +1599,12 @@ export class TemplateService implements OnModuleInit {
         where: { id },
         relations: ['translations', 'translations.image', 'categoryTypeEntity'],
       })
-      
+
       if (!finalTemplate) {
         console.error(`🔵 [UPDATE] ❌ Failed to load final template`)
         throw new Error(`Template ${id} not found after update`)
       }
-      
+
       console.log(`🔵 [UPDATE] Final template state from DB:`, {
         id: finalTemplate.id,
         isSent: finalTemplate.isSent,
@@ -1616,7 +1614,7 @@ export class TemplateService implements OnModuleInit {
         approvedAt: finalTemplate.approvedAt,
         publishedBy: finalTemplate.publishedBy,
       })
-      
+
       // Final safety check: if approver published but approvalStatus is still not APPROVED, fix it
       if (isApproverPublishNow && finalTemplate.approvalStatus !== ApprovalStatus.APPROVED) {
         console.error(`🔵 [UPDATE] ❌ CRITICAL: approvalStatus still not APPROVED in final state (${finalTemplate.approvalStatus}), fixing now`)
@@ -1634,44 +1632,44 @@ export class TemplateService implements OnModuleInit {
           console.log(`🔵 [UPDATE] ✅ Fixed approvalStatus in final template:`, fixedTemplate.approvalStatus)
           // Preserve flags and send results
           if ((updatedTemplate as any).savedAsDraftNoUsers) {
-            ;(fixedTemplate as any).savedAsDraftNoUsers = true
+            ; (fixedTemplate as any).savedAsDraftNoUsers = true
           }
           if ((updatedTemplate as any).successfulCount !== undefined) {
-            ;(fixedTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
-            ;(fixedTemplate as any).failedCount = (updatedTemplate as any).failedCount
-            ;(fixedTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
+            ; (fixedTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
+              ; (fixedTemplate as any).failedCount = (updatedTemplate as any).failedCount
+              ; (fixedTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
           }
           console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
           return this.formatTemplateResponse(fixedTemplate, req)
         }
       }
-      
+
       // Preserve flag if it was set
       if ((updatedTemplate as any).savedAsDraftNoUsers) {
-        ;(finalTemplate as any).savedAsDraftNoUsers = true
+        ; (finalTemplate as any).savedAsDraftNoUsers = true
       }
       // Preserve send result properties if they were set
       if ((updatedTemplate as any).successfulCount !== undefined) {
-        ;(finalTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
-        ;(finalTemplate as any).failedCount = (updatedTemplate as any).failedCount
-        ;(finalTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
-        ;(finalTemplate as any).failedDueToInvalidTokens = (updatedTemplate as any).failedDueToInvalidTokens
+        ; (finalTemplate as any).successfulCount = (updatedTemplate as any).successfulCount
+          ; (finalTemplate as any).failedCount = (updatedTemplate as any).failedCount
+          ; (finalTemplate as any).failedUsers = (updatedTemplate as any).failedUsers
+          ; (finalTemplate as any).failedDueToInvalidTokens = (updatedTemplate as any).failedDueToInvalidTokens
       }
-      
+
       // CRITICAL: For approver "Publish Now", ensure send results are always included
       // If send results weren't preserved from updatedTemplate, check if we can infer from finalTemplate state
       if (isApproverPublishNow && (finalTemplate as any).successfulCount === undefined) {
         // If template is marked as sent and approved, but no send results, set defaults
         // This ensures the frontend always gets a response with send results
         if (finalTemplate.isSent === true && finalTemplate.approvalStatus === ApprovalStatus.APPROVED) {
-          ;(finalTemplate as any).successfulCount = 0 // Will be updated by frontend if needed
-          ;(finalTemplate as any).failedCount = 0
-          ;(finalTemplate as any).failedUsers = []
-          ;(finalTemplate as any).failedDueToInvalidTokens = false
+          ; (finalTemplate as any).successfulCount = 0 // Will be updated by frontend if needed
+            ; (finalTemplate as any).failedCount = 0
+            ; (finalTemplate as any).failedUsers = []
+            ; (finalTemplate as any).failedDueToInvalidTokens = false
           console.log(`🔵 [UPDATE] ⚠️ Approver publish: send results not preserved, setting defaults for response`)
         }
       }
-      
+
       console.log(`🔵 [UPDATE] ========== END UPDATE REQUEST ==========\n`)
       return this.formatTemplateResponse(finalTemplate, req)
     } catch (error) {
@@ -1780,7 +1778,7 @@ export class TemplateService implements OnModuleInit {
     // Check BEFORE updating the template - if no users found, prevent submission and keep in draft
     console.log(`🔵 [SUBMIT] Validating users for platform before allowing submission...`)
     const hasMatchingUsers = await this.validateMatchingUsers(template)
-    
+
     if (!hasMatchingUsers) {
       // No users match the platform requirements - prevent submission, keep in draft
       const platformInfo = `OS platform: ${template.platforms?.join(', ') || 'ALL'}, Bakong platform: ${template.bakongPlatform}`
@@ -1788,17 +1786,17 @@ export class TemplateService implements OnModuleInit {
         template.bakongPlatform === 'BAKONG_TOURIST'
           ? 'Bakong Tourist'
           : template.bakongPlatform === 'BAKONG_JUNIOR'
-          ? 'Bakong Junior'
-          : 'Bakong'
-      
+            ? 'Bakong Junior'
+            : 'Bakong'
+
       // Format: "No users found for Using {Platform} on {Bakong App} app."
       const osPlatforms = template.platforms?.filter(p => p !== 'ALL').join(', ') || 'ALL'
       const errorMessage = `No users found for Using ${osPlatforms} on ${platformName} app.`
-      
+
       this.logger.error(
         `❌ [SUBMIT] No users match platform requirements (${platformInfo}). Preventing submission, keeping template in draft.`,
       )
-      
+
       // DON'T update the template - just throw error to prevent submission
       // Template will remain in draft/rejected status
       throw new BadRequestException(
@@ -1809,7 +1807,7 @@ export class TemplateService implements OnModuleInit {
         }),
       )
     }
-    
+
     console.log(`🔵 [SUBMIT] ✅ Users validated - submission can proceed`)
 
     await this.repo.update(id, {
@@ -1852,7 +1850,7 @@ export class TemplateService implements OnModuleInit {
     if (template.sendSchedule && template.sendType === SendType.SEND_SCHEDULE) {
       const scheduledTime = moment.utc(template.sendSchedule)
       const now = moment.utc()
-      
+
       // Log the time comparison for debugging
       this.logger.log(`⏰ [APPROVE] Checking scheduled time for template ${id}:`, {
         scheduledTimeUTC: scheduledTime.toISOString(),
@@ -1862,16 +1860,16 @@ export class TemplateService implements OnModuleInit {
         timeDifferenceMinutes: scheduledTime.diff(now, 'minutes'),
         hasPassed: scheduledTime.isBefore(now.clone().subtract(1, 'minute')),
       })
-      
+
       // Check if scheduled time has passed (with 1 minute grace period for clock skew)
       if (scheduledTime.isBefore(now.clone().subtract(1, 'minute'))) {
         this.logger.warn(
           `⏰ [APPROVE] Template ${id} scheduled time ${scheduledTime.toISOString()} (${scheduledTime.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss')} Cambodia) has passed (current: ${now.toISOString()} / ${now.clone().utcOffset(7).format('YYYY-MM-DD HH:mm:ss')} Cambodia). Marking as expired.`,
         )
-        
+
         // Mark as expired (not rejected) - preserve all original data including sendSchedule
         const expiredReason = 'Scheduled time has passed. Please contact team member to update the schedule first.'
-        
+
         // Fetch template first to ensure we preserve all fields
         const templateToExpire = await this.repo.findOne({ where: { id } })
         if (!templateToExpire) {
@@ -1883,7 +1881,7 @@ export class TemplateService implements OnModuleInit {
             }),
           )
         }
-        
+
         // Update only approval-related fields, preserve everything else (especially sendSchedule)
         // Using string literal cast since EXPIRED was just added to the enum and shared package may need rebuild
         templateToExpire.approvalStatus = 'EXPIRED' as ApprovalStatus
@@ -1892,11 +1890,11 @@ export class TemplateService implements OnModuleInit {
         templateToExpire.reasonForRejection = expiredReason
         // NOTE: We intentionally do NOT update sendSchedule or any other fields
         // This preserves the original schedule time that admin created/updated
-        
+
         await this.repo.save(templateToExpire)
-        
+
         this.logger.log(`✅ [APPROVE] Template ${id} marked as expired due to passed scheduled time (data preserved)`)
-        
+
         // Throw exception to inform frontend that it was expired
         throw new BadRequestException(
           new BaseResponseDto({
@@ -1924,13 +1922,13 @@ export class TemplateService implements OnModuleInit {
     // Check if this is a scheduled notification
     // If it has a schedule, don't send yet - keep it in Scheduled tab until scheduled time
     const updatedTemplate = await this.findOneRaw(id)
-    
+
     // Check if scheduled: must have sendSchedule AND sendType must be SEND_SCHEDULE
-    const isScheduledNotification = 
-      updatedTemplate.sendSchedule !== null && 
+    const isScheduledNotification =
+      updatedTemplate.sendSchedule !== null &&
       updatedTemplate.sendSchedule !== undefined &&
       updatedTemplate.sendType === SendType.SEND_SCHEDULE
-    
+
     this.logger.log(`🔍 [APPROVE] Template ${id} check:`, {
       sendSchedule: updatedTemplate.sendSchedule,
       sendType: updatedTemplate.sendType,
@@ -1938,7 +1936,7 @@ export class TemplateService implements OnModuleInit {
       isScheduledNotification,
       approvalStatus: updatedTemplate.approvalStatus,
     })
-    
+
     if (isScheduledNotification) {
       // Scheduled notification - don't send immediately, keep in Scheduled tab
       // The scheduler will handle sending when the scheduled time arrives
@@ -1968,7 +1966,7 @@ export class TemplateService implements OnModuleInit {
           willSend: wasPending || !updatedTemplate.isSent,
         },
       )
-      
+
       // Send if: (1) it was PENDING (fresh approval) OR (2) it hasn't been sent yet
       // wasPending is always true here (we only approve PENDING templates), so we always send
       if (wasPending || !updatedTemplate.isSent) {
@@ -1983,7 +1981,7 @@ export class TemplateService implements OnModuleInit {
           this.logger.log(
             `📤 [APPROVE] Template ${id} send result: successfulCount: ${sendResult.successfulCount}, failedCount: ${sendResult.failedCount}`,
           )
-          
+
           // Check if no users received the notification successfully
           // This happens when:
           // 1. No users match the OS platform filter (Android/iOS) - returns { successfulCount: 0, failedCount: 0 }
@@ -1992,12 +1990,12 @@ export class TemplateService implements OnModuleInit {
           // In ALL cases where successfulCount is 0, we should revert approval
           if (sendResult.successfulCount === 0) {
             const platformInfo = `OS platform: ${updatedTemplate.platforms?.join(', ') || 'ALL'}, Bakong platform: ${updatedTemplate.bakongPlatform}`
-            
+
             // Determine rejection reason based on the scenario
             const rejectionReason = sendResult.failedCount === 0
               ? `No users found matching the platform requirements (${platformInfo}). Please ensure there are registered users for the specified platforms before approving.`
               : `No users received the notification. ${sendResult.failedCount} user(s) matched the platform requirements but all failed (likely invalid tokens). Please ensure there are registered users with valid tokens for the specified platforms before approving.`
-            
+
             if (sendResult.failedCount === 0) {
               // No users matched the platform filter at all (OS platform or Bakong platform mismatch)
               this.logger.error(
@@ -2009,7 +2007,7 @@ export class TemplateService implements OnModuleInit {
                 `❌ [APPROVE] Failed to send template ${id} - ${sendResult.failedCount} user(s) matched but all failed. No users received the notification. Rejecting template.`,
               )
             }
-            
+
             // Reject the template with the reason instead of just reverting to PENDING
             await this.repo.update(id, {
               approvalStatus: ApprovalStatus.REJECTED,
@@ -2018,7 +2016,7 @@ export class TemplateService implements OnModuleInit {
               approvedAt: null,
               reasonForRejection: rejectionReason,
             })
-            
+
             throw new BadRequestException(
               new BaseResponseDto({
                 responseCode: 1,
@@ -2027,7 +2025,7 @@ export class TemplateService implements OnModuleInit {
               }),
             )
           }
-          
+
           // Mark as sent after successful send (only if at least one user received it)
           await this.repo.update(id, { isSent: true })
           this.logger.log(`✅ [APPROVE] Template ${id} sent and published successfully to ${sendResult.successfulCount} user(s)`)
@@ -2037,7 +2035,7 @@ export class TemplateService implements OnModuleInit {
           const errorResponse = error?.response || error
           const errorCode = errorResponse?.errorCode
           const errorMessage = errorResponse?.responseMessage || error?.message || String(error)
-          
+
           // Check by errorCode first (most reliable), then by message content
           const isNoUsersError =
             errorCode === ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM ||
@@ -2051,7 +2049,7 @@ export class TemplateService implements OnModuleInit {
             // This prevents templates from being marked as approved when they can't be sent
             // Note: We may have already rejected it above, but do it again to be safe
             const rejectionReason = errorResponse?.responseMessage || errorMessage || 'No users found for the specified platform. Please ensure there are registered users for this platform before approving.'
-            
+
             this.logger.error(
               `❌ [APPROVE] Failed to send template ${id} - no users found for platform. Rejecting template.`,
             )
@@ -2073,7 +2071,7 @@ export class TemplateService implements OnModuleInit {
           } else {
             // Other errors - log and re-throw so controller can handle it
             // Don't mark as sent if there was an error during sending
-          this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
+            this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
             // Re-throw the error so the controller can return proper error response
             throw error
           }
@@ -2206,7 +2204,7 @@ export class TemplateService implements OnModuleInit {
       if (currentUser?.username) {
         updateFields.updatedBy = currentUser.username
       }
-        updateFields.updatedAt = new Date()
+      updateFields.updatedAt = new Date()
 
       // Update the existing template
       if (Object.keys(updateFields).length > 0) {
@@ -2306,17 +2304,17 @@ export class TemplateService implements OnModuleInit {
 
         // Check if this is converting a scheduled notification to immediate send (Publish now from Schedule page)
         // OR if approver is clicking "Publish Now" on an APPROVED scheduled template
-        const isApproverPublishingScheduled = 
+        const isApproverPublishingScheduled =
           currentUser?.role === UserRole.APPROVAL &&
           oldTemplate.approvalStatus === ApprovalStatus.APPROVED &&
           oldTemplate.sendType === SendType.SEND_SCHEDULE &&
           oldTemplate.isSent === false &&
           dto.isSent === true // Approver clicked "Publish Now"
-        
-        const isConvertingToImmediateSend = 
-          (updatedTemplate.sendType === SendType.SEND_NOW && 
-          updatedTemplate.isSent === true &&
-           oldTemplate.isSent === false) || // Was not sent before
+
+        const isConvertingToImmediateSend =
+          (updatedTemplate.sendType === SendType.SEND_NOW &&
+            updatedTemplate.isSent === true &&
+            oldTemplate.isSent === false) || // Was not sent before
           isApproverPublishingScheduled // OR approver publishing scheduled template
 
         if (isConvertingToImmediateSend) {
@@ -2325,9 +2323,9 @@ export class TemplateService implements OnModuleInit {
               `🚀 [editPublishedNotification] Approver clicking "Publish Now" on APPROVED scheduled template ${id} - sending immediately`,
             )
           } else {
-          console.log(
-            `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
-          )
+            console.log(
+              `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
+            )
           }
 
           // Fetch template with translations for sending
@@ -2357,7 +2355,7 @@ export class TemplateService implements OnModuleInit {
                     `✅ [editPublishedNotification] Template ${id} sent immediately and changed to SEND_NOW (schedule cleared)`,
                   )
                 } else {
-                await this.markAsPublished(id)
+                  await this.markAsPublished(id)
                 }
                 console.log(
                   `✅ [editPublishedNotification] Template ${id} sent immediately to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`,
@@ -2663,7 +2661,7 @@ export class TemplateService implements OnModuleInit {
     const baseUrl = this.baseFunctionHelper
       ? this.baseFunctionHelper.getBaseUrl(req)
       : 'http://localhost:4005'
-    
+
     // Detect V2 version
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
 
@@ -2682,16 +2680,16 @@ export class TemplateService implements OnModuleInit {
       notificationType: template.notificationType,
       categoryType: isV2
         ? (InboxResponseDto.getCategoryDisplayName(template.categoryTypeEntity, language) || 'Other')
-          : template.categoryTypeEntity?.name,
+        : template.categoryTypeEntity?.name,
       categoryTypeId: template.categoryTypeId,
       categoryIcon: categoryIcon,
       priority: template.priority,
       sendInterval: template.sendInterval
         ? {
-            cron: template.sendInterval.cron,
-            startAt: moment(template.sendInterval.startAt).toISOString(),
-            endAt: moment(template.sendInterval.endAt).toISOString(),
-          }
+          cron: template.sendInterval.cron,
+          startAt: moment(template.sendInterval.startAt).toISOString(),
+          endAt: moment(template.sendInterval.endAt).toISOString(),
+        }
         : null,
       isSent: template.isSent,
       sendSchedule: template.sendSchedule ? moment(template.sendSchedule).toISOString() : null,
@@ -2715,29 +2713,29 @@ export class TemplateService implements OnModuleInit {
         ((template as any).failedCount === undefined || (template as any).failedCount === 0),
       translations: template.translations
         ? template.translations.map((translation) => ({
-            id: translation.id,
-            language: translation.language,
-            title: translation.title,
-            content: translation.content,
-            linkPreview: translation.linkPreview,
-            image: translation.image
+          id: translation.id,
+          language: translation.language,
+          title: translation.title,
+          content: translation.content,
+          linkPreview: translation.linkPreview,
+          image: translation.image
+            ? {
+              fileId: translation.image.fileId,
+              mimeType: translation.image.mimeType
+                ? translation.image.mimeType.substring(0, 100)
+                : null,
+              originalFileName: translation.image.originalFileName
+                ? translation.image.originalFileName.substring(0, 100)
+                : null,
+            }
+            : translation.imageId
               ? {
-                  fileId: translation.image.fileId,
-                  mimeType: translation.image.mimeType
-                    ? translation.image.mimeType.substring(0, 100)
-                    : null,
-                  originalFileName: translation.image.originalFileName
-                    ? translation.image.originalFileName.substring(0, 100)
-                    : null,
-                }
-              : translation.imageId
-              ? {
-                  fileId: translation.imageId,
-                  mimeType: null,
-                  originalFileName: null,
-                }
+                fileId: translation.imageId,
+                mimeType: null,
+                originalFileName: null,
+              }
               : null,
-          }))
+        }))
         : [],
     }
 
@@ -2745,7 +2743,7 @@ export class TemplateService implements OnModuleInit {
     // CRITICAL: Only set to true if failedCount === 0 (no users attempted)
     // If failedCount > 0, it means users exist but all failed - this is NOT "no users"
     if ((template as any).savedAsDraftNoUsers === true &&
-        ((template as any).failedCount === undefined || (template as any).failedCount === 0)) {
+      ((template as any).failedCount === undefined || (template as any).failedCount === 0)) {
       formattedTemplate.savedAsDraftNoUsers = true
     } else {
       // Explicitly set to false if failedCount > 0 to prevent incorrect flag persistence
@@ -2810,11 +2808,11 @@ export class TemplateService implements OnModuleInit {
     const date = isDraftWithoutSchedule
       ? datePart
       : `${datePart} | ${dateToShow.toLocaleTimeString('en-GB', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Phnom_Penh',
-        })}`
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Phnom_Penh',
+      })}`
 
     // Parse platforms using shared helper function
     const platforms = ValidationHelper.parsePlatforms(template.platforms)
@@ -2837,15 +2835,15 @@ export class TemplateService implements OnModuleInit {
       updatedAt: template.updatedAt,
       scheduledTime: template.sendSchedule
         ? (() => {
-            // Ensure we're working with UTC to avoid double timezone conversion
-            // Convert to ISO string first to ensure UTC representation
-            const scheduleDate = template.sendSchedule instanceof Date 
-              ? template.sendSchedule 
-              : new Date(template.sendSchedule)
-            // Always use ISO string (UTC) to ensure correct timezone conversion
-            const utcISOString = scheduleDate.toISOString()
-            return TimezoneUtils.formatCambodiaTime(utcISOString)
-          })()
+          // Ensure we're working with UTC to avoid double timezone conversion
+          // Convert to ISO string first to ensure UTC representation
+          const scheduleDate = template.sendSchedule instanceof Date
+            ? template.sendSchedule
+            : new Date(template.sendSchedule)
+          // Always use ISO string (UTC) to ensure correct timezone conversion
+          const utcISOString = scheduleDate.toISOString()
+          return TimezoneUtils.formatCambodiaTime(utcISOString)
+        })()
         : null,
       platforms: platforms,
       bakongPlatform: template.bakongPlatform || null,
@@ -2990,8 +2988,7 @@ export class TemplateService implements OnModuleInit {
         const job = new CronJob(scheduledDate, async () => {
           try {
             console.log(
-              `[CronJob] Executing scheduled notification for template ${
-                template.id
+              `[CronJob] Executing scheduled notification for template ${template.id
               } at ${new Date()}`,
             )
 
@@ -3056,8 +3053,7 @@ export class TemplateService implements OnModuleInit {
         this.schedulerRegistry.addCronJob(template.id.toString(), job)
         job.start()
         console.log(
-          `Scheduled notification CronJob created for template ${
-            template.id
+          `Scheduled notification CronJob created for template ${template.id
           } at ${scheduledDate.toISOString()} (${minutesUntilSchedule.toFixed(
             2,
           )} minutes from now)`,
@@ -3127,6 +3123,17 @@ export class TemplateService implements OnModuleInit {
   }
 
   async findNotificationTemplate(dto: any): Promise<any> {
+    if (dto.templateId) {
+      const template = await this.findTemplateById(dto.templateId.toString())
+      // Verify template is published (not draft)
+      if (template && !template.isSent) {
+        throw new Error(
+          `Template ${dto.templateId} is a draft and cannot be sent. Please publish it first.`,
+        )
+      }
+      return { template, notificationType: template.notificationType }
+    }
+
     if (dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
       // IMPORTANT: Only include published templates (isSent: true), exclude drafts
       const templates = await this.repo.find({
@@ -3144,17 +3151,6 @@ export class TemplateService implements OnModuleInit {
         )
       }
       return { template, notificationType: NotificationType.FLASH_NOTIFICATION }
-    }
-
-    if (dto.templateId) {
-      const template = await this.findTemplateById(dto.templateId.toString())
-      // Verify template is published (not draft)
-      if (template && !template.isSent) {
-        throw new Error(
-          `Template ${dto.templateId} is a draft and cannot be sent. Please publish it first.`,
-        )
-      }
-      return { template, notificationType: template.notificationType }
     }
 
     const validatedRequest = dto.notificationType || dto.type
@@ -3301,8 +3297,7 @@ export class TemplateService implements OnModuleInit {
     }
 
     console.log(
-      `📋 [findBestTemplateForUser] Excluding templates due to limits: ${
-        excludedTemplateIds.length > 0 ? excludedTemplateIds.join(', ') : 'none'
+      `📋 [findBestTemplateForUser] Excluding templates due to limits: ${excludedTemplateIds.length > 0 ? excludedTemplateIds.join(', ') : 'none'
       }`,
     )
     console.log(`📋 [findBestTemplateForUser] Only including published templates (isSent: true)`)
@@ -3355,8 +3350,7 @@ export class TemplateService implements OnModuleInit {
           const translation = this.findBestTranslation(selectedTemplate, language)
           if (translation) {
             console.log(
-              `📋 [findBestTemplateForUser] Using fallback template ${
-                selectedTemplate.id
+              `📋 [findBestTemplateForUser] Using fallback template ${selectedTemplate.id
               } (bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'})`,
             )
             return { template: selectedTemplate, translation }
@@ -3375,8 +3369,7 @@ export class TemplateService implements OnModuleInit {
     if (!translation) return null
 
     console.log(
-      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${
-        selectedTemplate.bakongPlatform || 'NULL'
+      `✅ [findBestTemplateForUser] Found template ${selectedTemplate.id} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'
       }`,
     )
     return { template: selectedTemplate, translation }

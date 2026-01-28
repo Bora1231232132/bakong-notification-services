@@ -32,7 +32,7 @@ export enum ErrorCode {
   TEMPLATE_SEND_INTERVAL_INVAILD_DURATION = 30,
   NO_USERS_FOR_BAKONG_PLATFORM = 31,
   DATABASE_INVALID_INPUT_SYNTAX = 32,
-  }
+}
 
 export enum ResponseMessage {
   REQUEST_SUCCESS = 'Request successfully',
@@ -62,7 +62,7 @@ export enum ResponseMessage {
   DATABASE_QUERY_FAILED = 'Database query failed',
   DATABASE_CHECK_CONSTRAINT_VIOLATION = 'Database check constraint violation',
   DATABASE_CONSTRAINT_VIOLATION = 'Database constraint violation',
-  NO_USERS_CAN_RECEIVE = 'No users can receive flash notifications',
+  NO_USERS_CAN_RECEIVE = 'No users can receive notifications',
   NO_FLASH_NOTIFICATION_TEMPLATE_AVAILABLE = 'No flash notification template is available, we will notify you when we have a new template.',
   FLASH_NOTIFICATION_POPUP_SUCCESS = 'Flash notification popup successfully',
   FLASH_NOTIFICATION_POPUP_FAILED = 'Flash notification popup failed',

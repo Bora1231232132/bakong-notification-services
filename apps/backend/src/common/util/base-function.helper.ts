@@ -38,8 +38,8 @@ export class BaseFunctionHelper {
       nodeEnv === 'development'
         ? 'http://localhost:4005'
         : nodeEnv === 'staging'
-        ? 'http://10.20.6.57:4002'
-        : 'https://10.20.6.58:8080'
+          ? 'http://10.20.6.57:4002'
+          : 'https://10.20.6.58:8080'
 
     let baseUrl = defaultBaseUrl
 
@@ -111,7 +111,8 @@ export class BaseFunctionHelper {
       if (
         updateData.fcmToken !== undefined &&
         updateData.fcmToken !== null &&
-        updateData.fcmToken !== ''
+        updateData.fcmToken !== '' &&
+        updateData.fcmToken.length >= 30
       ) {
         const currentToken = user.fcmToken || ''
         const newToken = updateData.fcmToken
@@ -135,7 +136,7 @@ export class BaseFunctionHelper {
         })
       } else if (updateData.fcmToken !== undefined) {
         console.log(
-          `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (null or empty - preserving existing token)`,
+          `⏭️ [syncUser] Skipping fcmToken update for user ${accountId} (null, empty, or too short - preserving existing token)`,
         )
       } else {
         console.log(
@@ -189,8 +190,7 @@ export class BaseFunctionHelper {
       ) {
         updatesToApply.bakongPlatform = updateData.bakongPlatform
         console.log(
-          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${
-            user.bakongPlatform || 'NULL'
+          `📝 [syncUser] Updating user ${accountId} bakongPlatform: ${user.bakongPlatform || 'NULL'
           } -> ${updateData.bakongPlatform}`,
         )
       } else if (updateData.bakongPlatform !== undefined) {
@@ -203,12 +203,11 @@ export class BaseFunctionHelper {
         accountId,
         updatesToApply: {
           fcmToken: updatesToApply.fcmToken
-            ? `${updatesToApply.fcmToken.substring(0, 30)}... (length: ${
-                updatesToApply.fcmToken.length
-              })`
+            ? `${updatesToApply.fcmToken.substring(0, 30)}... (length: ${updatesToApply.fcmToken.length
+            })`
             : updatesToApply.fcmToken === ''
-            ? 'EMPTY STRING'
-            : 'NOT IN updatesToApply',
+              ? 'EMPTY STRING'
+              : 'NOT IN updatesToApply',
           participantCode: updatesToApply.participantCode || 'NOT IN updatesToApply',
           platform: updatesToApply.platform || 'NOT IN updatesToApply',
           language: updatesToApply.language || 'NOT IN updatesToApply',
@@ -319,8 +318,7 @@ export class BaseFunctionHelper {
           // Use direct update() for existing users - more reliable than save()
           const updateResult = await this.bkUserRepo.update({ accountId }, updatesToApply)
           console.log(
-            `✅ [syncUser] Direct update() executed for ${accountId}. Rows affected: ${
-              updateResult.affected || 0
+            `✅ [syncUser] Direct update() executed for ${accountId}. Rows affected: ${updateResult.affected || 0
             }`,
           )
 
@@ -336,10 +334,9 @@ export class BaseFunctionHelper {
           }
 
           console.log(
-            `✅ [syncUser] Successfully updated and reloaded user ${accountId}. Current fcmToken: ${
-              user.fcmToken
-                ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
-                : 'EMPTY'
+            `✅ [syncUser] Successfully updated and reloaded user ${accountId}. Current fcmToken: ${user.fcmToken
+              ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+              : 'EMPTY'
             }, bakongPlatform: ${user.bakongPlatform || 'NULL'}`,
           )
 
@@ -349,8 +346,7 @@ export class BaseFunctionHelper {
             const actualToken = user.fcmToken
             if (actualToken !== expectedToken) {
               console.error(
-                `❌ [syncUser] CRITICAL: Token mismatch after update! Expected: ${
-                  expectedToken ? `${expectedToken.substring(0, 30)}...` : 'EMPTY'
+                `❌ [syncUser] CRITICAL: Token mismatch after update! Expected: ${expectedToken ? `${expectedToken.substring(0, 30)}...` : 'EMPTY'
                 }, Got: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'}`,
               )
               // Try one more time with explicit update
@@ -364,16 +360,14 @@ export class BaseFunctionHelper {
                 .where('user.accountId = :accountId', { accountId })
                 .getOne()
               console.log(
-                `🔄 [syncUser] Retry update completed. Final fcmToken: ${
-                  user?.fcmToken
-                    ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
-                    : 'EMPTY'
+                `🔄 [syncUser] Retry update completed. Final fcmToken: ${user?.fcmToken
+                  ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+                  : 'EMPTY'
                 }`,
               )
             } else {
               console.log(
-                `✅ [syncUser] Token verification passed: ${
-                  actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'
+                `✅ [syncUser] Token verification passed: ${actualToken ? `${actualToken.substring(0, 30)}...` : 'EMPTY'
                 }`,
               )
             }
@@ -447,20 +441,17 @@ export class BaseFunctionHelper {
         syncStatus: {
           status: 'SUCCESS',
           lastSyncAt: new Date().toISOString(),
-          lastSyncMessage: `New user created: ${
-            updateData.bakongPlatform || 'no platform'
-          } platform`,
+          lastSyncMessage: `New user created: ${updateData.bakongPlatform || 'no platform'
+            } platform`,
         },
       })
       console.log(
-        `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${
-          updateData.bakongPlatform || 'NULL'
+        `📝 [syncUser] Creating new user ${accountId} with bakongPlatform: ${updateData.bakongPlatform || 'NULL'
         }`,
       )
       const savedUser = await this.bkUserRepo.save(created)
       console.log(
-        `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${
-          savedUser.bakongPlatform || 'NULL'
+        `✅ [syncUser] Created user ${accountId} with bakongPlatform: ${savedUser.bakongPlatform || 'NULL'
         }`,
       )
       return { isNewUser, savedUser }
@@ -527,12 +518,12 @@ export class BaseFunctionHelper {
           stats.invalidTokens++
           const reason = isTooShort ? `too short (${user.fcmToken.length} chars)` : 'invalid format'
           console.log(
-            `🧹 [syncAllUsers] Clearing obviously invalid token for user ${user.accountId} (${reason})`,
+            `🧹 [syncAllUsers] Warn: user ${user.accountId} has invalid token format (${reason}). PRESERVING for historical data.`,
           )
-          // Clear obviously invalid tokens - these are definitely wrong and waste resources
-          user.fcmToken = ''
-          userChanged = true
-          cleanedTokens.push(user.accountId)
+          // NEVER clear tokens in background - preserve existing data as requested by user
+          // user.fcmToken = ''
+          // userChanged = true
+          // cleanedTokens.push(user.accountId)
         } else {
           // Token format is valid - keep it even if it fails FCM sends
           // Mobile app can update it when they call API
@@ -668,9 +659,8 @@ export class BaseFunctionHelper {
     // Handle Buffer objects
     if (Buffer.isBuffer(obj)) {
       const preview = obj.slice(0, maxBufferPreview)
-      return `<Buffer[${obj.length} bytes]: ${Array.from(preview).join(',')}${
-        obj.length > maxBufferPreview ? '...' : ''
-      }>`
+      return `<Buffer[${obj.length} bytes]: ${Array.from(preview).join(',')}${obj.length > maxBufferPreview ? '...' : ''
+        }>`
     }
 
     // Handle arrays

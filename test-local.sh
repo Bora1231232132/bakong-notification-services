@@ -112,25 +112,44 @@ else
     fi
 fi
 
-# Run unified migration if database is available
-if [ "$DB_RUNNING" = true ]; then
-    echo ""
-    echo "📋 Step 3: Testing Database Connection..."
-    echo "----------------------------------------"
+    # Run unified migration if database is available
+    if [ "$DB_RUNNING" = true ]; then
+        echo ""
+        echo "📋 Step 3: Testing Database Connection..."
+        echo "----------------------------------------"
 
-    echo "Testing database connection..."
-    export PGPASSWORD="$DB_PASSWORD"
-    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
-        echo "✅ Database connection successful"
-    else
-        echo "❌ Database connection failed!"
-        echo "   Please check:"
-        echo "   1. Container is running: docker ps | grep $DB_CONTAINER"
-        echo "   2. Database is ready: docker exec $DB_CONTAINER pg_isready -U $DB_USER"
+        echo "Testing database connection..."
+        export PGPASSWORD="$DB_PASSWORD"
+        if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "✅ Database connection successful"
+        else
+            echo "❌ Database connection failed!"
+            echo "   Please check:"
+            echo "   1. Container is running: docker ps | grep $DB_CONTAINER"
+            echo "   2. Database is ready: docker exec $DB_CONTAINER pg_isready -U $DB_USER"
+            unset PGPASSWORD
+            exit 1
+        fi
         unset PGPASSWORD
-        exit 1
-    fi
-    unset PGPASSWORD
+        
+        echo ""
+        echo "📋 Step 3.5: Creating Pre-Migration Backup (Safety Check)..."
+        echo "----------------------------------------"
+        
+        if [ -f "utils-server.sh" ]; then
+            echo "   Creating backup before migration test..."
+            if bash utils-server.sh db-backup dev > /dev/null 2>&1; then
+                echo "   ✅ Backup created successfully"
+                if [ -f "backups/backup_dev_latest.sql" ]; then
+                    BACKUP_SIZE=$(du -h "backups/backup_dev_latest.sql" 2>/dev/null | cut -f1 || echo "unknown")
+                    echo "   📄 Backup file: backups/backup_dev_latest.sql ($BACKUP_SIZE)"
+                fi
+            else
+                echo "   ⚠️  Backup failed (continuing with test anyway)"
+            fi
+        else
+            echo "   ⚠️  utils-server.sh not found - skipping backup"
+        fi
 
     echo ""
     echo "📋 Step 4: Testing Migration Script..."
@@ -196,6 +215,21 @@ if [ "$DB_RUNNING" = true ]; then
     if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
       "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bakong_user' AND column_name = 'syncStatus');" | grep -q t; then
         echo "   ✅ Verified: bakong_user.syncStatus column exists"
+    fi
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'email');" | grep -q t; then
+        echo "   ✅ Verified: user.email column exists"
+    fi
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'mustChangePassword');" | grep -q t; then
+        echo "   ✅ Verified: user.mustChangePassword column exists"
+    fi
+
+    if docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'template' AND column_name = 'approvalStatus');" | grep -q t; then
+        echo "   ✅ Verified: template.approvalStatus column exists"
     fi
 
     unset PGPASSWORD
@@ -272,18 +306,19 @@ echo ""
 echo "📋 Step 7: Verifying Data Integrity..."
 echo "----------------------------------------"
 
-if [ -f "$UTILS_FILE" ]; then
-    if [ -f "apps/backend/scripts/verify-all.sql" ]; then
-        echo "   Running comprehensive data verification (verify-all.sql)..."
-        bash utils-server.sh verify-all || {
-            echo "   ⚠️  Data verification warning (check manually if needed)"
-        }
+if [ -f "apps/backend/scripts/verify-all.sql" ]; then
+    echo "   Running comprehensive data verification (verify-all.sql)..."
+    export PGPASSWORD="$DB_PASSWORD"
+    docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "apps/backend/scripts/verify-all.sql"
+    if [ $? -eq 0 ]; then
+        echo "   ✅ All verification checks passed"
     else
-        echo "   ✅ verify-all.sql not found - migration verification already completed in Step 4"
-        echo "   ✅ All verification checks passed using verify-migration.sql"
+        echo "   ⚠️  Data verification warning (check manually if needed)"
     fi
+    unset PGPASSWORD
 else
-    echo "   ⚠️  utils-server.sh not found, skipping comprehensive verification..."
+    echo "   ✅ verify-all.sql not found - migration verification already completed in Step 4"
+    echo "   ✅ All verification checks passed using verify-migration.sql"
 fi
 
 echo ""

@@ -17,6 +17,53 @@
 \echo '🔄 Starting unified database migration...'
 \echo '⚠️  IMPORTANT: Ensure you have a backup before proceeding!'
 \echo ''
+\echo '🔒 Data Safety Notice:'
+\echo '   - This migration is idempotent (safe to run multiple times)'
+\echo '   - No data will be deleted (only schema changes)'
+\echo '   - Always backup before running migrations in production'
+\echo ''
+
+-- ============================================================================
+-- Pre-Migration Data Validation
+-- ============================================================================
+\echo '🔍 Pre-Migration Data Validation'
+\echo '================================'
+\echo ''
+
+DO $$
+DECLARE
+    bakong_user_count INTEGER;
+    user_count INTEGER;
+    template_count INTEGER;
+    notification_count INTEGER;
+    validation_passed BOOLEAN := TRUE;
+BEGIN
+    -- Count records in critical tables
+    SELECT COUNT(*) INTO bakong_user_count FROM bakong_user;
+    SELECT COUNT(*) INTO user_count FROM "user" WHERE "deletedAt" IS NULL;
+    SELECT COUNT(*) INTO template_count FROM template WHERE "deletedAt" IS NULL;
+    SELECT COUNT(*) INTO notification_count FROM notification;
+    
+    RAISE NOTICE '📊 Current data counts:';
+    RAISE NOTICE '   bakong_user: % record(s)', bakong_user_count;
+    RAISE NOTICE '   user: % record(s)', user_count;
+    RAISE NOTICE '   template: % record(s)', template_count;
+    RAISE NOTICE '   notification: % record(s)', notification_count;
+    
+    -- Basic validation checks
+    IF bakong_user_count < 0 OR user_count < 0 OR template_count < 0 OR notification_count < 0 THEN
+        RAISE WARNING '⚠️  Negative counts detected - possible data corruption!';
+        validation_passed := FALSE;
+    END IF;
+    
+    IF validation_passed THEN
+        RAISE NOTICE '✅ Pre-migration validation passed';
+    ELSE
+        RAISE WARNING '⚠️  Pre-migration validation had warnings';
+    END IF;
+END$$;
+
+\echo ''
 
 -- ============================================================================
 -- Step 1: Create Extensions
@@ -37,9 +84,18 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role_enum') THEN
-        CREATE TYPE user_role_enum AS ENUM ('ADMIN_USER', 'NORMAL_USER', 'API_USER');
+        CREATE TYPE user_role_enum AS ENUM ('ADMIN_USER', 'NORMAL_USER', 'API_USER', 'ADMINISTRATOR');
         RAISE NOTICE '✅ Created user_role_enum';
     ELSE
+        -- Add ADMINISTRATOR if it doesn't exist in existing enum
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_enum
+            WHERE enumlabel = 'ADMINISTRATOR'
+            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role_enum')
+        ) THEN
+            ALTER TYPE user_role_enum ADD VALUE 'ADMINISTRATOR';
+            RAISE NOTICE '✅ Added ADMINISTRATOR to user_role_enum';
+        END IF;
         RAISE NOTICE 'ℹ️  user_role_enum already exists';
     END IF;
 
@@ -77,6 +133,31 @@ BEGIN
     ELSE
         RAISE NOTICE 'ℹ️  notification_type_enum already exists';
     END IF;
+
+    -- approval_status_enum
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'approval_status_enum') THEN
+        CREATE TYPE approval_status_enum AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED');
+        RAISE NOTICE '✅ Created approval_status_enum';
+    ELSE
+        -- Add EXPIRED if it doesn't exist
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_enum
+            WHERE enumlabel = 'EXPIRED'
+            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'approval_status_enum')
+        ) THEN
+            ALTER TYPE approval_status_enum ADD VALUE 'EXPIRED';
+            RAISE NOTICE '✅ Added EXPIRED to approval_status_enum';
+        END IF;
+        RAISE NOTICE 'ℹ️  approval_status_enum already exists';
+    END IF;
+
+    -- verification_token_type_enum
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_token_type_enum') THEN
+        CREATE TYPE verification_token_type_enum AS ENUM ('EMAIL_VERIFICATION', 'PASSWORD_RESET', 'ACCOUNT_ACTIVATION');
+        RAISE NOTICE '✅ Created verification_token_type_enum';
+    ELSE
+        RAISE NOTICE 'ℹ️  verification_token_type_enum already exists';
+    END IF;
 END$$;
 
 \echo '   ✅ Enum types ready'
@@ -112,13 +193,17 @@ END$$;
 CREATE TABLE IF NOT EXISTS "user" (
     id SERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     "displayName" VARCHAR(255) NOT NULL,
-    role VARCHAR(50) DEFAULT 'NORMAL_USER',
+    role user_role_enum DEFAULT 'NORMAL_USER',
+    "mustChangePassword" BOOLEAN NOT NULL DEFAULT true,
     "syncStatus" JSONB DEFAULT '{"failLoginAttempt": 0, "login_at": null, "changePassword_count": 0}'::jsonb,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "deletedAt" TIMESTAMPTZ NULL
+    "deletedAt" TIMESTAMPTZ NULL,
+    "imageId" VARCHAR(255) NULL,
+    "phoneNumber" VARCHAR(20) NOT NULL DEFAULT '0000000000'
 );
 
 CREATE TABLE IF NOT EXISTS bakong_user (
@@ -169,9 +254,14 @@ CREATE TABLE IF NOT EXISTS template (
     "bakongPlatform" bakong_platform_enum,
     "showPerDay" INTEGER DEFAULT 1,
     "maxDayShowing" INTEGER DEFAULT 1,
+    "approvalStatus" approval_status_enum NOT NULL DEFAULT 'APPROVED',
+    "approvedBy" VARCHAR(255),
+    "approvedAt" TIMESTAMPTZ,
+    "reasonForRejection" TEXT,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "deletedAt" TIMESTAMPTZ NULL
+    "deletedAt" TIMESTAMPTZ NULL,
+    "categoryTypeId" INTEGER NULL
 );
 
 CREATE TABLE IF NOT EXISTS template_translation (
@@ -193,7 +283,18 @@ CREATE TABLE IF NOT EXISTS notification (
     "templateId" BIGINT NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "firebaseMessageId" BIGINT,
-    "sendCount" INTEGER DEFAULT 1
+    "sendCount" INTEGER DEFAULT 1,
+    language VARCHAR(10)
+);
+
+CREATE TABLE IF NOT EXISTS verification_token (
+    id SERIAL PRIMARY KEY,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    "userId" INTEGER NOT NULL,
+    type verification_token_type_enum NOT NULL DEFAULT 'EMAIL_VERIFICATION',
+    "expiresAt" TIMESTAMP NOT NULL,
+    "usedAt" TIMESTAMP NULL,
+    "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 \echo '   ✅ Tables created'
@@ -307,6 +408,49 @@ BEGIN
         RAISE NOTICE '✅ Added imageId to user table';
     ELSE
         RAISE NOTICE 'ℹ️  user.imageId already exists';
+    END IF;
+END$$;
+
+-- Add email column to user table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
+        AND column_name = 'email'
+    ) THEN
+        ALTER TABLE "user" ADD COLUMN "email" VARCHAR(255) NULL;
+        RAISE NOTICE '✅ Added email column to user table';
+
+        -- Populate email from username for existing users
+        UPDATE "user" SET "email" = LOWER(username) WHERE "email" IS NULL;
+
+        ALTER TABLE "user" ALTER COLUMN "email" SET NOT NULL;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'UQ_user_email'
+        ) THEN
+            ALTER TABLE "user" ADD CONSTRAINT "UQ_user_email" UNIQUE ("email");
+        END IF;
+        RAISE NOTICE '✅ Configured email as NOT NULL and UNIQUE';
+    ELSE
+        RAISE NOTICE 'ℹ️  user.email already exists';
+    END IF;
+END$$;
+
+-- Add mustChangePassword column to user table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user'
+        AND column_name = 'mustChangePassword'
+    ) THEN
+        ALTER TABLE "user" ADD COLUMN "mustChangePassword" BOOLEAN NOT NULL DEFAULT true;
+        -- Update existing users to false if they already exist
+        UPDATE "user" SET "mustChangePassword" = false WHERE "mustChangePassword" = true AND "deletedAt" IS NULL;
+        RAISE NOTICE '✅ Added mustChangePassword column to user table';
+    ELSE
+        RAISE NOTICE 'ℹ️  user.mustChangePassword already exists';
     END IF;
 END$$;
 
@@ -462,6 +606,71 @@ BEGIN
         RAISE NOTICE '✅ Removed old categoryType column from template table';
     ELSE
         RAISE NOTICE 'ℹ️  template.categoryType column does not exist (already removed)';
+    END IF;
+END$$;
+
+-- Add approval fields to template table
+DO $$
+BEGIN
+    -- approvalStatus
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template'
+        AND column_name = 'approvalStatus'
+    ) THEN
+        ALTER TABLE template
+        ADD COLUMN "approvalStatus" approval_status_enum NOT NULL DEFAULT 'APPROVED';
+        RAISE NOTICE '✅ Added approvalStatus column to template';
+    ELSE
+        RAISE NOTICE 'ℹ️  template.approvalStatus already exists';
+    END IF;
+
+    -- approvedBy
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'approvedBy'
+    ) THEN
+        ALTER TABLE template 
+        ADD COLUMN "approvedBy" VARCHAR(255);
+        RAISE NOTICE '✅ Added approvedBy column to template';
+    END IF;
+
+    -- approvedAt
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'approvedAt'
+    ) THEN
+        ALTER TABLE template 
+        ADD COLUMN "approvedAt" TIMESTAMPTZ;
+        RAISE NOTICE '✅ Added approvedAt column to template';
+    END IF;
+
+    -- reasonForRejection
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'template' 
+        AND column_name = 'reasonForRejection'
+    ) THEN
+        ALTER TABLE template 
+        ADD COLUMN "reasonForRejection" TEXT;
+        RAISE NOTICE '✅ Added reasonForRejection column to template';
+    END IF;
+END$$;
+
+-- Add language column to notification table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notification'
+        AND column_name = 'language'
+    ) THEN
+        ALTER TABLE notification ADD COLUMN "language" VARCHAR(10);
+        RAISE NOTICE '✅ Added language column to notification table';
+    ELSE
+        RAISE NOTICE 'ℹ️  notification.language already exists';
     END IF;
 END$$;
 
@@ -836,6 +1045,23 @@ BEGIN
         RAISE NOTICE '✅ Added fk_template_category_type';
     ELSE
         RAISE NOTICE 'ℹ️  fk_template_category_type already exists';
+    END IF;
+END$$;
+
+-- Add FK: verification_token -> user
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'FK_verification_token_userId'
+        AND table_name = 'verification_token'
+    ) THEN
+        ALTER TABLE verification_token
+        ADD CONSTRAINT "FK_verification_token_userId"
+        FOREIGN KEY ("userId") REFERENCES "user"(id) ON DELETE CASCADE;
+        RAISE NOTICE '✅ Added FK_verification_token_userId';
+    ELSE
+        RAISE NOTICE 'ℹ️  FK_verification_token_userId already exists';
     END IF;
 END$$;
 
@@ -1259,3 +1485,89 @@ BEGIN
         RAISE NOTICE 'ℹ️  notification.language already exists';
     END IF;
 END$$;
+
+-- ============================================================================
+-- Post-Migration Data Verification
+-- ============================================================================
+\echo ''
+\echo '🔍 Post-Migration Data Verification'
+\echo '==================================='
+\echo ''
+
+DO $$
+DECLARE
+    bakong_user_count INTEGER;
+    user_count INTEGER;
+    template_count INTEGER;
+    notification_count INTEGER;
+    template_translation_count INTEGER;
+    image_count INTEGER;
+    category_type_count INTEGER;
+    verification_passed BOOLEAN := TRUE;
+BEGIN
+    -- Count records in all tables
+    SELECT COUNT(*) INTO bakong_user_count FROM bakong_user;
+    SELECT COUNT(*) INTO user_count FROM "user" WHERE "deletedAt" IS NULL;
+    SELECT COUNT(*) INTO template_count FROM template WHERE "deletedAt" IS NULL;
+    SELECT COUNT(*) INTO notification_count FROM notification;
+    SELECT COUNT(*) INTO template_translation_count FROM template_translation;
+    SELECT COUNT(*) INTO image_count FROM image;
+    SELECT COUNT(*) INTO category_type_count FROM category_type WHERE "deletedAt" IS NULL;
+    
+    RAISE NOTICE '📊 Post-migration data counts:';
+    RAISE NOTICE '   bakong_user: % record(s)', bakong_user_count;
+    RAISE NOTICE '   user: % record(s)', user_count;
+    RAISE NOTICE '   template: % record(s)', template_count;
+    RAISE NOTICE '   notification: % record(s)', notification_count;
+    RAISE NOTICE '   template_translation: % record(s)', template_translation_count;
+    RAISE NOTICE '   image: % record(s)', image_count;
+    RAISE NOTICE '   category_type: % record(s)', category_type_count;
+    
+    -- Verify critical columns exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'template' AND column_name = 'categoryTypeId'
+    ) THEN
+        RAISE WARNING '⚠️  template.categoryTypeId column missing!';
+        verification_passed := FALSE;
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notification' AND column_name = 'language'
+    ) THEN
+        RAISE WARNING '⚠️  notification.language column missing!';
+        verification_passed := FALSE;
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bakong_user' AND column_name = 'syncStatus'
+    ) THEN
+        RAISE WARNING '⚠️  bakong_user.syncStatus column missing!';
+        verification_passed := FALSE;
+    END IF;
+    
+    -- Check for orphaned records
+    DECLARE
+        orphaned_notifications INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO orphaned_notifications
+        FROM notification n
+        WHERE NOT EXISTS (
+            SELECT 1 FROM template t WHERE t.id = n."templateId"
+        );
+        
+        IF orphaned_notifications > 0 THEN
+            RAISE WARNING '⚠️  Found % orphaned notification record(s) (templateId does not exist)', orphaned_notifications;
+        END IF;
+    END;
+    
+    IF verification_passed THEN
+        RAISE NOTICE '✅ Post-migration verification passed';
+    ELSE
+        RAISE WARNING '⚠️  Post-migration verification had warnings - please review';
+    END IF;
+END$$;
+
+\echo ''

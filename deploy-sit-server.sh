@@ -28,17 +28,62 @@ echo ""
 # Step 1: Pre-deployment Backup (CRITICAL - data safety)
 # ============================================================================
 echo "💾 Step 1: Creating backup before deployment (CRITICAL)..."
+echo "=========================================================="
+echo ""
+
+BACKUP_SUCCESS=false
+
 if [ -f "utils-server.sh" ]; then
-    bash utils-server.sh db-backup sit || {
-        echo "⚠️  Backup failed or database container not running!"
-        echo "   This may be normal if database container is stopped."
-        echo "   Continuing with deployment..."
+    echo "🔒 Creating backup before any changes..."
+    if bash utils-server.sh db-backup sit; then
+        BACKUP_SUCCESS=true
         echo ""
-    }
+        echo "✅ Backup created successfully!"
+        
+        # Verify backup file exists and is valid
+        BACKUP_FILE="backups/backup_staging_latest.sql"
+        if [ -f "$BACKUP_FILE" ]; then
+            BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+            BACKUP_DATE=$(stat -c "%y" "$BACKUP_FILE" 2>/dev/null || stat -f "%Sm" "$BACKUP_FILE" 2>/dev/null || echo "unknown")
+            echo "📄 Backup file: $BACKUP_FILE"
+            echo "📊 Backup size: $BACKUP_SIZE"
+            echo "📅 Backup date: $BACKUP_DATE"
+            
+            # Verify backup contains SQL
+            if grep -q "CREATE TABLE\|INSERT INTO\|COPY" "$BACKUP_FILE" 2>/dev/null; then
+                echo "✅ Backup file verified (contains valid SQL)"
+            else
+                echo "⚠️  WARNING: Backup file may be corrupted!"
+            fi
+        else
+            echo "⚠️  WARNING: Backup file not found at expected location!"
+        fi
+    else
+        echo ""
+        echo "❌ Backup FAILED!"
+        echo ""
+        echo "⚠️  CRITICAL: Backup is required before deployment!"
+        echo "   Deployment aborted for data safety."
+        echo ""
+        echo "💡 Please ensure:"
+        echo "   1. Database container is running: docker ps | grep $DB_CONTAINER"
+        echo "   2. Database is accessible: docker exec $DB_CONTAINER pg_isready"
+        echo "   3. Retry backup: bash utils-server.sh db-backup sit"
+        echo ""
+        echo "   If you must proceed without backup (NOT RECOMMENDED):"
+        echo "   Comment out this check in deploy-sit-server.sh"
+        echo ""
+        exit 1
+    fi
 else
-    echo "⚠️  utils-server.sh not found!"
-    echo "   Skipping backup - continuing with deployment..."
+    echo "❌ utils-server.sh not found!"
     echo ""
+    echo "⚠️  CRITICAL: Cannot create backup without utils-server.sh!"
+    echo "   Deployment aborted for data safety."
+    echo ""
+    echo "💡 Please ensure utils-server.sh exists in the project root"
+    echo ""
+    exit 1
 fi
 
 echo ""
@@ -123,6 +168,21 @@ if [ "$DB_RUNNING" = true ]; then
         echo "   User: $DB_USER"
         echo ""
         
+        # Verify backup exists before migration
+        if [ "$BACKUP_SUCCESS" != "true" ]; then
+            echo "   ⚠️  WARNING: No backup found before migration!"
+            echo "   Checking for existing backup..."
+            if [ -f "backups/backup_staging_latest.sql" ]; then
+                echo "   ✅ Found existing backup: backups/backup_staging_latest.sql"
+            else
+                echo "   ❌ No backup found! Creating backup now..."
+                if ! bash utils-server.sh db-backup sit; then
+                    echo "   ❌ Backup failed! Migration aborted for data safety."
+                    exit 1
+                fi
+            fi
+        fi
+        
         # Get database password from environment or docker-compose
         DB_PASSWORD="${POSTGRES_PASSWORD:-0101bkns_sit}"
         
@@ -138,10 +198,13 @@ if [ "$DB_RUNNING" = true ]; then
             echo "   ❌ Migration failed with errors:"
             echo "$MIGRATION_OUTPUT" | grep -i "ERROR\|FATAL" | head -5
             echo ""
-            echo "   ⚠️  Please check the full migration output above"
-            echo "   ⚠️  Continuing deployment, but migration may have issues"
+            echo "   🔒 IMPORTANT: Your data is safe!"
+            echo "   Backup available at: backups/backup_staging_latest.sql"
+            echo "   To restore: bash utils-server.sh db-restore backups/backup_staging_latest.sql sit"
+            echo ""
+            echo "   ⚠️  Deployment aborted due to migration failure"
             unset PGPASSWORD
-            # Don't exit - let deployment continue but warn
+            exit 1
         elif [ $MIGRATION_EXIT_CODE -eq 0 ] || echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|already NOT NULL\|already has"; then
             echo ""
             echo "   ✅ Migration completed successfully!"

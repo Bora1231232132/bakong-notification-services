@@ -226,8 +226,44 @@ export class FirebaseManager implements OnModuleInit {
           fileName = 'bakong-uat-firebase-service-account.json'
       }
     } else {
-      // Development environment - use generic file
-      fileName = 'firebase-service-account.json'
+      // Development environment - attempt to find platform-specific SIT file first, then fallback to generic
+      switch (bakongPlatform) {
+        case BakongApp.BAKONG:
+          fileName = 'bakong-sit-firebase-service-account.json'
+          break
+        case BakongApp.BAKONG_JUNIOR:
+          fileName = 'bakong-junior-sit-firebase-service-account.json'
+          break
+        case BakongApp.BAKONG_TOURIST:
+          fileName = 'bakong-tourists-sit-firebase-service-account.json'
+          break
+        default:
+          fileName = 'firebase-service-account.json'
+      }
+
+      // Search for the platform-specific file in standard locations
+      const cwd = process.cwd()
+      const searchPaths = [
+        path.join(cwd, fileName),
+        path.join(cwd, `../../${fileName}`),
+        path.join(cwd, `../${fileName}`),
+        path.join(__dirname, `../${fileName}`),
+        path.join(__dirname, `../../${fileName}`),
+        path.join(__dirname, `../../../${fileName}`),
+      ]
+
+      let foundPath: string | null = null
+      for (const p of searchPaths) {
+        if (fs.existsSync(p)) {
+          foundPath = p
+          break
+        }
+      }
+
+      if (!foundPath) {
+        // Fallback to generic file
+        fileName = 'firebase-service-account.json'
+      }
     }
 
     // Search for file in multiple locations
