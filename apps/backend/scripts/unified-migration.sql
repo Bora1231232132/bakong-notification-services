@@ -1244,3 +1244,18 @@ BEGIN
 
     RAISE NOTICE '✅ Platforms format normalization complete!';
 END $$;
+
+-- Add language column to notification table (for V2 API)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notification'
+        AND column_name = 'language'
+    ) THEN
+        ALTER TABLE notification ADD COLUMN language VARCHAR(10);
+        RAISE NOTICE '✅ Added language column to notification table';
+    ELSE
+        RAISE NOTICE 'ℹ️  notification.language already exists';
+    END IF;
+END$$;

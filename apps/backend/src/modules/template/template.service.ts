@@ -947,7 +947,7 @@ export class TemplateService implements OnModuleInit {
               updateFields.reasonForRejection = null
             } else {
               // Just updating draft - keep it as DRAFT
-              updateFields.reasonForRejection = null
+            updateFields.reasonForRejection = null
             }
           }
           // If editing a PENDING template, keep it as PENDING (don't reset to DRAFT)
@@ -1054,22 +1054,22 @@ export class TemplateService implements OnModuleInit {
         // Only apply fallback logic for published notifications, not drafts
         // This prevents empty translations from being filled with data from other languages
         if (!isDraft) {
-          translations.forEach((translation) => {
-            if (
-              translation.title === undefined ||
-              translation.title === null ||
-              String(translation.title).trim() === ''
-            ) {
-              translation.title = getFallbackValue('title', translation.language)
-            }
-            if (
-              translation.content === undefined ||
-              translation.content === null ||
-              String(translation.content).trim() === ''
-            ) {
-              translation.content = getFallbackValue('content', translation.language)
-            }
-          })
+        translations.forEach((translation) => {
+          if (
+            translation.title === undefined ||
+            translation.title === null ||
+            String(translation.title).trim() === ''
+          ) {
+            translation.title = getFallbackValue('title', translation.language)
+          }
+          if (
+            translation.content === undefined ||
+            translation.content === null ||
+            String(translation.content).trim() === ''
+          ) {
+            translation.content = getFallbackValue('content', translation.language)
+          }
+        })
         }
 
         for (const translation of translations) {
@@ -1285,12 +1285,12 @@ export class TemplateService implements OnModuleInit {
         reason: isApproverPublishNow 
           ? 'Approver publish now' 
           : isResubmissionFromRejected 
-            ? 'Resubmission from rejected - waiting for approver'
+            ? 'Resubmission from rejected - waiting for approver' 
             : updatedTemplate.approvalStatus === ApprovalStatus.PENDING
               ? 'PENDING status - waiting for approval'
-              : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
-                ? 'SEND_NOW with isSent=true'
-                : 'Conditions not met',
+            : updatedTemplate.sendType === SendType.SEND_NOW && updatedTemplate.isSent === true
+              ? 'SEND_NOW with isSent=true'
+              : 'Conditions not met',
         approvalStatus: updatedTemplate.approvalStatus,
       })
       
@@ -2073,7 +2073,7 @@ export class TemplateService implements OnModuleInit {
           } else {
             // Other errors - log and re-throw so controller can handle it
             // Don't mark as sent if there was an error during sending
-            this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
+          this.logger.error(`❌ [APPROVE] Failed to send template ${id} after approval:`, error)
             // Re-throw the error so the controller can return proper error response
             throw error
           }
@@ -2206,7 +2206,7 @@ export class TemplateService implements OnModuleInit {
       if (currentUser?.username) {
         updateFields.updatedBy = currentUser.username
       }
-      updateFields.updatedAt = new Date()
+        updateFields.updatedAt = new Date()
 
       // Update the existing template
       if (Object.keys(updateFields).length > 0) {
@@ -2315,7 +2315,7 @@ export class TemplateService implements OnModuleInit {
         
         const isConvertingToImmediateSend = 
           (updatedTemplate.sendType === SendType.SEND_NOW && 
-           updatedTemplate.isSent === true &&
+          updatedTemplate.isSent === true &&
            oldTemplate.isSent === false) || // Was not sent before
           isApproverPublishingScheduled // OR approver publishing scheduled template
 
@@ -2325,9 +2325,9 @@ export class TemplateService implements OnModuleInit {
               `🚀 [editPublishedNotification] Approver clicking "Publish Now" on APPROVED scheduled template ${id} - sending immediately`,
             )
           } else {
-            console.log(
-              `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
-            )
+          console.log(
+            `🚀 [editPublishedNotification] Converting scheduled notification ${id} to immediate send - sending now`,
+          )
           }
 
           // Fetch template with translations for sending
@@ -2357,7 +2357,7 @@ export class TemplateService implements OnModuleInit {
                     `✅ [editPublishedNotification] Template ${id} sent immediately and changed to SEND_NOW (schedule cleared)`,
                   )
                 } else {
-                  await this.markAsPublished(id)
+                await this.markAsPublished(id)
                 }
                 console.log(
                   `✅ [editPublishedNotification] Template ${id} sent immediately to ${sendResult.successfulCount} user(s)${sendResult.failedCount > 0 ? ` (${sendResult.failedCount} failed)` : ''}`,
@@ -2682,7 +2682,7 @@ export class TemplateService implements OnModuleInit {
       notificationType: template.notificationType,
       categoryType: isV2
         ? (InboxResponseDto.getCategoryDisplayName(template.categoryTypeEntity, language) || 'Other')
-        : template.categoryTypeEntity?.name,
+          : template.categoryTypeEntity?.name,
       categoryTypeId: template.categoryTypeId,
       categoryIcon: categoryIcon,
       priority: template.priority,

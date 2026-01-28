@@ -2657,22 +2657,22 @@ const handlePublishNowInternal = async () => {
 
     let result
     try {
-      if (isEditMode.value) {
-        result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
-      } else {
-        result = await notificationApi.createTemplate(templateData)
-      }
+    if (isEditMode.value) {
+      result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
+    } else {
+      result = await notificationApi.createTemplate(templateData)
+    }
 
-      console.log('📥 [Submit] Backend Response:', {
-        responseCode: result?.data?.responseCode,
-        responseMessage: result?.data?.responseMessage,
-        returnedSendSchedule: result?.data?.data?.sendSchedule,
-        returnedSendType: result?.data?.data?.sendType,
-        returnedIsSent: result?.data?.data?.isSent,
-        fullResponse: result?.data?.data,
-      })
+    console.log('📥 [Submit] Backend Response:', {
+      responseCode: result?.data?.responseCode,
+      responseMessage: result?.data?.responseMessage,
+      returnedSendSchedule: result?.data?.data?.sendSchedule,
+      returnedSendType: result?.data?.data?.sendType,
+      returnedIsSent: result?.data?.data?.isSent,
+      fullResponse: result?.data?.data,
+    })
     } catch (error: any) {
-      loadingNotification.close()
+    loadingNotification.close()
       console.log('❌ [Submit] Error caught:', {
         error: error,
         response: error.response,
@@ -3240,7 +3240,7 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
   // Only set flag if not already set (to prevent resetting during error handling)
   const wasFlagSet = isSavingOrPublishing.value
   if (!wasFlagSet) {
-    isSavingOrPublishing.value = true
+  isSavingOrPublishing.value = true
   }
 
   // Sync current language data before saving
@@ -3308,13 +3308,13 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
   const loadingNotification = suppressNotifications
     ? null
     : ElNotification({
-        title: isEditMode.value ? 'Updating draft...' : 'Saving draft...',
-        message: isEditMode.value
-          ? 'Please wait while we update your notification'
-          : 'Please wait while we save your notification',
-        type: 'warning',
-        duration: 0,
-      })
+    title: isEditMode.value ? 'Updating draft...' : 'Saving draft...',
+    message: isEditMode.value
+      ? 'Please wait while we update your notification'
+      : 'Please wait while we save your notification',
+    type: 'warning',
+    duration: 0,
+  })
 
   try {
     const imagesToUpload: { file: File; language: string }[] = []
@@ -3479,17 +3479,17 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
     }
 
     if (loadingNotification) {
-      loadingNotification.close()
+    loadingNotification.close()
     }
 
     // Show success notification only if not suppressed
     if (!suppressNotifications) {
-      ElNotification({
-        title: 'Success',
-        message: `Notification updated successfully!`,
-        type: 'success',
+    ElNotification({
+      title: 'Success',
+      message: `Notification updated successfully!`,
+      type: 'success',
         duration: 3000,
-      })
+    })
     }
 
     // 5. Clear cache and redirect
@@ -3528,7 +3528,7 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
       // Don't reset flag - caller will handle it
       return
     }
-    
+
     if (isEditMode.value) {
       setTimeout(() => {
         window.location.href = `/?tab=${redirectTab}`
@@ -3542,18 +3542,18 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
   } catch (error: any) {
     isSavingOrPublishing.value = false
     if (loadingNotification) {
-      loadingNotification.close()
+    loadingNotification.close()
     }
     console.error('Error saving draft:', error)
 
     // Show error notification only if not suppressed
     if (!suppressNotifications) {
-      ElNotification({
-        title: 'Error',
+    ElNotification({
+      title: 'Error',
         message: error.message || 'An unexpected error occurred while saving the draft',
-        type: 'error',
-        duration: 5000,
-      })
+      type: 'error',
+      duration: 5000,
+    })
     }
   }
 }

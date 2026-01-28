@@ -60,18 +60,59 @@ export class InboxResponseDto implements NotificationData {
   
     this.id = Number((data as any).id)
     this.templateId = Number((data as any).templateId || template?.id || 0)
-    this.language = String(language)
-  
-    this.notificationType = ((template as any)?.notificationType ||
-      NotificationType.ANNOUNCEMENT) as any
 
     // Detect V1 vs V2
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
 
+    // Language field: Show the actual stored language (what was sent in FCM push)
+    // FCM push always uses KM, so stored language will be KM
+    let storedLanguage: Language = Language.KM // Default to KM
+    if ((data as any).language) {
+      storedLanguage = (data as any).language as Language
+    } else if (userTranslation) {
+      storedLanguage = userTranslation.language as Language
+    }
+    this.language = String(storedLanguage)
+
+    // For categoryType and date: Use the stored language (what was actually sent)
+    // But check if template has translation in stored language, if not fallback to KM
+    let displayLanguage: Language = storedLanguage // Use stored language for categoryType/date
+    // Check if template has translation in stored language
+    if (template?.translations && Array.isArray(template.translations)) {
+      const availableLanguages = template.translations.map((t: any) => t.language)
+      const storedLangExists = template.translations.some((t: any) => t.language === storedLanguage)
+      console.log(
+        `🌐 [InboxResponseDto] Language check for template ${template?.id}: stored=${storedLanguage}, available=${availableLanguages.join(',')}, exists=${storedLangExists}`,
+      )
+      if (!storedLangExists) {
+        // Stored language not available in template, fallback to KM
+        console.log(
+          `🌐 [InboxResponseDto] Stored language ${storedLanguage} not found in template, falling back to KM for categoryType/date`,
+        )
+        displayLanguage = Language.KM
+      } else {
+        console.log(
+          `🌐 [InboxResponseDto] Using stored language ${storedLanguage} for categoryType/date`,
+        )
+      }
+    } else {
+      // No translations available, use KM as fallback
+      console.log(
+        `🌐 [InboxResponseDto] No translations available for template ${template?.id}, using KM fallback`,
+      )
+      displayLanguage = Language.KM
+    }
+    
+    // Find best translation for user's language (for content display)
+    const userLangTranslation = template && templateService?.findBestTranslation(template, language)
+  
+    this.notificationType = ((template as any)?.notificationType ||
+      NotificationType.ANNOUNCEMENT) as any
+
     if (isV2) {
-      // ✅ V2: categoryType MUST be translated display string
+      // ✅ V2: categoryType MUST be translated display string using user's preferred language (with KM fallback)
       this.categoryType =
-        InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, language) || 'Other'
+        InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, displayLanguage) || 'Other'
 
       // ✅ V2: categoryIcon per record
       this.categoryIcon = baseUrl
@@ -102,11 +143,16 @@ export class InboxResponseDto implements NotificationData {
       (data as any)?.userBakongPlatform ||
       'BAKONG'
   
-    this.createdDate = DateFormatter.formatDateByLanguage((data as any).createdAt, language)
+    // Use displayLanguage (user's preference with KM fallback) for date formatting
+    this.createdDate = DateFormatter.formatDateByLanguage((data as any).createdAt, displayLanguage)
     this.timestamp = (data as any).createdAt.toISOString()
   
-    this.title = userTranslation?.title || ''
-    this.content = userTranslation?.content || ''
+    // Title and content: Use user's preferred language if available, otherwise use stored language (KM)
+    // This ensures users see content in their preferred language in the inbox, but falls back to what was sent
+    const storedTranslation = template && templateService?.findBestTranslation(template, storedLanguage)
+    const contentTranslation = userLangTranslation || storedTranslation || userTranslation
+    this.title = contentTranslation?.title || ''
+    this.content = contentTranslation?.content || ''
   
     const imageId =
       (userTranslation as any)?.imageId ??
@@ -119,7 +165,7 @@ export class InboxResponseDto implements NotificationData {
           `${baseUrl}/api/v1/image/${imageId}`)
         : ''
   
-    this.linkPreview = userTranslation?.linkPreview || ''
+    this.linkPreview = storedTranslation?.linkPreview || ''
   }
 
   static getResponse(
@@ -209,14 +255,34 @@ export class InboxResponseDto implements NotificationData {
     // Detect V1 vs V2
     const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
 
+    // Language field: Show the actual translation language used (KM for FCM push)
+    const storedLanguage: Language = translation?.language 
+      ? (translation.language as Language)
+      : Language.KM
+
+    // For categoryType and date: Use user's preferred language (with KM fallback)
+    // This ensures users see categoryType and date in their preferred language
+    let displayLanguage: Language = language // User's preferred language
+    // Check if user's language translation exists in template
+    if (template?.translations && Array.isArray(template.translations)) {
+      const userLangExists = template.translations.some((t: any) => t.language === language)
+      if (!userLangExists) {
+        // User's language not available, fallback to KM
+        displayLanguage = Language.KM
+      }
+    } else {
+      // No translations available, use KM
+      displayLanguage = Language.KM
+    }
+
     let categoryType: string
     let finalCategoryIcon: string | undefined
 
     if (isV2) {
-      // ✅ V2: categoryType MUST be translated display string
+      // ✅ V2: categoryType MUST be translated display string using user's preferred language (with KM fallback)
       categoryType = InboxResponseDto.getCategoryDisplayName(
         template?.categoryTypeEntity,
-        language,
+        displayLanguage,
       ) || 'Other'
 
       // ✅ V2: categoryIcon per record
@@ -242,7 +308,7 @@ export class InboxResponseDto implements NotificationData {
     const baseData: NotificationData = {
       id: Number(notificationId),
       templateId: Number(template?.id),
-      language: String(translation?.language || language),
+      language: String(storedLanguage), // Show actual language used (KM for FCM push)
       notificationType: template?.notificationType,
 
       categoryType,
@@ -250,10 +316,10 @@ export class InboxResponseDto implements NotificationData {
 
 
       bakongPlatform: template?.bakongPlatform,
-      createdDate: DateFormatter.formatDateByLanguage(new Date(), language),
+      createdDate: DateFormatter.formatDateByLanguage(new Date(), displayLanguage), // Use user's language for date
       timestamp: new Date().toISOString(),
-      title: translation?.title || '',
-      content: translation?.content || '',
+      title: translation?.title || '', // Content from translation (KM for FCM push)
+      content: translation?.content || '', // Content from translation (KM for FCM push)
       imageUrl: imageUrl || '',
       linkPreview: translation?.linkPreview || '',
     }

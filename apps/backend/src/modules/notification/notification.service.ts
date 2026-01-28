@@ -170,6 +170,7 @@ export class NotificationService {
 
   async sendWithTemplate(
     template: Template,
+    accountIdList?: string[],
   ): Promise<{
     successfulCount: number
     failedCount: number
@@ -419,7 +420,32 @@ export class NotificationService {
 
     console.log('📤 [sendWithTemplate] Users matching platform filter:', matchingUsers.length)
 
-    if (!matchingUsers.length) {
+    // Filter by accountId list if provided (for targeted sending)
+    let finalUsers = matchingUsers
+    let notFoundAccountIds: string[] = []
+    if (accountIdList && accountIdList.length > 0) {
+      const beforeAccountIdFilter = finalUsers.length
+      const foundAccountIds = new Set(finalUsers.map((u) => u.accountId))
+      finalUsers = finalUsers.filter((user) => accountIdList.includes(user.accountId))
+      // Track which accountIds from the request were not found in the database
+      notFoundAccountIds = accountIdList.filter((accountId) => !foundAccountIds.has(accountId))
+      console.log(
+        `📤 [sendWithTemplate] Filtered by accountId list (${accountIdList.length} accountIds): ${beforeAccountIdFilter} → ${finalUsers.length} users`,
+      )
+      if (notFoundAccountIds.length > 0) {
+        console.warn(
+          `⚠️ [sendWithTemplate] ${notFoundAccountIds.length} accountId(s) not found in database: ${notFoundAccountIds.join(', ')}`,
+        )
+      }
+      if (finalUsers.length === 0) {
+        console.warn(
+          `⚠️ [sendWithTemplate] No users match the accountId list. Requested: ${accountIdList.join(', ')}`,
+        )
+        return { successfulCount: 0, failedCount: 0, failedUsers: accountIdList }
+      }
+    }
+
+    if (!finalUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users match the platform filter')
       console.warn(
         `⚠️ [sendWithTemplate] Template platform requirement: ${normalizedPlatforms.join(', ')}`,
@@ -433,14 +459,25 @@ export class NotificationService {
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
-    const defaultTranslation = this.templateService.findBestTranslation(template, Language.EN)
+    // Always use Khmer (KM) translation for FCM push notifications (banner/background)
+    // This ensures all users see notifications in Khmer regardless of their language preference
+    let defaultTranslation = this.templateService.findBestTranslation(template, Language.KM)
     if (!defaultTranslation) {
-      console.warn('⚠️ [sendWithTemplate] No default translation found')
-      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
+      console.warn('⚠️ [sendWithTemplate] No Khmer translation found, trying fallback')
+      // Fallback: try to find any available translation
+      defaultTranslation = this.templateService.findBestTranslation(template, undefined)
+      if (!defaultTranslation) {
+        console.warn('⚠️ [sendWithTemplate] No translation found at all')
+        return { successfulCount: 0, failedCount: 0, failedUsers: [] }
+      }
+      // Use fallback but log warning
+      console.warn(
+        `⚠️ [sendWithTemplate] Using fallback translation (${defaultTranslation.language}) instead of Khmer`,
+      )
     }
 
     // Track users with empty/invalid tokens BEFORE filtering
-    const usersWithoutTokens = matchingUsers.filter((user) => !user.fcmToken?.trim())
+    const usersWithoutTokens = finalUsers.filter((user) => !user.fcmToken?.trim())
     const usersWithEmptyTokens = usersWithoutTokens.map((user) => ({
       accountId: user.accountId,
       error: 'FCM token is empty or missing',
@@ -455,7 +492,7 @@ export class NotificationService {
       )
     }
 
-    const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
+    const usersWithTokens = finalUsers.filter((user) => user.fcmToken?.trim())
     console.log('📤 [sendWithTemplate] Users with FCM tokens:', usersWithTokens.length)
     
     // Log specific users for debugging inconsistent sends
@@ -576,14 +613,16 @@ export class NotificationService {
     }
 
     // Combine users filtered out BEFORE sending (empty/invalid format) with users that failed DURING sending
+    // Also include accountIds that were not found in the database (when accountIdList is provided)
     const allFailedUsers = [
       ...usersWithEmptyTokens.map((u) => u.accountId),
       ...invalidFormatUsers.map((u) => u.accountId),
       ...(result.failedUsers || []),
+      ...notFoundAccountIds, // Add accountIds that were not found in database
     ]
 
     const totalFailedCount =
-      usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount
+      usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount + notFoundAccountIds.length
 
     // Check if failures are due to invalid tokens (empty, invalid format, or FCM errors)
     // A failure is due to invalid tokens if:
@@ -605,7 +644,7 @@ export class NotificationService {
       failedDuringSend: result.failedCount,
       failedDueToInvalidTokensFromResult: result.failedDueToInvalidTokens,
       hasInvalidTokens: hasInvalidTokens,
-      totalUsers: matchingUsers.length,
+      totalUsers: finalUsers.length,
       formatValidUsersAttempted: formatValidUsers.length,
       note: 'Attempted to send to ALL format-valid tokens (no pre-validation filtering)',
     })
@@ -752,9 +791,25 @@ export class NotificationService {
 
       if (!template) throw new Error(ResponseMessage.TEMPLATE_NOT_FOUND)
 
-      const translationValidation = ValidationHelper.validateTranslation(template, dto.language)
-      if (!translationValidation.isValid) throw new Error(translationValidation.errorMessage)
-      const translation = translationValidation.translation
+      // Always use Khmer (KM) translation for FCM push notifications (banner/background)
+      // This ensures all users see notifications in Khmer regardless of their language preference
+      const kmTranslationValidation = ValidationHelper.validateTranslation(template, Language.KM)
+      let translation: TemplateTranslation
+      if (!kmTranslationValidation.isValid) {
+        // Fallback: try to find any available translation
+        const fallbackValidation = ValidationHelper.validateTranslation(template, undefined)
+        if (!fallbackValidation.isValid) {
+          throw new Error('No Khmer translation found and no fallback translation available')
+        }
+        console.warn(
+          `⚠️ [sendNow] No Khmer translation found, using fallback translation (${fallbackValidation.translation.language})`,
+        )
+        // Use fallback translation for FCM
+        translation = fallbackValidation.translation
+      } else {
+        // Use KM translation for FCM push
+        translation = kmTranslationValidation.translation
+      }
 
       // For flash notifications: If user doesn't have bakongPlatform, infer it from template
       // This is a fallback for users who call /send before /inbox
@@ -882,7 +937,45 @@ export class NotificationService {
         }
       }
 
-      const refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
+      let refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
+      
+      // Filter by accountId list if provided (for targeted sending in v2 API)
+      const accountIdList = Array.isArray(dto.accountId)
+        ? dto.accountId.map((x: any) => String(x).trim()).filter(Boolean)
+        : undefined
+      
+      // Initialize notFoundAccountIds to track accountIds that don't exist in database
+      let notFoundAccountIds: string[] = []
+      
+      if (accountIdList && accountIdList.length > 0) {
+        const beforeAccountIdFilter = refreshedWithTokens.length
+        const foundAccountIds = new Set(refreshedWithTokens.map((u) => u.accountId))
+        refreshedWithTokens = refreshedWithTokens.filter((u) => accountIdList.includes(u.accountId))
+        // Track which accountIds from the request were not found in the database
+        notFoundAccountIds = accountIdList.filter((accountId) => !foundAccountIds.has(accountId))
+        console.log(
+          `📤 [sendNow] Filtered by accountId list (${accountIdList.length} accountIds): ${beforeAccountIdFilter} → ${refreshedWithTokens.length} users`,
+        )
+        if (notFoundAccountIds.length > 0) {
+          console.warn(
+            `⚠️ [sendNow] ${notFoundAccountIds.length} accountId(s) not found in database: ${notFoundAccountIds.join(', ')}`,
+          )
+        }
+        if (refreshedWithTokens.length === 0) {
+          console.warn(
+            `⚠️ [sendNow] No users match the accountId list. Requested: ${accountIdList.join(', ')}`,
+          )
+          return BaseResponseDto.error({
+            errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+            message: `No users found matching the provided accountId list: ${accountIdList.join(', ')}`,
+            data: {
+              requestedAccountIds: accountIdList,
+              bakongPlatform: template.bakongPlatform,
+            },
+          })
+        }
+      }
+      
       // Get FCM instance for template's bakongPlatform
       const fcm = this.getFCM(template.bakongPlatform)
       if (!fcm) {
@@ -891,20 +984,8 @@ export class NotificationService {
       const validUsers = await ValidationHelper.validateFCMTokens(refreshedWithTokens, fcm)
       if (!validUsers.length) throw new Error('No valid FCM tokens found after user data sync')
 
-      const savedRecords = await Promise.all(
-        validUsers.map((u) =>
-          this.storeNotification({
-            accountId: u.accountId,
-            templateId: template.id,
-            fcmToken: u.fcmToken,
-            sendCount: 1,
-            firebaseMessageId: 0,
-          }),
-        ),
-      )
-
-      const firstRecord = savedRecords[0]
-
+      // Send FCM first (without creating notification records)
+      // Use notificationId = 0 for shared mode since we'll create records after successful sends
       let fcmResult: { successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean } | void
       try {
         fcmResult = await this.sendFCM(
@@ -913,42 +994,113 @@ export class NotificationService {
           validUsers,
           req,
           'shared',
-          firstRecord.id,
+          0, // Use 0 as placeholder - we'll create records after successful sends
         )
       } catch (err) {
         throw new Error(`FCM ASYNC SEND ERROR: ${err}`)
       }
 
       // Check if FCM send was successful
-      if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
+      if (!fcmResult || typeof fcmResult !== 'object' || !('successfulCount' in fcmResult)) {
+        throw new Error('FCM send failed or returned invalid result')
+      }
+
+      console.log(
+        `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
+      )
+
+      // Log failed users if any - Make it very visible in Docker logs
+      if (fcmResult.failedUsers && fcmResult.failedUsers.length > 0) {
+        console.log('')
+        console.log('='.repeat(80))
         console.log(
-          `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
+          `❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`,
         )
+        console.log('='.repeat(80))
+        console.log(JSON.stringify(fcmResult.failedUsers, null, 2))
+        console.log('='.repeat(80))
+        console.log('')
+      }
 
-        // Log failed users if any - Make it very visible in Docker logs
-        if (fcmResult.failedUsers && fcmResult.failedUsers.length > 0) {
-          console.log('')
-          console.log('='.repeat(80))
-          console.log(
-            `❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`,
-          )
-          console.log('='.repeat(80))
-          console.log(JSON.stringify(fcmResult.failedUsers, null, 2))
-          console.log('='.repeat(80))
-          console.log('')
-        }
+      // Throw error if all sends failed
+      if (fcmResult.successfulCount === 0 && fcmResult.failedCount > 0) {
+        throw new Error(
+          `Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`,
+        )
+      }
+      if (fcmResult.successfulCount === 0) {
+        throw new Error('No notifications were sent. FCM send returned 0 successful sends.')
+      }
 
-        if (fcmResult.successfulCount === 0 && fcmResult.failedCount > 0) {
-          throw new Error(
-            `Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`,
-          )
-        }
-        if (fcmResult.successfulCount === 0) {
-          throw new Error('No notifications were sent. FCM send returned 0 successful sends.')
+      // Only create notification records for users that successfully received FCM
+      const failedUserAccountIds = new Set(
+        (fcmResult.failedUsers || []).map((u: string) => String(u)),
+      )
+      const successfulUsers = validUsers.filter(
+        (u) => !failedUserAccountIds.has(String(u.accountId)),
+      )
+
+      if (successfulUsers.length === 0) {
+        throw new Error('No successful users to create notification records for')
+      }
+
+      console.log(
+        `✅ [sendNow] Creating notification records for ${successfulUsers.length} successful user(s)`,
+      )
+
+      // Create notification records only for successful users
+      const savedRecords = await Promise.all(
+        successfulUsers.map((u) =>
+          this.storeNotification({
+            accountId: u.accountId,
+            templateId: template.id,
+            fcmToken: u.fcmToken,
+            sendCount: 1,
+            firebaseMessageId: 0, // Will be updated after FCM send
+            language: translation.language,
+          }),
+        ),
+      )
+
+      // Update firebaseMessageId for successful sends
+      if (fcmResult && typeof fcmResult === 'object' && 'successfulSends' in fcmResult && fcmResult.successfulSends) {
+        const messageIdMap = new Map(
+          fcmResult.successfulSends.map((s) => [s.accountId, s.messageId]),
+        )
+        
+        for (const record of savedRecords) {
+          const messageIdStr = messageIdMap.get(record.accountId)
+          if (messageIdStr) {
+            try {
+              // Parse messageId from string (e.g., "1769572552587163" from "projects/.../messages/1769572552587163")
+              const messageId = ValidationHelper.validateFirebaseMessageId(messageIdStr)
+              await this.notiRepo.update(
+                { id: record.id },
+                { firebaseMessageId: messageId },
+              )
+              console.log(
+                `✅ [sendNow] Updated firebaseMessageId for notification ${record.id} (accountId: ${record.accountId}): ${messageId}`,
+              )
+            } catch (updateError) {
+              console.error(
+                `❌ [sendNow] Failed to update firebaseMessageId for notification ${record.id}:`,
+                updateError,
+              )
+            }
+          }
         }
       }
 
-      const responseTranslation = this.templateService.findBestTranslation(template, dto.language)
+      // Use the first successful record for response (most recent after sorting)
+      savedRecords.sort((a, b) => b.id - a.id)
+      const successfulRecord = savedRecords[0]
+      console.log(
+        `✅ [sendNow] Using successful notification record ID ${successfulRecord.id} for accountId ${successfulRecord.accountId}`,
+      )
+
+      // For send response: Use KM translation (what was actually sent in FCM push)
+      // But use user's language for categoryType/date display in the response
+      const responseTranslation = translation // Use the KM translation that was sent
       const imageUrl = responseTranslation?.imageId
         ? this.imageService.buildImageUrl(responseTranslation.imageId, req)
         : ''
@@ -961,7 +1113,8 @@ export class NotificationService {
         ? this.baseFunctionHelper.getBaseUrl(req)
         : 'http://localhost:4005'
 
-      const language = (dto.language || 'EN') as Language
+      // Use user's language preference for categoryType/date in response (with KM fallback)
+      const userLanguage = (dto.language || Language.KM) as Language
       
       // Only build categoryIcon for v2
       const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
@@ -971,11 +1124,11 @@ export class NotificationService {
       
       const whatNews = InboxResponseDto.buildSendApiNotificationData(
         template,
-        responseTranslation,
-        language,
+        responseTranslation, // KM translation (what was sent)
+        userLanguage, // User's language for categoryType/date display
         typeof imageUrl === 'string' ? imageUrl : '',
-        firstRecord.id,
-        firstRecord.sendCount,
+        successfulRecord.id,
+        successfulRecord.sendCount,
         baseUrl,
         req,
         categoryIcon,
@@ -986,26 +1139,23 @@ export class NotificationService {
       const responseData: any = { whatnews: whatNews }
       if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
         responseData.successfulCount = fcmResult.successfulCount
-        responseData.failedCount = fcmResult.failedCount
-        responseData.failedUsers = fcmResult.failedUsers || []
+        
+        // Combine FCM failed users with accountIds that were not found in database
+        const fcmFailedUsers = fcmResult.failedUsers || []
+        // Ensure notFoundAccountIds is defined (it should be initialized earlier, but add safety check)
+        const notFoundIds = notFoundAccountIds || []
+        const allFailedUsers = [...new Set([...fcmFailedUsers, ...notFoundIds])]
+        responseData.failedUsers = allFailedUsers
+        // Update failed count to include not found accountIds
+        responseData.failedCount = allFailedUsers.length
         responseData.failedDueToInvalidTokens = fcmResult.failedDueToInvalidTokens || false
         
         // For v2: Add successfulUsers array (list of accountIds that received the notification)
         const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
         if (isV2) {
-          // Get successful users from validUsers (users that were sent to successfully)
-          // We need to track which users were successful - this should come from fcmResult
-          // For now, we'll extract from validUsers that were sent to
-          // In shared mode, all validUsers are sent to, so successful users = validUsers - failedUsers
-          const successfulUsers: string[] = []
-          if (validUsers && Array.isArray(validUsers)) {
-            const failedUserAccountIds = new Set((fcmResult.failedUsers || []).map((u: string) => String(u)))
-            successfulUsers.push(...validUsers
-              .filter((u) => u.accountId && !failedUserAccountIds.has(String(u.accountId)))
-              .map((u) => String(u.accountId))
-            )
-          }
-          responseData.successfulUsers = successfulUsers
+          // Use the successfulUsers we already created (only users that successfully received FCM)
+          const successfulUserAccountIds = successfulUsers.map((u) => String(u.accountId))
+          responseData.successfulUsers = successfulUserAccountIds
         }
       }
 
@@ -1035,6 +1185,7 @@ export class NotificationService {
     failedCount: number
     failedUsers?: string[]
     failedDueToInvalidTokens?: boolean
+    successfulSends?: Array<{ accountId: string; messageId: string }>
   } | void> {
     console.log('📨 [sendFCM] Starting FCM send process:', {
       templateId: template.id,
@@ -1048,6 +1199,7 @@ export class NotificationService {
       let sharedSuccessfulCount = 0
       let sharedFailedCount = 0
       const sharedFailedUsers: Array<{ accountId: string; error: string; errorCode?: string }> = []
+      const successfulSends: Array<{ accountId: string; messageId: string }> = [] // Track successful sends with message IDs
 
       const imageUrl = translation.imageId
         ? this.imageService.buildImageUrl(translation.imageId, req)
@@ -1084,6 +1236,7 @@ export class NotificationService {
               fcmToken: user.fcmToken,
               sendCount: 1,
               firebaseMessageId: 0,
+              language: translation.language,
             })
             notificationId = saved.id
             console.log('📨 [sendFCM] Created notification record (temporary):', notificationId)
@@ -1123,13 +1276,25 @@ export class NotificationService {
           if (response) {
             const responseString =
               typeof response === 'string' ? response : JSON.stringify(response)
-            await this.updateNotificationRecord(
-              user,
-              template,
-              notificationId!,
-              responseString,
-              mode,
-            )
+            
+            // Track successful send with full response (for parsing messageId later)
+            successfulSends.push({
+              accountId: user.accountId,
+              messageId: responseString, // Store full response string for parsing
+            })
+            
+            // Only update notification record if it exists (individual mode or shared mode with existing record)
+            if (mode === 'individual' || (mode === 'shared' && notificationId && notificationId > 0)) {
+              await this.updateNotificationRecord(
+                user,
+                template,
+                notificationId!,
+                responseString,
+                mode,
+              )
+            }
+            // In shared mode with notificationId = 0, we'll update records after they're created
+            
             console.log('✅ [sendFCM] Successfully sent to user:', user.accountId)
             if (mode === 'individual') {
               successfulNotifications.push({ id: notificationId! })
@@ -1329,7 +1494,7 @@ export class NotificationService {
         console.log('')
       }
 
-      return InboxResponseDto.buildFCMResult(
+      const result = InboxResponseDto.buildFCMResult(
         mode,
         successfulNotifications,
         failedUsers,
@@ -1339,13 +1504,18 @@ export class NotificationService {
         sharedFailedCount,
         sharedFailedUsers,
       )
+      // Add successful sends with message IDs for updating firebaseMessageId after record creation
+      return {
+        ...result,
+        successfulSends: successfulSends,
+      }
     } catch (error: any) {
       console.error('❌ [sendFCM] Critical error in sendFCM:', error.message)
       const allFailedUsers = validUsers.map((u) => ({
         accountId: u.accountId,
         error: error.message || 'Critical error in sendFCM',
       }))
-      return InboxResponseDto.buildFCMResult(
+      const errorResult = InboxResponseDto.buildFCMResult(
         mode,
         [],
         [],
@@ -1355,6 +1525,10 @@ export class NotificationService {
         validUsers.length,
         allFailedUsers,
       )
+      return {
+        ...errorResult,
+        successfulSends: [],
+      }
     }
   }
 
@@ -2082,7 +2256,17 @@ export class NotificationService {
         )
       }
 
-      selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, language)
+      // Always use Khmer (KM) translation for FCM push notifications
+      selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, Language.KM)
+      if (!selectedTranslation) {
+        // Fallback: try to find any available translation
+        selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, undefined)
+        if (selectedTranslation) {
+          console.warn(
+            `⚠️ [handleFlashNotification] No Khmer translation found for template ${templateId}, using fallback (${selectedTranslation.language})`,
+          )
+        }
+      }
     } else {
       // Find template matching user's bakongPlatform (excluding templates sent 2+ times)
       // The limit is PER TEMPLATE: Each template can be sent 2 times per user per 24 hours
@@ -2282,6 +2466,7 @@ export class NotificationService {
       fcmToken: user?.fcmToken,
       sendCount: newSendCount,
       firebaseMessageId: 0,
+      language: selectedTranslation?.language,
     })
 
     await this.templateService.markAsPublished(selectedTemplate.id, req?.user)
@@ -2620,6 +2805,7 @@ export class NotificationService {
     fcmToken?: string
     sendCount?: number
     firebaseMessageId?: number
+    language?: string
   }): Promise<Notification> {
     // NOTE: Deduplication removed - we now allow multiple records for the same template
     // The limit check (2 times per 24h) is handled in handleFlashNotification BEFORE calling this method
@@ -2631,6 +2817,7 @@ export class NotificationService {
       fcmToken: params.fcmToken ?? '',
       sendCount: params.sendCount ?? 1,
       firebaseMessageId: params.firebaseMessageId ?? 0,
+      language: params.language,
     })
     return this.notiRepo.save(entity)
   }

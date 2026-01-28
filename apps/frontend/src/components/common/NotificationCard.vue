@@ -837,7 +837,7 @@ const handleSubmitClick = async (notification: Notification) => {
     
     if (isNoUsersError) {
       console.warn('⚠️ [SUBMIT CLICK] Blocking submission due to no matching users for platform.')
-      ElNotification({
+    ElNotification({
         title: 'Warning',
         message: formatNoUsersFoundMessage(errorMessage),
         type: 'warning',

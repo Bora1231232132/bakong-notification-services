@@ -36,4 +36,7 @@ export class Notification {
 
   @Column({ nullable: false, type: 'int', default: 1 })
   sendCount: number
+
+  @Column({ nullable: true, length: 10 })
+  language?: string
 }
