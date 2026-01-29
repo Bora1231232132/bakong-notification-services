@@ -3,8 +3,8 @@ import { UserRole } from '../enums/user-role.enum'
 export interface User {
   id: number
   username: string
+  displayName?: string
   email?: string
-  displayName: string
   role: UserRole
   createdAt?: Date
   updatedAt?: Date
@@ -12,16 +12,16 @@ export interface User {
 
 export interface UserCreateRequest {
   username: string
+  displayName?: string
   email?: string
-  displayName: string
   password: string
   role?: UserRole
 }
 
 export interface UserUpdateRequest {
   username?: string
-  email?: string
   displayName?: string
+  email?: string
   role?: UserRole
 }
 

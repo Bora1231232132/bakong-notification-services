@@ -2,12 +2,12 @@ import { UserRole } from '../enums/user-role.enum'
 
 export const formatUserRole = (role: UserRole | string): string => {
   switch (role) {
-    case UserRole.ADMIN_USER:
-      return 'Admin User'
-    case UserRole.NORMAL_USER:
-      return 'Normal User'
-    case UserRole.API_USER:
-      return 'API User'
+    case UserRole.VIEW_ONLY:
+      return 'View only'
+    case UserRole.APPROVAL:
+      return 'Approval'
+    case UserRole.EDITOR:
+      return 'Editor'
     default:
       return role || 'Unknown'
   }
@@ -15,12 +15,12 @@ export const formatUserRole = (role: UserRole | string): string => {
 
 export const formatUserRoleShort = (role: UserRole | string): string => {
   switch (role) {
-    case UserRole.ADMIN_USER:
-      return 'Admin'
-    case UserRole.NORMAL_USER:
-      return 'User'
-    case UserRole.API_USER:
-      return 'API'
+    case UserRole.VIEW_ONLY:
+      return 'Viewer Only'
+    case UserRole.APPROVAL:
+      return 'Approver'
+    case UserRole.EDITOR:
+      return 'Editor'
     default:
       return role || 'Unknown'
   }

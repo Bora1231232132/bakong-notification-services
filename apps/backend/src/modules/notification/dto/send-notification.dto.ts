@@ -7,15 +7,52 @@ import {
   IsArray,
   ValidateNested,
   ValidateIf,
-  IsInt,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
 } from 'class-validator'
-import { CategoryType, Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
+import { Language, NotificationType, Platform, BakongApp } from '@bakong/shared'
 import { ValidationHelper } from 'src/common/util/validation.helper'
+
+// Custom validator for string or array of strings
+function IsStringOrStringArray(validationOptions?: ValidationOptions) {
+  return function (object: Object, propertyName: string) {
+    registerDecorator({
+      name: 'isStringOrStringArray',
+      target: object.constructor,
+      propertyName: propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          if (value === undefined || value === null) return true // Optional field
+          if (typeof value === 'string') return true
+          if (Array.isArray(value)) {
+            return value.every((item) => typeof item === 'string')
+          }
+          return false
+        },
+        defaultMessage(args: ValidationArguments) {
+          return `${args.property} must be a string or an array of strings`
+        },
+      },
+    })
+  }
+}
 
 export default class SentNotificationDto {
   @IsOptional()
-  @IsString()
-  accountId?: string
+  @Transform(({ value }) => {
+    // Accept both string and array, normalize for internal use
+    if (Array.isArray(value)) {
+      return value.map((v) => String(v).trim()).filter(Boolean)
+    }
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+    return value
+  })
+  @IsStringOrStringArray()
+  accountId?: string | string[]
 
   @IsOptional()
   @IsString()
@@ -55,14 +92,7 @@ export default class SentNotificationDto {
   language: Language
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (typeof value === 'string' && value.trim() !== '') {
-      const parsed = parseInt(value, 10)
-      return Number.isNaN(parsed) ? value : parsed
-    }
-    return value
-  })
-  @IsInt()
+  @IsNumber()
   templateId?: number
 
   @IsOptional()
@@ -82,27 +112,10 @@ export default class SentNotificationDto {
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      const validation = ValidationHelper.validateCategoryType(value)
-      return validation.isValid ? validation.normalizedValue : value
-    }
-    return value
-  })
-  @IsEnum(CategoryType, {
-    message: 'CategoryType must be a valid category type : EVENT, PRODUCT_AND_FEATURE, NEWS, OTHER',
-  })
-  categoryType?: CategoryType
+  categoryType?: string
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (typeof value === 'string' && value.trim() !== '') {
-      const parsed = parseInt(value, 10)
-      return Number.isNaN(parsed) ? value : parsed
-    }
-    return value
-  })
-  @IsInt()
+  @IsNumber()
   notificationId?: number
 
   @IsOptional()

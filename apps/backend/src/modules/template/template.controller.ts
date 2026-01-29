@@ -2,15 +2,17 @@ import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common'
 import { UserRole } from '@bakong/shared'
 import { Roles } from 'src/common/middleware/roles.guard'
 import { BaseResponseDto } from 'src/common/base-response.dto'
+import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { CreateTemplateDto } from './dto/create-template.dto'
 import { UpdateTemplateDto } from './dto/update-template.dto'
+import { RejectTemplateDto } from './dto/reject-template.dto'
 import { TemplateService } from './template.service'
 
 @Controller('template')
 export class TemplateController {
   constructor(private readonly templateService: TemplateService) {}
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR)
   @Post('create')
   async create(@Body() dto: CreateTemplateDto, @Req() req: any) {
     console.log('🎯 [CONTROLLER] /template/create endpoint called')
@@ -43,18 +45,36 @@ export class TemplateController {
       console.error('🎯 [CONTROLLER] ❌ ERROR in create endpoint:', {
         message: error?.message,
         stack: error?.stack,
-        error: error,
+        error: BaseFunctionHelper.safeLogObject(error),
       })
 
       throw error
     }
   }
 
-  @Roles(UserRole.ADMIN_USER)
-  @Post(':id/update')
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
+  @Post(':id/update-publish')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateTemplateDto, @Req() req: any) {
+    console.log('🎯 [CONTROLLER] /template/:id/update-publish endpoint called for template:', id)
+    // Use safe logging to prevent logging large image buffers or content
+    const safeDto = BaseFunctionHelper.safeLogObject({
+      platforms: updateUserDto.platforms,
+      isSent: updateUserDto.isSent,
+      sendType: updateUserDto.sendType,
+      hasTranslations: updateUserDto.translations?.length > 0,
+      translationCount: updateUserDto.translations?.length || 0,
+    })
+    console.log('🎯 [CONTROLLER] Update request data:', safeDto)
+
     const currentUser = req.user
     const template = await this.templateService.update(+id, updateUserDto, currentUser)
+
+    console.log('🎯 [CONTROLLER] Update result:', {
+      templateId: template.templateId,
+      platforms: template.platforms,
+      isSent: template.isSent,
+    })
+
     return new BaseResponseDto({
       responseCode: 0,
       responseMessage: `Update ${template.notificationType} successfully`,
@@ -63,7 +83,20 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.EDITOR)
+  @Post(':id/submit')
+  async submitForApproval(@Param('id') id: string, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.submitForApproval(+id, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Notification submitted for approval successfully',
+      errorCode: 0,
+      data: template,
+    })
+  }
+
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.APPROVAL)
   @Post(':id/remove')
   async remove(@Param('id') id: string) {
     const template = await this.templateService.remove(+id)
@@ -80,13 +113,13 @@ export class TemplateController {
     return this.templateService.getCronJob()
   }
 
-  @Roles(UserRole.ADMIN_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get('all')
   async getAll(@Query('language') language?: string) {
     return this.templateService.all(language)
   }
 
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER, UserRole.API_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const template = await this.templateService.findOne(+id)
@@ -98,7 +131,7 @@ export class TemplateController {
     })
   }
 
-  @Roles(UserRole.ADMIN_USER, UserRole.NORMAL_USER, UserRole.API_USER)
+  @Roles(UserRole.ADMINISTRATOR, UserRole.EDITOR, UserRole.VIEW_ONLY, UserRole.APPROVAL)
   @Get()
   async findTemplates(
     @Query() query: any,
@@ -122,5 +155,31 @@ export class TemplateController {
       )
     }
     return this.templateService.findTemplates(page, size, isAscending, language)
+  }
+
+  @Roles(UserRole.ADMINISTRATOR, UserRole.APPROVAL)
+  @Post(':id/approve')
+  async approve(@Param('id') id: string, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.approve(+id, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Template approved successfully',
+      errorCode: 0,
+      data: template,
+    })
+  }
+
+  @Roles(UserRole.ADMINISTRATOR, UserRole.APPROVAL)
+  @Post(':id/reject')
+  async reject(@Param('id') id: string, @Body() dto: RejectTemplateDto, @Req() req: any) {
+    const currentUser = req.user
+    const template = await this.templateService.reject(+id, dto, currentUser)
+    return new BaseResponseDto({
+      responseCode: 0,
+      responseMessage: 'Template rejected successfully',
+      errorCode: 0,
+      data: template,
+    })
   }
 }

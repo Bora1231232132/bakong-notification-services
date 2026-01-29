@@ -1,0 +1,581 @@
+---
+description: Complete directory structure and important files reference for Bakong Notification Service
+globs: **/*
+alwaysApply: true
+---
+# Project Structure Reference
+
+This document outlines the complete directory structure and important files in the Bakong Notification Service project.
+
+**⚠️ Auto-generated**: This file is automatically updated. Run `npm run update:project-structure` to regenerate.
+
+## Root Directory Structure
+
+```
+bakong-notification-services/
+├── apps/
+├── firebase-service-account.json/
+├── .editorconfig
+├── .prettierrc.json # Configuration
+├── DAILY_NOTES.md # Documentation
+├── PASSWORD_CHANGE_FLOW.md # Documentation
+├── README.md # Documentation
+├── deploy-on-server.sh # Shell script
+├── deploy-to-production.sh # Shell script
+├── docker-bake.hcl # Configuration
+├── docker-compose.production.yml # Configuration
+├── docker-compose.sit.yml # Configuration
+├── docker-compose.test-server.yml # Configuration
+├── docker-compose.yml # Docker Compose configuration
+├── package.json # Dependencies and scripts
+└── tsconfig.json # TypeScript configuration
+```
+
+## Backend Structure (`apps/backend/`)
+
+### Source Code (`apps/backend/src/`)
+
+```
+src/
+├── common/
+    ├── middleware/
+    │   ├── api-key.decorator.ts # TypeScript file
+    │   ├── api-key.guard.ts # Guard
+    │   ├── exception.filter.ts # TypeScript file
+    │   ├── jwt-auth.guard.ts # Guard
+    │   ├── local-auth.guard.ts # Guard
+    │   ├── public.decorator.ts # TypeScript file
+    │   ├── response-format.interceptor.ts # TypeScript file
+    │   ├── roles.decorator.ts # TypeScript file
+    │   ├── roles.guard.ts # Guard
+    │   └── validator.pipe.ts # TypeScript file
+    ├── services/
+    │   └── config.service.ts # Service
+    ├── util/
+    │   ├── base-function.helper.ts # TypeScript file
+    │   ├── date-formatter.util.ts # TypeScript file
+    │   ├── error-response.util.ts # TypeScript file
+    │   ├── pagination.helper.ts # TypeScript file
+    │   └── validation.helper.ts # TypeScript file
+    └── base-response.dto.ts # Data Transfer Object
+├── entities/
+    ├── bakong-user.entity.ts # Database entity
+    ├── image.entity.ts # Database entity
+    ├── notification.entity.ts # Database entity
+    ├── template-translation.entity.ts # Database entity
+    ├── template.entity.ts # Database entity
+    └── user.entity.ts # Composable
+├── modules/
+    ├── auth/
+    │   ├── dto/
+    │   │   ├── change-password.dto.ts # Data Transfer Object
+    │   │   └── register.dto.ts # Data Transfer Object
+    │   ├── auth.controller.spec.ts # Test file
+    │   ├── auth.controller.ts # Controller
+    │   ├── auth.module.ts # Module
+    │   ├── auth.service.spec.ts # Test file
+    │   ├── auth.service.ts # Service
+    │   ├── jwt.strategy.ts # Strategy
+    │   └── local.strategy.ts # Strategy
+    ├── image/
+    │   ├── dto/
+    │   │   └── upload-image.dto.ts # Data Transfer Object
+    │   ├── image.controller.spec.ts # Test file
+    │   ├── image.controller.ts # Controller
+    │   ├── image.module.ts # Module
+    │   ├── image.service.spec.ts # Test file
+    │   └── image.service.ts # Service
+    ├── management/
+    │   ├── management.controller.ts # Controller
+    │   └── management.module.ts # Module
+    ├── notification/
+    │   ├── dto/
+    │   │   ├── inbox-response.dto.ts # Data Transfer Object
+    │   │   ├── notification-inbox.dto.ts # Data Transfer Object
+    │   │   └── send-notification.dto.ts # Data Transfer Object
+    │   ├── notification-scheduler.service.ts # Service
+    │   ├── notification.controller.spec.ts # Test file
+    │   ├── notification.controller.ts # Controller
+    │   ├── notification.module.ts # Module
+    │   ├── notification.service.spec.ts # Test file
+    │   └── notification.service.ts # Service
+    ├── template/
+    │   ├── dto/
+    │   │   ├── create-template.dto.ts # Data Transfer Object
+    │   │   ├── template-translation.dto.ts # Data Transfer Object
+    │   │   └── update-template.dto.ts # Data Transfer Object
+    │   ├── template.controller.spec.ts # Test file
+    │   ├── template.controller.ts # Controller
+    │   ├── template.module.ts # Module
+    │   ├── template.service.spec.ts # Test file
+    │   └── template.service.ts # Service
+    ├── user/
+    │   ├── dto/
+    │   │   └── create-user.dto.ts # Data Transfer Object
+    │   ├── user.module.ts # Composable
+    │   ├── user.service.spec.ts # Composable
+    │   └── user.service.ts # Composable
+    └── app.module.ts # Root NestJS module
+├── app.controller.ts # Controller
+├── app.service.ts # Service
+├── constant.ts # TypeScript file
+├── main.ts # Application entry point
+└── ormconfig.ts # TypeORM configuration
+```
+
+### Backend Configuration Files
+
+```
+backend/
+├── env.development/
+├── scripts/
+    ├── add-bakong-platform-column.sql # SQL script
+    ├── add-bakong-platform-migration.sql # SQL script
+    ├── add-bakong-platform-to-bakong-user.sql # SQL script
+    ├── associate-images-to-templates.sql # SQL script
+    ├── backup-database.sh # Shell script
+    ├── check-all-tables.sql # SQL script
+    ├── convert-fileid-to-varchar.sql # SQL script
+    ├── copy-sit-data-to-production.sh # Shell script
+    ├── fix-null-fileid.sql # SQL script
+    ├── fix-null-fileid.ts # TypeScript file
+    ├── manual-associate-image.sql # SQL script
+    ├── README.md # Documentation
+    ├── restore-database.sh # Shell script
+    ├── restore-images-to-templates.sql # SQL script
+    ├── run-bakong-platform-migration.sh # Shell script
+    ├── run-migration.sh # Shell script
+    ├── run-update-usernames.sh # Shell script
+    ├── update-usernames-to-lowercase.sql # SQL script
+    ├── verify-data-after-restart.sh # Shell script
+    ├── verify-image-associations.sql # SQL script
+    └── verify-schema-match.sql # SQL script
+├── src/
+    ├── common/
+    │   ├── middleware/
+    │   │   ├── api-key.decorator.ts # TypeScript file
+    │   │   ├── api-key.guard.ts # Guard
+    │   │   ├── exception.filter.ts # TypeScript file
+    │   │   ├── jwt-auth.guard.ts # Guard
+    │   │   ├── local-auth.guard.ts # Guard
+    │   │   ├── public.decorator.ts # TypeScript file
+    │   │   ├── response-format.interceptor.ts # TypeScript file
+    │   │   ├── roles.decorator.ts # TypeScript file
+    │   │   ├── roles.guard.ts # Guard
+    │   │   └── validator.pipe.ts # TypeScript file
+    │   ├── services/
+    │   │   └── config.service.ts # Service
+    │   ├── util/
+    │   │   ├── base-function.helper.ts # TypeScript file
+    │   │   ├── date-formatter.util.ts # TypeScript file
+    │   │   ├── error-response.util.ts # TypeScript file
+    │   │   ├── pagination.helper.ts # TypeScript file
+    │   │   └── validation.helper.ts # TypeScript file
+    │   └── base-response.dto.ts # Data Transfer Object
+    ├── entities/
+    │   ├── bakong-user.entity.ts # Database entity
+    │   ├── image.entity.ts # Database entity
+    │   ├── notification.entity.ts # Database entity
+    │   ├── template-translation.entity.ts # Database entity
+    │   ├── template.entity.ts # Database entity
+    │   └── user.entity.ts # Composable
+    ├── modules/
+    │   ├── auth/
+    │   │   ├── dto/
+    │   │   │   ├── change-password.dto.ts # Data Transfer Object
+    │   │   │   └── register.dto.ts # Data Transfer Object
+    │   │   ├── auth.controller.spec.ts # Test file
+    │   │   ├── auth.controller.ts # Controller
+    │   │   ├── auth.module.ts # Module
+    │   │   ├── auth.service.spec.ts # Test file
+    │   │   ├── auth.service.ts # Service
+    │   │   ├── jwt.strategy.ts # Strategy
+    │   │   └── local.strategy.ts # Strategy
+    │   ├── image/
+    │   │   ├── dto/
+    │   │   │   └── upload-image.dto.ts # Data Transfer Object
+    │   │   ├── image.controller.spec.ts # Test file
+    │   │   ├── image.controller.ts # Controller
+    │   │   ├── image.module.ts # Module
+    │   │   ├── image.service.spec.ts # Test file
+    │   │   └── image.service.ts # Service
+    │   ├── management/
+    │   │   ├── management.controller.ts # Controller
+    │   │   └── management.module.ts # Module
+    │   ├── notification/
+    │   │   ├── dto/
+    │   │   │   ├── inbox-response.dto.ts # Data Transfer Object
+    │   │   │   ├── notification-inbox.dto.ts # Data Transfer Object
+    │   │   │   └── send-notification.dto.ts # Data Transfer Object
+    │   │   ├── notification-scheduler.service.ts # Service
+    │   │   ├── notification.controller.spec.ts # Test file
+    │   │   ├── notification.controller.ts # Controller
+    │   │   ├── notification.module.ts # Module
+    │   │   ├── notification.service.spec.ts # Test file
+    │   │   └── notification.service.ts # Service
+    │   ├── template/
+    │   │   ├── dto/
+    │   │   │   ├── create-template.dto.ts # Data Transfer Object
+    │   │   │   ├── template-translation.dto.ts # Data Transfer Object
+    │   │   │   └── update-template.dto.ts # Data Transfer Object
+    │   │   ├── template.controller.spec.ts # Test file
+    │   │   ├── template.controller.ts # Controller
+    │   │   ├── template.module.ts # Module
+    │   │   ├── template.service.spec.ts # Test file
+    │   │   └── template.service.ts # Service
+    │   ├── user/
+    │   │   ├── dto/
+    │   │   │   └── create-user.dto.ts # Data Transfer Object
+    │   │   ├── user.module.ts # Composable
+    │   │   ├── user.service.spec.ts # Composable
+    │   │   └── user.service.ts # Composable
+    │   └── app.module.ts # Root NestJS module
+    ├── app.controller.ts # Controller
+    ├── app.service.ts # Service
+    ├── constant.ts # TypeScript file
+    ├── main.ts # Application entry point
+    └── ormconfig.ts # TypeORM configuration
+├── .eslintrc.js # JavaScript file
+├── backup-db-data.js # JavaScript file
+├── Dockerfile # Docker image definition
+├── fix-paths.js # JavaScript file
+├── init-db-data-development.sql # SQL script
+├── init-db.sql # SQL script
+├── nest-cli.json # NestJS CLI configuration
+├── package.json # Dependencies and scripts
+├── runtime-path-resolver.js # JavaScript file
+└── tsconfig.json # TypeScript configuration
+```
+
+## Frontend Structure (`apps/frontend/`)
+
+### Source Code (`apps/frontend/src/`)
+
+```
+src/
+├── assets/
+    ├── image/
+    │   ├── Anouncement_2 (1).png
+    │   ├── avatar.png
+    │   ├── background-leftside.png
+    │   ├── bakonglogo.png
+    │   ├── blur-background.png
+    │   ├── calendar--heat-map.jpg
+    │   ├── calendar.png
+    │   ├── chart--bar-target.jpg
+    │   ├── copy--file.png
+    │   ├── delete.png
+    │   ├── edit.png
+    │   ├── empty-image.svg
+    │   ├── Frame 66.png
+    │   ├── Home-Defualt.png
+    │   ├── Home-Defualt.svg
+    │   ├── home.jpg
+    │   ├── jomreadsur.png
+    │   ├── NBC-logo.png
+    │   ├── scrn-4.png
+    │   ├── settings_16.jpg
+    │   ├── Snipaste_2025-09-18_15-18-39.png
+    │   ├── Snipaste_2025-09-18_15-19-32.png
+    │   ├── star.png
+    │   ├── trash-can.png
+    │   ├── type-pattern.jpg
+    │   └── user-role.svg
+    ├── logo.svg
+    └── main.css
+├── components/
+    └── common/
+    │   ├── Settings-Feature/
+    │       ├── NotificationPreview.vue # Component
+    │       └── UploadProfilePicture.vue # Component
+    │   ├── Type-Feature/
+    │       ├── NotificationPagination.vue # Component
+    │       ├── NotificationTableBody.vue # Component
+    │       └── NotificationTableHeader.vue # Component
+    │   ├── Breadcrumb.vue # Component
+    │   ├── Button.vue # Component
+    │   ├── CardLayout.vue # Component
+    │   ├── ConfirmationDialog.vue # Component
+    │   ├── DataTable.vue # Component
+    │   ├── FormField.vue # Component
+    │   ├── ImageUpload.vue # Component
+    │   ├── index.ts # TypeScript file
+    │   ├── LoadingSpinner.vue # Component
+    │   ├── MobilePreview.vue # Component
+    │   ├── NotificationCard.vue # Component
+    │   ├── NotificationForm.vue # Component
+    │   ├── PageHeader.vue # Component
+    │   ├── SearchBar.vue # Component
+    │   ├── StatusTag.vue # Component
+    │   ├── SummaryCards.vue # Component
+    │   └── Tabs.vue # Component
+├── composables/
+    ├── index.ts # TypeScript file
+    ├── useConfirmationDialog.ts # Composable
+    ├── useDataTable.ts # Composable
+    ├── useErrorHandler.ts # Composable
+    ├── useFileUpload.ts # Composable
+    ├── useForm.ts # Composable
+    ├── useLogin.ts # Composable
+    ├── usePagination.ts # Composable
+    ├── useRegister.ts # Composable
+    └── useStatusManager.ts # Composable
+├── layouts/
+    └── AppLayout.vue # Component
+├── models/
+    ├── login.ts # TypeScript file
+    └── register.ts # TypeScript file
+├── plugins/
+    └── errorHandler.ts # TypeScript file
+├── router/
+    └── index.ts # TypeScript file
+├── services/
+    ├── api.ts # TypeScript file
+    ├── errorHandler.ts # TypeScript file
+    ├── mockAuth.ts # TypeScript file
+    ├── notificationApi.ts # API service
+    ├── typeApi.ts # API service
+    └── userApi.ts # Composable
+├── stores/
+    ├── app.ts # TypeScript file
+    ├── auth.ts # TypeScript file
+    └── notifications.ts # TypeScript file
+├── types/
+    └── notification.ts # TypeScript file
+├── utils/
+    └── helpers.ts # TypeScript file
+├── views/
+    ├── ChangePasswordView.vue # Page view
+    ├── CreateNotificationView.vue # Page view
+    ├── HomeView.vue # Page view
+    ├── LoginView.vue # Page view
+    ├── ProfileNotificationSetup.vue # Component
+    ├── RegisterView.vue # Page view
+    ├── ScheduleDetailView.vue # Page view
+    ├── ScheduleView.vue # Page view
+    ├── SettingChangePasswordView.vue # Page view
+    ├── SettingChangeProfileView.vue # Page view
+    ├── SettingView.vue # Page view
+    ├── TypeView.vue # Page view
+    └── UsersView.vue # Page view
+├── App.vue # Root Vue component
+├── env.d.ts # TypeScript file
+└── main.ts # Application entry point
+```
+
+### Frontend Configuration Files
+
+```
+frontend/
+├── public/
+    └── NBC-logo.png
+├── src/
+    ├── assets/
+    │   ├── image/
+    │   │   ├── Anouncement_2 (1).png
+    │   │   ├── avatar.png
+    │   │   ├── background-leftside.png
+    │   │   ├── bakonglogo.png
+    │   │   ├── blur-background.png
+    │   │   ├── calendar--heat-map.jpg
+    │   │   ├── calendar.png
+    │   │   ├── chart--bar-target.jpg
+    │   │   ├── copy--file.png
+    │   │   ├── delete.png
+    │   │   ├── edit.png
+    │   │   ├── empty-image.svg
+    │   │   ├── Frame 66.png
+    │   │   ├── Home-Defualt.png
+    │   │   ├── Home-Defualt.svg
+    │   │   ├── home.jpg
+    │   │   ├── jomreadsur.png
+    │   │   ├── NBC-logo.png
+    │   │   ├── scrn-4.png
+    │   │   ├── settings_16.jpg
+    │   │   ├── Snipaste_2025-09-18_15-18-39.png
+    │   │   ├── Snipaste_2025-09-18_15-19-32.png
+    │   │   ├── star.png
+    │   │   ├── trash-can.png
+    │   │   ├── type-pattern.jpg
+    │   │   └── user-role.svg
+    │   ├── logo.svg
+    │   └── main.css
+    ├── components/
+    │   └── common/
+    │   │   ├── Settings-Feature/
+    │   │       ├── NotificationPreview.vue # Component
+    │   │       └── UploadProfilePicture.vue # Component
+    │   │   ├── Type-Feature/
+    │   │       ├── NotificationPagination.vue # Component
+    │   │       ├── NotificationTableBody.vue # Component
+    │   │       └── NotificationTableHeader.vue # Component
+    │   │   ├── Breadcrumb.vue # Component
+    │   │   ├── Button.vue # Component
+    │   │   ├── CardLayout.vue # Component
+    │   │   ├── ConfirmationDialog.vue # Component
+    │   │   ├── DataTable.vue # Component
+    │   │   ├── FormField.vue # Component
+    │   │   ├── ImageUpload.vue # Component
+    │   │   ├── index.ts # TypeScript file
+    │   │   ├── LoadingSpinner.vue # Component
+    │   │   ├── MobilePreview.vue # Component
+    │   │   ├── NotificationCard.vue # Component
+    │   │   ├── NotificationForm.vue # Component
+    │   │   ├── PageHeader.vue # Component
+    │   │   ├── SearchBar.vue # Component
+    │   │   ├── StatusTag.vue # Component
+    │   │   ├── SummaryCards.vue # Component
+    │   │   └── Tabs.vue # Component
+    ├── composables/
+    │   ├── index.ts # TypeScript file
+    │   ├── useConfirmationDialog.ts # Composable
+    │   ├── useDataTable.ts # Composable
+    │   ├── useErrorHandler.ts # Composable
+    │   ├── useFileUpload.ts # Composable
+    │   ├── useForm.ts # Composable
+    │   ├── useLogin.ts # Composable
+    │   ├── usePagination.ts # Composable
+    │   ├── useRegister.ts # Composable
+    │   └── useStatusManager.ts # Composable
+    ├── layouts/
+    │   └── AppLayout.vue # Component
+    ├── models/
+    │   ├── login.ts # TypeScript file
+    │   └── register.ts # TypeScript file
+    ├── plugins/
+    │   └── errorHandler.ts # TypeScript file
+    ├── router/
+    │   └── index.ts # TypeScript file
+    ├── services/
+    │   ├── api.ts # TypeScript file
+    │   ├── errorHandler.ts # TypeScript file
+    │   ├── mockAuth.ts # TypeScript file
+    │   ├── notificationApi.ts # API service
+    │   ├── typeApi.ts # API service
+    │   └── userApi.ts # Composable
+    ├── stores/
+    │   ├── app.ts # TypeScript file
+    │   ├── auth.ts # TypeScript file
+    │   └── notifications.ts # TypeScript file
+    ├── types/
+    │   └── notification.ts # TypeScript file
+    ├── utils/
+    │   └── helpers.ts # TypeScript file
+    ├── views/
+    │   ├── ChangePasswordView.vue # Page view
+    │   ├── CreateNotificationView.vue # Page view
+    │   ├── HomeView.vue # Page view
+    │   ├── LoginView.vue # Page view
+    │   ├── ProfileNotificationSetup.vue # Component
+    │   ├── RegisterView.vue # Page view
+    │   ├── ScheduleDetailView.vue # Page view
+    │   ├── ScheduleView.vue # Page view
+    │   ├── SettingChangePasswordView.vue # Page view
+    │   ├── SettingChangeProfileView.vue # Page view
+    │   ├── SettingView.vue # Page view
+    │   ├── TypeView.vue # Page view
+    │   └── UsersView.vue # Page view
+    ├── App.vue # Root Vue component
+    ├── env.d.ts # TypeScript file
+    └── main.ts # Application entry point
+├── Dockerfile # Docker image definition
+├── eslint.config.ts # TypeScript file
+├── index.html # HTML entry point
+├── nginx.conf # Nginx configuration
+├── package.json # Dependencies and scripts
+├── postcss.config.js # JavaScript file
+├── tailwind.config.js # JavaScript file
+├── tsconfig.app.json # Configuration
+├── tsconfig.json # TypeScript configuration
+├── tsconfig.node.json # Configuration
+├── tsconfig.vitest.json # Configuration
+├── vite.config.ts # Vite build configuration
+└── vitest.config.ts # TypeScript file
+```
+
+## Shared Package Structure (`apps/packages/shared/`)
+
+```
+shared/
+├── src/
+    ├── dto/
+    │   ├── base-response.dto.ts # Data Transfer Object
+    │   └── index.ts # TypeScript file
+    ├── enums/
+    │   ├── bakong-app.enum.ts # TypeScript file
+    │   ├── category-type.enum.ts # TypeScript file
+    │   ├── error.enums.ts # TypeScript file
+    │   ├── index.ts # TypeScript file
+    │   ├── language.enum.ts # TypeScript file
+    │   ├── notification-status.enum.ts # TypeScript file
+    │   ├── notification-type.enum.ts # TypeScript file
+    │   ├── platform.enum.ts # TypeScript file
+    │   ├── send-type.enum.ts # TypeScript file
+    │   └── user-role.enum.ts # Composable
+    ├── types/
+    │   ├── index.ts # TypeScript file
+    │   ├── notification.types.ts # TypeScript file
+    │   ├── template.types.ts # TypeScript file
+    │   └── user.types.ts # Composable
+    ├── utils/
+    │   ├── common.utils.ts # TypeScript file
+    │   ├── constants.ts # TypeScript file
+    │   ├── date.utils.ts # TypeScript file
+    │   ├── index.ts # TypeScript file
+    │   ├── pagination.utils.ts # TypeScript file
+    │   ├── timezone.utils.ts # TypeScript file
+    │   ├── type-converter.ts # TypeScript file
+    │   └── validation.utils.ts # TypeScript file
+    └── index.ts # TypeScript file
+├── package.json # Dependencies and scripts
+└── tsconfig.json # TypeScript configuration
+```
+
+## Important Files Reference
+
+### Configuration Files
+
+| File | Location | Purpose |
+|---|----|---|
+| `package.json` | Root | Workspace configuration, root scripts |
+| `tsconfig.json` | Root | Root TypeScript configuration |
+| `docker-compose.yml` | Root | Local development Docker setup |
+| `docker-compose.sit.yml` | Root | SIT/Staging Docker setup |
+| `docker-compose.production.yml` | Root | Production Docker setup |
+| `docker-bake.hcl` | Root | Docker build configuration |
+
+### Entry Points
+
+| File | Location | Purpose |
+|---|----|---|
+| `main.ts` | `apps/backend/src/` | Backend application entry point |
+| `main.ts` | `apps/frontend/src/` | Frontend application entry point |
+| `App.vue` | `apps/frontend/src/` | Root Vue component |
+| `app.module.ts` | `apps/backend/src/modules/` | Root NestJS module |
+
+### Database Files
+
+| File | Location | Purpose |
+|---|----|---|
+| `ormconfig.ts` | `apps/backend/src/` | TypeORM configuration |
+| `init-db.sql` | `apps/backend/` | Database initialization |
+| `init-db-data-development.sql` | `apps/backend/` | Development seed data |
+
+### Deployment Scripts
+
+| File | Location | Purpose |
+|---|----|---|
+| `deploy-on-server.sh` | Root | General server deployment |
+| `deploy-to-production.sh` | Root | Production deployment |
+| `backup-db-data.js` | `apps/backend/` | Database backup utility |
+| `update-project-structure.js` | `.cursor/scripts/` | Auto-update project structure documentation |
+
+## Docker Configuration
+
+- **Local Dev**: `docker-compose.yml` (ports: 3000 frontend, 4001 backend, 5437 database)
+- **SIT/Staging**: `docker-compose.sit.yml` (ports: 8090 frontend, 4002 backend, 5434 database)
+- **Production**: `docker-compose.production.yml` (HTTPS, ports: 80/443 frontend, 8080 backend)
+
+---
+
+**Note**: This structure follows NestJS and Vue 3 best practices with a monorepo workspace pattern. Always maintain consistency with existing patterns when adding new features.

@@ -15,11 +15,11 @@ export const useAppStore = defineStore('app', () => {
     isLoading.value = true
 
     try {
-      // Normalize username: convert to lowercase and remove spaces
-      const normalizedUsername = request.Username.toLowerCase().replace(/\s+/g, '')
+      // Normalize email: convert to lowercase and trim spaces
+      const normalizedEmail = request.Email.toLowerCase().trim()
 
       const credentials = {
-        username: normalizedUsername,
+        email: normalizedEmail,
         password: request.Password,
       }
 
@@ -31,13 +31,16 @@ export const useAppStore = defineStore('app', () => {
       }
 
       return result
-    } catch (error) {
-      console.error('Login error:', error)
-
-      return { success: false, error: 'Login failed' }
-    } finally {
-      isLoading.value = false
-    }
+    } catch (err: any) {
+      console.error('Login error:', err)
+    
+      return {
+        success: false,
+        error: err?.message || 'Login failed',
+        errorCode: err?.response?.data?.errorCode,
+        responseMessage: err?.response?.data?.responseMessage,
+      }
+    }    
   }
 
   const onLogout = () => {

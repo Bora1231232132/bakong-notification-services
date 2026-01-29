@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="home-page">
     <div class="main-content">
       <Tabs v-model="activeTab" :tabs="filterTabs" @tab-changed="handleTabChanged" />
@@ -61,7 +61,7 @@
           <div v-else-if="filteredNotifications.length === 0" class="empty-state">
             <div class="empty-state-container">
               <img
-                src="/src/assets/image/jomreadsur.png"
+                :src="emptyStateImage"
                 alt="Empty State"
                 class="image-empty-state"
               />
@@ -75,9 +75,11 @@
             :active-tab="activeTab"
             :notifications="filteredNotifications"
             :loading="loading"
-            @refresh="fetchNotifications"
+            @refresh="(forceRefresh) => fetchNotifications(forceRefresh || false)"
             @delete="handleDeleteNotification"
             @publish="handlePublishNotification"
+            @switch-tab="handleSwitchTab"
+            @update-notification="handleUpdateNotification"
           />
         </div>
       </div>
@@ -95,19 +97,73 @@ import { Tabs } from '@/components/common'
 import { notificationApi } from '@/services/notificationApi'
 import type { Notification } from '@/types/notification'
 import { ElNotification } from 'element-plus'
+import emptyStateImage from '@/assets/image/jomreadsur.png'
 import {
   NotificationType,
+  SendType,
+  Platform,
   formatNotificationType,
   formatBakongApp,
   getFormattedPlatformName,
   getNoUsersAvailableMessage,
+  getNotificationMessage,
+  formatPlatform,
 } from '@/utils/helpers'
-import { DateUtils } from '@bakong/shared'
+import { DateUtils, ErrorCode } from '@bakong/shared'
 import { mapBackendStatusToFrontend } from '../utils/helpers'
+import { api } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const authStore = useAuthStore()
 
-const activeTab = ref<'published' | 'scheduled' | 'draft'>('published')
+// Helper function to correct notification status based on isSent flag
+const correctNotificationStatus = (notification: Notification): Notification => {
+  let status = notification.status
+  // Don't override status for rejected/expired notifications - they should appear in Draft tab
+  if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {  
+    status = 'published'
+  }
+  // For rejected/expired notifications, ensure they can appear in Draft tab
+  // If status is "published" or "scheduled" but approvalStatus is "REJECTED" or "EXPIRED", change status to "draft"
+  if ((notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') && 
+      (status === 'published' || status === 'scheduled')) {
+    status = 'draft'
+  }
+  // For scheduled notifications that are still drafts (approvalStatus is null), change status to "draft"
+  // This ensures drafts with schedule enabled appear in Draft tab, not Scheduled tab
+  if (status === 'scheduled' && (notification.approvalStatus === null || notification.approvalStatus === undefined)) {
+    status = 'draft'
+  }
+  return {
+    ...notification,
+    status: status,
+  }
+}
+
+// Load active tab from localStorage or default to 'published'
+const getStoredTab = (): 'published' | 'scheduled' | 'draft' | 'pending' => {
+  try {
+    const stored = localStorage.getItem('notification_active_tab')
+    if (stored && ['published', 'scheduled', 'draft', 'pending'].includes(stored)) {
+      return stored as 'published' | 'scheduled' | 'draft' | 'pending'
+    }
+  } catch (error) {
+    console.warn('Failed to read active tab from localStorage:', error)
+  }
+  return 'published'
+}
+
+const activeTab = ref<'published' | 'scheduled' | 'draft' | 'pending'>(getStoredTab())
+
+// Save active tab to localStorage whenever it changes
+watch(activeTab, (newTab) => {
+  try {
+    localStorage.setItem('notification_active_tab', newTab)
+  } catch (error) {
+    console.warn('Failed to save active tab to localStorage:', error)
+  }
+}, { immediate: false })
 const selectedFilter = ref('ALL')
 const searchQuery = ref('')
 const loading = ref(false)
@@ -117,6 +173,7 @@ const filteredNotifications = ref<Notification[]>([])
 const filterTabs = [
   { value: 'published', label: 'Published' },
   { value: 'scheduled', label: 'Scheduled' },
+  { value: 'pending', label: 'Pending Approval' },
   { value: 'draft', label: 'Draft' },
 ]
 
@@ -369,8 +426,9 @@ let fetchNotificationTimeout: ReturnType<typeof setTimeout> | null = null
 let isFetching = false
 let lastFetchTime = 0
 const MIN_FETCH_INTERVAL = 1000
-const DATA_CACHE_DURATION = 30000
-const SCHEDULED_TAB_CACHE_DURATION = 25000
+const DATA_CACHE_DURATION = 30000 // 30 seconds (reduced for faster updates)
+const SCHEDULED_TAB_CACHE_DURATION = 270000 // 4.5 minutes (more frequent for scheduled items)
+const PUBLISHED_TAB_CACHE_DURATION = 10000 // 10 seconds (very short for published tab to show updates quickly)
 const DUE_NOTIFICATION_CHECK_INTERVAL = 60000
 const CACHE_STORAGE_KEY = 'notifications_cache'
 const CACHE_TIMESTAMP_KEY = 'notifications_cache_timestamp'
@@ -424,12 +482,48 @@ let cachedNotifications: Notification[] | null = null
 let cacheTimestamp = 0
 const initialCache = loadCacheFromStorage()
 if (initialCache.notifications && initialCache.notifications.length > 0) {
-  cachedNotifications = initialCache.notifications
+  // Apply isSent check to cached notifications
+  const correctedNotifications = initialCache.notifications.map(correctNotificationStatus)
+  cachedNotifications = correctedNotifications
   cacheTimestamp = initialCache.timestamp
-  notifications.value = initialCache.notifications
-  let tempFiltered = [...initialCache.notifications].filter(
-    (notification) => notification.status === activeTab.value,
+  notifications.value = correctedNotifications
+  let tempFiltered = [...correctedNotifications]
+  // For pending tab, filter by approvalStatus instead of status
+  if (activeTab.value === 'pending') {
+    // Show notifications that are pending approval (submitted for immediate send or scheduled time arrived)
+    tempFiltered = tempFiltered.filter((notification) => notification.approvalStatus === 'PENDING')
+  } else if (activeTab.value === 'published') {
+    // Published tab should only show approved notifications that are published
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        notification.status === 'published' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
+    )
+  } else if (activeTab.value === 'scheduled') {
+    // Scheduled tab shows only APPROVED scheduled notifications
+    // PENDING scheduled notifications should appear in Pending tab, not Scheduled tab
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        notification.status === 'scheduled' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus), // Only approved or legacy (no approvalStatus)
+    )
+  } else if (activeTab.value === 'draft') {
+    // Draft tab shows:
+    // 1. Drafts with no approvalStatus (not submitted yet)
+    // 2. Drafts that are not pending (approved/rejected/expired drafts can still be in draft status)
+    // 3. Rejected notifications (regardless of status - they should be editable in Draft)
+    // 4. Expired notifications (regardless of status - they should be editable in Draft)
+    // 5. Scheduled notifications that are still drafts (approvalStatus is null) - these are drafts with schedule enabled
+    // 6. Exclude pending notifications (they're awaiting approval in Pending tab)
+    tempFiltered = tempFiltered.filter(
+      (notification) =>
+        // Drafts with no approvalStatus (null) - includes both status='draft' and status='scheduled' with approvalStatus=null
+        (notification.approvalStatus === null || notification.approvalStatus === undefined) ||
+        // Rejected or expired notifications (regardless of status)
+        notification.approvalStatus === 'REJECTED' ||
+        notification.approvalStatus === 'EXPIRED',
   )
+  }
   if (selectedFilter.value !== 'ALL') {
     tempFiltered = tempFiltered.filter((notification) => notification.type === selectedFilter.value)
   }
@@ -524,25 +618,46 @@ const fetchNotifications = async (forceRefresh = false) => {
     clearTimeout(fetchNotificationTimeout)
     fetchNotificationTimeout = null
   }
+  
+  // If forceRefresh is true, clear cache immediately to ensure fresh data
+  if (forceRefresh) {
+    cachedNotifications = null
+    cacheTimestamp = 0
+    clearCacheFromStorage()
+  }
+  
   if (isFetching) {
     return
   }
   const now = Date.now()
+  // Use shorter cache duration for published tab to show updates faster
   const cacheDuration =
-    activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
+    activeTab.value === 'scheduled'
+      ? SCHEDULED_TAB_CACHE_DURATION
+      : activeTab.value === 'published'
+        ? PUBLISHED_TAB_CACHE_DURATION
+        : DATA_CACHE_DURATION
 
   if (!forceRefresh && cachedNotifications && now - cacheTimestamp < cacheDuration) {
     if (checkForDueScheduledNotifications()) {
       forceRefresh = true
+      // Clear cache when forcing refresh due to due notifications
+      cachedNotifications = null
+      cacheTimestamp = 0
+      clearCacheFromStorage()
     } else {
-      notifications.value = cachedNotifications
+      // Apply isSent check to cached notifications before using them
+      const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+      notifications.value = correctedNotifications
       applyFilters()
       return
     }
   }
   if (!forceRefresh && now - lastFetchTime < MIN_FETCH_INTERVAL) {
     if (cachedNotifications) {
-      notifications.value = cachedNotifications
+      // Apply isSent check to cached notifications before using them
+      const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+      notifications.value = correctedNotifications
       applyFilters()
     }
     return
@@ -552,22 +667,39 @@ const fetchNotifications = async (forceRefresh = false) => {
     isFetching = true
     lastFetchTime = Date.now()
     loading.value = true
+    console.log(
+      `📡 [API] Fetching notifications (forceRefresh: ${forceRefresh}, tab: ${activeTab.value})`,
+    )
     if (USE_MOCK_DATA) {
       dateRange.value = mockDateRange.value
       selectedLabel.value = 'All Time (Mock Data)'
 
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      const mappedMockNotifications = mockNotifications.map((notification) => ({
-        ...notification,
-        id: Number(notification.id),
-        status: mapBackendStatusToFrontend(notification.status),
-        author: notification.author,
-        description: notification.content || notification.title,
-        image: notification.image || '',
-        date: notification.date,
-        linkPreview: notification.linkPreview,
-      }))
+      const mappedMockNotifications = mockNotifications.map((notification: any) => {
+        // Determine status: if isSent is true, it's always published regardless of status field
+        // But don't override for rejected/expired notifications - they should appear in Draft tab
+        let status = mapBackendStatusToFrontend(notification.status)
+        if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {
+          status = 'published'
+        }
+        // For rejected/expired notifications, ensure they appear in Draft tab
+        // Convert any status (published, scheduled, etc.) to draft for rejected/expired
+        if (notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') {
+          status = 'draft'
+        }
+
+        return {
+          ...notification,
+          id: Number(notification.id),
+          status: status,
+          author: notification.author,
+          description: notification.content || '',
+          image: notification.image || '',
+          date: notification.date,
+          linkPreview: notification.linkPreview,
+        }
+      })
       notifications.value = mappedMockNotifications
       cachedNotifications = mappedMockNotifications
       cacheTimestamp = Date.now()
@@ -584,19 +716,70 @@ const fetchNotifications = async (forceRefresh = false) => {
         language: 'KM',
       })
 
-      const mappedNotifications = response.data.map((notification) => ({
-        ...notification,
-        id: Number(notification.id),
-        status: mapBackendStatusToFrontend(notification.status),
-        author: notification.author,
-        description: notification.content || notification.title,
-        image: notification.image || '',
-        date: notification.date,
-      }))
+      const mappedNotifications = response.data.map((notification: any) => {
+        // Determine status: if isSent is true, it's always published regardless of status field
+        // But don't override for rejected/expired notifications - they should appear in Draft tab
+        let status = mapBackendStatusToFrontend(notification.status)
+        if (notification.isSent === true && notification.approvalStatus !== 'REJECTED' && notification.approvalStatus !== 'EXPIRED') {
+          status = 'published'
+        }
+        // For rejected/expired notifications, ensure they appear in Draft tab
+        // Convert any status (published, scheduled, etc.) to draft for rejected/expired
+        if (notification.approvalStatus === 'REJECTED' || notification.approvalStatus === 'EXPIRED') {
+          status = 'draft'
+        }
+
+        // Log date field for debugging (especially for template 305)
+        if (notification.templateId === 305 || notification.id === 305) {
+          console.log('📅 [API] Template 305 date field:', {
+            templateId: notification.templateId,
+            id: notification.id,
+            date: notification.date,
+            scheduledTime: notification.scheduledTime,
+            sendSchedule: notification.sendSchedule,
+            approvalStatus: notification.approvalStatus,
+            status: status,
+            isSent: notification.isSent,
+          })
+        }
+
+        const corrected = correctNotificationStatus({
+          ...notification,
+          id: Number(notification.id),
+          status: status,
+          author: notification.author,
+          description: notification.content || '',
+          image: notification.image || '',
+          date: notification.date,
+          // Preserve approvalStatus and related fields
+          approvalStatus: (notification as any).approvalStatus,
+          approvedBy: (notification as any).approvedBy,
+          approvedAt: (notification as any).approvedAt,
+        })
+
+        // Debug logging for status correction
+        if (notification.isSent === true && corrected.status !== 'published') {
+          console.warn(`⚠️ [Status Correction] Notification ${corrected.id} has isSent=true but status=${corrected.status}`)
+        }
+
+        // Log final corrected date for template 305
+        if (corrected.templateId === 305 || corrected.id === 305) {
+          console.log('📅 [API] Template 305 corrected date:', {
+            templateId: corrected.templateId,
+            id: corrected.id,
+            date: corrected.date,
+            status: corrected.status,
+            approvalStatus: corrected.approvalStatus,
+          })
+        }
+
+        return corrected
+      })
       notifications.value = mappedNotifications
       cachedNotifications = mappedNotifications
       cacheTimestamp = Date.now()
       saveCacheToStorage(mappedNotifications, cacheTimestamp)
+      console.log(`✅ [API] Successfully fetched ${mappedNotifications.length} notifications`)
     }
 
     applyFilters()
@@ -625,7 +808,42 @@ const debouncedFetchNotifications = () => {
 const applyFilters = () => {
   let filtered = [...notifications.value]
 
-  filtered = filtered.filter((notification) => notification.status === activeTab.value)
+  // For pending tab, filter by approvalStatus instead of status
+  if (activeTab.value === 'pending') {
+    // Show notifications that are pending approval (submitted for immediate send or scheduled time arrived)
+    filtered = filtered.filter((notification) => notification.approvalStatus === 'PENDING')
+  } else if (activeTab.value === 'published') {
+    // Published tab should only show approved notifications that are published
+    filtered = filtered.filter(
+      (notification) =>
+        notification.status === 'published' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus),
+    )
+  } else if (activeTab.value === 'scheduled') {
+    // Scheduled tab shows only APPROVED scheduled notifications
+    // PENDING scheduled notifications should appear in Pending tab, not Scheduled tab
+    filtered = filtered.filter(
+      (notification) =>
+        notification.status === 'scheduled' &&
+        (notification.approvalStatus === 'APPROVED' || !notification.approvalStatus), // Only approved or legacy (no approvalStatus)
+    )
+  } else if (activeTab.value === 'draft') {
+    // Draft tab shows:
+    // 1. Drafts with no approvalStatus (not submitted yet) - regardless of status (draft or scheduled)
+    // 2. Drafts that are not pending (approved/rejected/expired drafts can still be in draft status)
+    // 3. Rejected notifications (regardless of status - they should be editable in Draft)
+    // 4. Expired notifications (regardless of status - they should be editable in Draft)
+    // 5. Scheduled notifications that are still drafts (approvalStatus is null) - these are drafts with schedule enabled
+    // 6. Exclude pending notifications (they're awaiting approval in Pending tab)
+    filtered = filtered.filter(
+      (notification) =>
+        // Drafts with no approvalStatus (null) - includes both status='draft' and status='scheduled' with approvalStatus=null
+        (notification.approvalStatus === null || notification.approvalStatus === undefined) ||
+        // Rejected or expired notifications (regardless of status)
+        notification.approvalStatus === 'REJECTED' ||
+        notification.approvalStatus === 'EXPIRED',
+    )
+  }
 
   if (selectedFilter.value !== 'ALL') {
     filtered = filtered.filter((notification) => notification.type === selectedFilter.value)
@@ -726,6 +944,49 @@ const handleDeleteNotification = async (notificationId: number | string) => {
 
 const publishingNotifications = new Set<number | string>()
 
+const handleSwitchTab = (tab: 'published' | 'scheduled' | 'draft' | 'pending') => {
+  activeTab.value = tab
+  // Save to localStorage when tab is switched
+  try {
+    localStorage.setItem('notification_active_tab', tab)
+    // Clear cache to force immediate refresh when switching tabs from actions
+    localStorage.removeItem('notifications_cache')
+    localStorage.removeItem('notifications_cache_timestamp')
+    cachedNotifications = null
+    cacheTimestamp = 0
+  } catch (error) {
+    console.warn('Failed to save active tab to localStorage:', error)
+  }
+  // Force refresh to get latest data immediately
+  fetchNotifications(true).then(() => {
+  applyFilters()
+  }).catch(() => {
+    // If fetch fails, still apply filters with existing data
+    applyFilters()
+  })
+}
+
+const handleUpdateNotification = (updatedNotification: Notification) => {
+  // Find and update the notification in the local state immediately
+  const index = notifications.value.findIndex(
+    (n) => (n.templateId || n.id) === (updatedNotification.templateId || updatedNotification.id)
+  )
+  
+  if (index !== -1) {
+    // Update the notification with new approvalStatus
+    notifications.value[index] = {
+      ...notifications.value[index],
+      ...updatedNotification,
+    }
+    // Apply filters to update the displayed list
+    applyFilters()
+  } else {
+    // If not found, add it to the list (shouldn't happen, but just in case)
+    notifications.value.push(updatedNotification)
+    applyFilters()
+  }
+}
+
 const handlePublishNotification = async (notification: Notification) => {
   const notificationId = notification.templateId || notification.id
   const key = Number(notificationId)
@@ -743,6 +1004,9 @@ const handlePublishNotification = async (notification: Notification) => {
 
   publishingNotifications.add(key)
 
+  // Declare loadingNotification at function scope so it's accessible in catch block
+  let loadingNotification: any = null
+
   try {
     if (USE_MOCK_DATA) {
       const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
@@ -759,65 +1023,391 @@ const handlePublishNotification = async (notification: Notification) => {
         })
       }
     } else {
-      // Use the notification's actual language instead of hardcoded 'EN'
-      const notificationLanguage = notification.language || 'KM'
+      // Publish the template by updating it with sendType=SEND_NOW and isSent=true
+      // This will trigger the backend to send the notification and mark it as published
+      // Clear sendSchedule if it exists since we're publishing immediately
+      try {
+        // First, fetch the full template data to get platforms and translations
+        const fullTemplate = await api.get(`/api/v1/template/${notificationId}`)
+        const template = fullTemplate.data?.data || fullTemplate.data
 
-      const result = await notificationApi.sendNotification(
-        Number(notificationId),
-        notificationLanguage,
-        notification.type,
-      )
+        // Check if notification is already sent
+        const isAlreadySent = template?.isSent === true || notification.isSent === true
 
-      // Check if error response (no users found)
-      if (result?.responseCode !== 0 || result?.errorCode !== 0) {
-        const errorMessage =
-          result?.responseMessage || result?.message || 'Failed to publish notification'
+        if (isAlreadySent) {
+          // Notification is already sent - just move it to published tab and show info message
+          ElNotification({
+            title: 'Info',
+            message:
+              'This notification has already been sent to users. It has been moved to the Published tab.',
+            type: 'info',
+            duration: 3000,
+          })
 
-        // Get platform name from response data or notification
+          // Update local state and move to published tab
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
+          cachedNotifications = null
+          cacheTimestamp = 0
+          clearCacheFromStorage()
+          await fetchNotifications(true)
+          applyFilters()
+          return
+        }
+
+        // Validate that draft has enough data to send (both title and content required)
+        const translations = template?.translations || []
+        let hasValidData = false
+
+        for (const translation of translations) {
+          const hasTitle = translation?.title && translation.title.trim() !== ''
+          const hasContent = translation?.content && translation.content.trim() !== ''
+
+          if (hasTitle && hasContent) {
+            hasValidData = true
+            break
+          }
+        }
+
+        if (!hasValidData) {
+          publishingNotifications.delete(key)
+          ElNotification({
+            title: 'Error',
+            message: 'This record cannot be sent. Please review the <strong>title</strong> and <strong>content</strong> and other fields, then try again.',
+            type: 'error',
+            duration: 4000,
+            dangerouslyUseHTMLString: true,
+          })
+          return
+        }
+
+        // Show loading notification immediately
+        loadingNotification = ElNotification({
+          title: 'Sending Notification',
+          message: 'Please wait while we send the notification to all users. This may take a moment if there are many recipients...',
+          type: 'info',
+          duration: 0, // Keep it open until we close it manually
+        })
+
+        // Prepare update payload with existing template data
+        const updatePayload: any = {
+          sendType: SendType.SEND_NOW,
+          isSent: true,
+          sendSchedule: null, // Clear schedule when publishing immediately
+        }
+
+        // Include platforms from template (default to [IOS, ANDROID] if not set)
+        if (
+          template?.platforms &&
+          Array.isArray(template.platforms) &&
+          template.platforms.length > 0
+        ) {
+          updatePayload.platforms = template.platforms
+        } else {
+          // Default to both platforms if not set (ALL)
+          updatePayload.platforms = [Platform.IOS, Platform.ANDROID]
+        }
+
+        // Include translations from template
+        if (
+          template?.translations &&
+          Array.isArray(template.translations) &&
+          template.translations.length > 0
+        ) {
+          updatePayload.translations = template.translations.map((t: any) => ({
+            language: t.language,
+            title: t.title,
+            content: t.content,
+            image: t.image?.fileId || t.imageId || t.image?.id || '',
+            linkPreview: t.linkPreview || undefined,
+          }))
+        }
+
+        const result = await notificationApi.updateTemplate(Number(notificationId), updatePayload)
+        
+        // Close loading notification
+        loadingNotification.close()
+
+        // Check if error response (no users found or approval required)
+        if (result?.responseCode !== 0 || result?.errorCode !== 0) {
+          const errorMessage =
+            result?.responseMessage || result?.message || 'Failed to publish notification'
+          const errorCode = result?.errorCode
+
+          // Handle approval required error specifically
+          if (
+            errorCode === ErrorCode.NO_PERMISSION &&
+            errorMessage.includes('Template must be approved')
+          ) {
+            const templateId = result?.data?.templateId || notificationId
+            const canApprove = authStore.isAdmin || authStore.isApproval
+
+            ElNotification({
+              title: 'Approval Required',
+              message: canApprove
+                ? `This notification requires approval before sending. You can approve it from the Pending tab.`
+                : `This notification requires approval before sending. Please wait for an administrator to approve it.`,
+              type: 'warning',
+              duration: 5000,
+              dangerouslyUseHTMLString: true,
+            })
+
+            // Redirect to pending tab where user can approve if they have permission
+            activeTab.value = 'pending'
+            cachedNotifications = null
+            cacheTimestamp = 0
+            clearCacheFromStorage()
+            await fetchNotifications(true)
+            applyFilters()
+            return
+          }
+
+          // Get platform name from response data or notification
+          const platformName = getFormattedPlatformName({
+            platformName: result?.data?.platformName,
+            bakongPlatform: result?.data?.bakongPlatform,
+            notification: notification as any,
+          })
+
+          ElNotification({
+            title: 'Info',
+            message: errorMessage.includes('No users found')
+              ? getNoUsersAvailableMessage(platformName)
+              : errorMessage,
+            type: 'info',
+            duration: 3000,
+            dangerouslyUseHTMLString: true,
+          })
+          // Keep in draft tab
+          activeTab.value = 'draft'
+          cachedNotifications = null
+          cacheTimestamp = 0
+          clearCacheFromStorage()
+          await fetchNotifications(true)
+          applyFilters()
+          return
+        }
+
+        // Use unified message handler for draft/failure cases
         const platformName = getFormattedPlatformName({
           platformName: result?.data?.platformName,
           bakongPlatform: result?.data?.bakongPlatform,
           notification: notification as any,
         })
 
-        ElNotification({
-          title: 'Info',
-          message: errorMessage.includes('No users found')
-            ? getNoUsersAvailableMessage(platformName)
-            : errorMessage,
-          type: 'info',
-          duration: 3000,
-          dangerouslyUseHTMLString: true,
-        })
-        // Keep in draft tab
-        activeTab.value = 'draft'
+        const bakongPlatform = result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
+
+        // Get device platform from result data or template
+        const platforms = result?.data?.platforms || template?.platforms || []
+        let devicePlatform = 'ALL'
+        if (Array.isArray(platforms) && platforms.length > 0) {
+          // If platforms array contains only one platform, use it; otherwise use 'ALL'
+          if (platforms.length === 1) {
+            devicePlatform = String(platforms[0])
+          } else {
+            devicePlatform = 'ALL'
+          }
+        }
+
+        const devicePlatformFormatted = formatPlatform(devicePlatform )
+
+        const messageConfig = getNotificationMessage(result?.data, platformName, bakongPlatform, devicePlatformFormatted)
+        const successfulCount = result?.data?.successfulCount ?? 0
+        const failedCount = result?.data?.failedCount ?? 0
+        const isPartialSuccess = successfulCount > 0 && failedCount > 0
+
+        // Show notification for non-success cases (errors, warnings, info) or partial success
+        if (messageConfig.type !== 'success' || isPartialSuccess) {
+          ElNotification({
+            title: messageConfig.title,
+            message: messageConfig.message,
+            type: messageConfig.type,
+            duration: messageConfig.duration,
+            dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+          })
+
+          // Stay in draft tab for failures
+          if (
+            messageConfig.type === 'error' ||
+            messageConfig.type === 'warning' ||
+            messageConfig.type === 'info'
+          ) {
+            activeTab.value = 'draft'
+            cachedNotifications = null
+            cacheTimestamp = 0
+            clearCacheFromStorage()
+            await fetchNotifications(true)
+            applyFilters()
+            return
+          }
+
+          // For partial success, still show the notification but don't redirect to draft
+          if (isPartialSuccess) {
+            // Update notification status if some were successful
+            const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+            if (notificationIndex !== -1 && successfulCount > 0) {
+              notifications.value[notificationIndex].status = 'published'
+              notifications.value[notificationIndex].isSent = true
+            }
+            activeTab.value = 'published'
+            return
+          }
+        }
+
+        // Handle full success cases (only reached if messageConfig.type === 'success' and not partial)
+        if (result?.data?.successfulCount !== undefined && result?.data?.successfulCount > 0) {
+          // Successfully published and sent to users
+          const successfulCount = result?.data?.successfulCount ?? 0
+
+          // Check if this is a flash notification - check result data first, then template, then notification
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
+          const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
+
+          let message = ''
+          if (isFlashNotification) {
+            // Flash notification message
+            message = 'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            const platformNameForFlash = getFormattedPlatformName({
+              platformName: result?.data?.platformName,
+              bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
+              notification: notification as any,
+            })
+            message = message.replace('bakongPlatform', `<strong>${platformNameForFlash}</strong>`)
+          } else {
+            // Use standardized message format with bakongPlatform and devicePlatform bolded
+            const successMessageConfig = getNotificationMessage(
+              result?.data,
+              platformName,
+              bakongPlatform,
+              devicePlatformFormatted
+            )
+            message = successMessageConfig.message
+          }
+
+          ElNotification({
+            title: 'Success',
+            message: message,
+            type: 'success',
+            duration: 2000,
+            dangerouslyUseHTMLString: true,
+          })
+          const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+          if (notificationIndex !== -1) {
+            notifications.value[notificationIndex].status = 'published'
+            notifications.value[notificationIndex].isSent = true
+          }
+          activeTab.value = 'published'
+        } else {
+          // Check if this is a flash notification - even if no successfulCount, show flash message
+          const notificationType =
+            result?.data?.notificationType || template?.notificationType || notification.type
+          const isFlashNotification = notificationType === NotificationType.FLASH_NOTIFICATION
+
+          if (isFlashNotification) {
+            // For flash notifications, show success message even if no user count
+            let message =
+              'Flash notification published successfully, and when user open bakongPlatform it will saw it!'
+            const platformName = getFormattedPlatformName({
+              platformName: result?.data?.platformName,
+              bakongPlatform: result?.data?.bakongPlatform || template?.bakongPlatform,
+              notification: notification as any,
+            })
+            message = message.replace('bakongPlatform', `<strong>${platformName}</strong>`)
+
+            ElNotification({
+              title: 'Success',
+              message: message,
+              type: 'success',
+              duration: 2000,
+              dangerouslyUseHTMLString: true,
+            })
+
+            const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
+            if (notificationIndex !== -1) {
+              notifications.value[notificationIndex].status = 'published'
+              notifications.value[notificationIndex].isSent = true
+            }
+            activeTab.value = 'published'
+          } else {
+            // Check if notification was already sent (successfulCount might be 0 but isSent is true)
+            // This can happen for flash notifications or if it was already sent via scheduler
+            const isAlreadySent = result?.data?.isSent === true || template?.isSent === true
+
+            if (isAlreadySent) {
+              // Notification was already sent - move to published tab
+              ElNotification({
+                title: 'Info',
+                message:
+                  'This notification has already been sent. It has been moved to the Published tab.',
+                type: 'info',
+                duration: 3000,
+              })
+
+              const notificationIndex = notifications.value.findIndex(
+                (n) => n.id === notification.id,
+              )
+              if (notificationIndex !== -1) {
+                notifications.value[notificationIndex].status = 'published'
+                notifications.value[notificationIndex].isSent = true
+              }
+              activeTab.value = 'published'
+            } else {
+              // No users received the notification - use unified message handler
+              const platformName = getFormattedPlatformName({
+                platformName: result?.data?.platformName,
+                bakongPlatform: result?.data?.bakongPlatform,
+                notification: notification as any,
+              })
+
+              const bakongPlatform =
+                result?.data?.bakongPlatform || (notification as any)?.bakongPlatform
+              const messageConfig = getNotificationMessage(
+                result?.data,
+                platformName,
+                bakongPlatform,
+              )
+
+              ElNotification({
+                title: messageConfig.title,
+                message: messageConfig.message,
+                type: messageConfig.type,
+                duration: messageConfig.duration,
+                dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+              })
+              activeTab.value = 'draft'
+            }
+          }
+        }
         cachedNotifications = null
         cacheTimestamp = 0
         clearCacheFromStorage()
         await fetchNotifications(true)
         applyFilters()
-        return
+      } catch (updateError: any) {
+        // Close loading notification on error
+        if (loadingNotification) {
+          loadingNotification.close()
+        }
+        // If updateTemplate fails, throw to be caught by outer catch block
+        throw updateError
       }
-
-      ElNotification({
-        title: 'Success',
-        message: `Notification published successfully!`,
-        type: 'success',
-        duration: 2000,
-      })
-      const notificationIndex = notifications.value.findIndex((n) => n.id === notification.id)
-      if (notificationIndex !== -1) {
-        notifications.value[notificationIndex].status = 'published'
-        notifications.value[notificationIndex].isSent = true
-      }
-      activeTab.value = 'published'
-      cachedNotifications = null
-      cacheTimestamp = 0
-      clearCacheFromStorage()
-      await fetchNotifications(true)
-      applyFilters()
     }
   } catch (error: any) {
+    // Close loading notification on error (if it exists)
+    // Note: loadingNotification might not be defined if error occurred before it was created
+    try {
+      if (typeof loadingNotification !== 'undefined' && loadingNotification) {
+        loadingNotification.close()
+      }
+    } catch (e) {
+      // Ignore errors when closing notification
+    }
+    
     console.error('Failed to publish notification:', error)
     const errorMessage =
       error?.response?.data?.responseMessage ||
@@ -825,15 +1415,42 @@ const handlePublishNotification = async (notification: Notification) => {
       error?.message ||
       'Failed to publish notification'
 
-    // Check if it's a "no users" error
-    if (
+    // Use unified message handler for error cases
+    const errorData = error?.response?.data?.data || {}
+    const failedDueToInvalidTokens = errorData.failedDueToInvalidTokens === true
+    const failedCount = errorData.failedCount || 0
+
+    if (failedDueToInvalidTokens && failedCount > 0) {
+      // Failures due to invalid tokens - use unified message handler
+      const bakongPlatform = errorData.bakongPlatform || (notification as any)?.bakongPlatform
+      const platformName = bakongPlatform ? formatBakongApp(bakongPlatform) : undefined
+      const messageConfig = getNotificationMessage(
+        { failedDueToInvalidTokens: true, failedCount },
+        platformName,
+        bakongPlatform,
+      )
+      ElNotification({
+        title: messageConfig.title,
+        message: messageConfig.message,
+        type: messageConfig.type,
+        duration: messageConfig.duration,
+        dangerouslyUseHTMLString: messageConfig.dangerouslyUseHTMLString,
+      })
+      activeTab.value = 'draft'
+      cachedNotifications = null
+      cacheTimestamp = 0
+      clearCacheFromStorage()
+      await fetchNotifications(true)
+      applyFilters()
+    } else if (
       errorMessage.includes('NO_USERS_FOR_BAKONG_PLATFORM') ||
       errorMessage.includes('No users found for')
     ) {
       // Get platform name from error response data or notification
+      const bakongPlatform = errorData.bakongPlatform || (notification as any)?.bakongPlatform
       const platformName = getFormattedPlatformName({
-        platformName: error?.response?.data?.data?.platformName,
-        bakongPlatform: error?.response?.data?.data?.bakongPlatform,
+        platformName: errorData.platformName,
+        bakongPlatform: bakongPlatform,
         notification: notification as any,
       })
 
@@ -863,14 +1480,60 @@ const handlePublishNotification = async (notification: Notification) => {
   }
 }
 let pollingInterval: ReturnType<typeof setInterval> | null = null
+let pollingSetup = false // Flag to prevent duplicate polling setup
+let isMounted = false // Flag to prevent duplicate mount operations
 
 onMounted(async () => {
+  // Prevent duplicate mount operations
+  if (isMounted) {
+    console.log('⏭️ [Mount] Component already mounted, skipping duplicate mount')
+    return
+  }
+  isMounted = true
+
   let tabChanged = false
-  if (route.query?.tab && ['published', 'scheduled', 'draft'].includes(route.query.tab as string)) {
-    const queryTab = route.query.tab as 'published' | 'scheduled' | 'draft'
+  // Priority: route query param with _refresh (explicit redirect) > localStorage (user's last choice) > route query param > default
+  // On page refresh, localStorage should take precedence to preserve user's last selected tab
+  // Route query params with _refresh are used when explicitly navigating (e.g., after creating/updating/approving notification)
+  const storedTab = getStoredTab()
+  const queryTab = route.query?.tab && ['published', 'scheduled', 'draft', 'pending'].includes(route.query.tab as string)
+    ? (route.query.tab as 'published' | 'scheduled' | 'draft' | 'pending')
+    : null
+  const hasRefreshQueryParam = route.query?._refresh !== undefined
+  
+  // activeTab is already initialized from getStoredTab() in the ref declaration
+  // If _refresh param exists, prioritize query tab (explicit redirect from action)
+  // Otherwise, prioritize localStorage (user's last choice) over route query param on refresh
+  if (hasRefreshQueryParam && queryTab) {
+    // Explicit redirect with cache-busting - use query tab immediately
     if (activeTab.value !== queryTab) {
       activeTab.value = queryTab
       tabChanged = true
+      // Save to localStorage when set from route query
+      try {
+        localStorage.setItem('notification_active_tab', queryTab)
+      } catch (error) {
+        console.warn('Failed to save active tab to localStorage:', error)
+      }
+    }
+  } else if (storedTab !== 'published' || !queryTab) {
+    // User has explicitly chosen a tab (not default), or no query param - use stored tab
+    // This ensures refresh preserves user's last choice
+    if (activeTab.value !== storedTab) {
+      activeTab.value = storedTab
+      tabChanged = true
+    }
+  } else if (queryTab && storedTab === 'published') {
+    // No explicit user choice (default 'published'), so use route query param (likely from redirect)
+    if (activeTab.value !== queryTab) {
+      activeTab.value = queryTab
+      tabChanged = true
+      // Save to localStorage when set from route query
+      try {
+        localStorage.setItem('notification_active_tab', queryTab)
+      } catch (error) {
+        console.warn('Failed to save active tab to localStorage:', error)
+      }
     }
   }
   if (notifications.value.length > 0 && (tabChanged || filteredNotifications.value.length === 0)) {
@@ -881,34 +1544,102 @@ onMounted(async () => {
   }
 
   await new Promise((resolve) => setTimeout(resolve, 200))
-  if (cachedNotifications && cacheTimestamp) {
+
+  // Check if cache was recently cleared - force refresh
+  const cacheWasCleared = !localStorage.getItem('notifications_cache_timestamp')
+  // Check for cache-busting query parameter (added after updates)
+  // hasRefreshQueryParam is already defined above
+  const shouldForceRefresh = cacheWasCleared || tabChanged || hasRefreshQueryParam
+
+  if (hasRefreshQueryParam) {
+    console.log('🔄 [Mount] Cache-busting parameter detected - forcing fresh fetch')
+    // Clear cache when refresh parameter is present
+    try {
+      localStorage.removeItem('notifications_cache')
+      localStorage.removeItem('notifications_cache_timestamp')
+      cachedNotifications = null
+      cacheTimestamp = 0
+      console.log('✅ [Mount] Cache cleared due to refresh parameter')
+    } catch (error) {
+      console.warn('⚠️ [Mount] Failed to clear cache:', error)
+    }
+  }
+
+  // Use appropriate cache duration based on active tab
+  const cacheDuration =
+    activeTab.value === 'scheduled'
+      ? SCHEDULED_TAB_CACHE_DURATION
+      : activeTab.value === 'published'
+        ? PUBLISHED_TAB_CACHE_DURATION
+        : DATA_CACHE_DURATION
+
+  console.log('📊 [Mount] Cache check:', {
+    hasCachedNotifications: !!cachedNotifications,
+    cacheTimestamp,
+    cacheWasCleared,
+    hasRefreshParam: hasRefreshQueryParam,
+    tabChanged,
+    shouldForceRefresh,
+    activeTab: activeTab.value,
+  })
+
+  // Only fetch once on mount - avoid duplicate fetches
+  if (cachedNotifications && cacheTimestamp && !shouldForceRefresh) {
     const now = Date.now()
-    if (now - cacheTimestamp < DATA_CACHE_DURATION) {
+    if (now - cacheTimestamp < cacheDuration) {
       if (notifications.value.length === 0) {
-        notifications.value = cachedNotifications
+        // Apply status correction to cached notifications
+        const correctedNotifications = cachedNotifications.map(correctNotificationStatus)
+        notifications.value = correctedNotifications
         applyFilters()
       }
-      fetchNotifications().catch((err) => {
-        console.warn('Background refresh failed, using cache:', err)
-      })
+      // Still fetch in background for published tab to get updates quickly
+      if (activeTab.value === 'published') {
+        fetchNotifications(true).catch((err) => {
+          console.warn('Background refresh failed, using cache:', err)
+        })
+      } else {
+        // For other tabs, skip background fetch if cache is fresh to avoid duplicate calls
+        console.log('⏭️ [Mount] Skipping background fetch - cache is fresh and tab is not published')
+      }
     } else {
-      fetchNotifications()
+      // Cache expired - fetch once
+      await fetchNotifications(true)
     }
   } else {
-    fetchNotifications()
+    // Force refresh if cache was cleared or tab changed - fetch once
+    await fetchNotifications(true)
   }
   const setupPolling = () => {
+    // Prevent duplicate polling setup
+    if (pollingSetup && pollingInterval) {
+      console.log('⏭️ [Polling] Polling already set up, skipping duplicate setup')
+      return
+    }
+
+    // Clear any existing polling interval to prevent duplicates
     if (pollingInterval) {
       clearInterval(pollingInterval)
+      pollingInterval = null
     }
-    const pollingIntervalDuration = 60000
+    const pollingIntervalDuration = 900000 // 15 minutes
 
     pollingInterval = setInterval(() => {
       const now = Date.now()
       const cacheAge = now - cacheTimestamp
       const cacheDuration =
-        activeTab.value === 'scheduled' ? SCHEDULED_TAB_CACHE_DURATION : DATA_CACHE_DURATION
+        activeTab.value === 'scheduled'
+          ? SCHEDULED_TAB_CACHE_DURATION
+          : activeTab.value === 'published'
+            ? PUBLISHED_TAB_CACHE_DURATION
+            : DATA_CACHE_DURATION
+
+      console.log(
+        `🔄 [Polling Check] Active tab: ${activeTab.value}, Cache age: ${Math.round(cacheAge / 1000)}s, Cache duration: ${Math.round(cacheDuration / 1000)}s`,
+      )
+
       if (activeTab.value === 'scheduled' && checkForDueScheduledNotifications()) {
+        console.log('✅ [Polling] Triggering refresh - scheduled notification due')
         fetchNotifications(true)
         return
       }
@@ -916,14 +1647,22 @@ onMounted(async () => {
         (activeTab.value === 'scheduled' || activeTab.value === 'published') &&
         cacheAge >= cacheDuration
       ) {
+        console.log(
+          `✅ [Polling] Triggering refresh - cache expired (${Math.round(cacheAge / 1000)}s >= ${Math.round(cacheDuration / 1000)}s)`,
+        )
         fetchNotifications(true)
+      } else {
+        console.log('⏭️ [Polling] Skipping refresh - cache still valid')
       }
     }, pollingIntervalDuration)
+
+    pollingSetup = true
+    console.log(
+      `🔄 [Polling] Started with interval: ${pollingIntervalDuration / 1000}s (${pollingIntervalDuration / 60000} minutes)`,
+    )
   }
+  // Setup polling once on mount - no need to restart on tab change since polling checks activeTab.value dynamically
   setupPolling()
-  watch(activeTab, () => {
-    setupPolling()
-  })
 })
 
 onUnmounted(() => {
@@ -931,6 +1670,8 @@ onUnmounted(() => {
     clearInterval(pollingInterval)
     pollingInterval = null
   }
+  pollingSetup = false
+  isMounted = false
 })
 </script>
 
@@ -1163,9 +1904,7 @@ onUnmounted(() => {
 }
 
 .notifications-grid .notification-cards-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+  width: 100%;
   margin-top: 20px;
 }
 
@@ -1190,20 +1929,19 @@ onUnmounted(() => {
 .empty-state {
   display: flex;
   justify-content: center;
-  align-items: center;
-  height: 200px;
-  margin-right: 40px;
+  align-items: flex-start;
   width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding-top: 80px;
 }
 
 .empty-state-container {
+  display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  top: 123px;
+  justify-content: flex-start;
   gap: 24px;
-  display: flex;
-  position: relative;
   width: 241px;
   height: 391.87px;
 }

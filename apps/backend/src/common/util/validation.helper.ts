@@ -8,12 +8,139 @@ export class ValidationHelper {
   static validateLanguage = ValidationUtils.validateLanguage
   static validatePlatform = ValidationUtils.validatePlatform
   static validateNotificationType = ValidationUtils.validateNotificationType
-  static validateCategoryType = ValidationUtils.validateCategoryType
+  // validateCategoryType removed - use categoryTypeId from database instead
   static validateUserRole = ValidationUtils.validateUserRole
   static validateSendType = ValidationUtils.validateSendType
   static normalizeEnum = ValidationUtils.normalizeEnum
   static languagesMatch = ValidationUtils.languagesMatch
   static isPlatform = ValidationUtils.isPlatform
+
+  /**
+   * Parse platforms field - handles PostgreSQL array, JavaScript array, and JSON string formats
+   * Normalizes ["IOS", "ANDROID"] to ["ALL"] since they're equivalent
+   * @param platforms - Can be string (PostgreSQL array or JSON), array, or undefined
+   * @returns Array of platform strings (normalized: ["IOS", "ANDROID"] becomes ["ALL"])
+   */
+  static parsePlatforms(platforms: string | string[] | undefined | null): string[] {
+    if (!platforms) {
+      return ['ALL']
+    }
+
+    let parsedArray: string[] = []
+
+    if (Array.isArray(platforms)) {
+      // Already an array - normalize values, ensuring they're strings first
+      // Handle edge case: ["{\"ALL\"}"] -> parse nested JSON strings
+      parsedArray = platforms
+        .map((p) => {
+          if (p == null) return ''
+          const str = String(p).trim()
+          // Check if it's a JSON string like "{\"ALL\"}" or '{"ALL"}'
+          if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('["') && str.endsWith('"]'))) {
+            try {
+              const parsed = JSON.parse(str)
+              // If parsed is an object, try to extract the value
+              if (typeof parsed === 'object' && parsed !== null) {
+                // Handle {"ALL"} or {"platform": "ALL"}
+                return parsed.ALL || parsed.platform || parsed[0] || String(parsed)
+              }
+              // If parsed is an array, get first element
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                return String(parsed[0])
+              }
+              return String(parsed)
+            } catch (e) {
+              // If JSON parsing fails, use the string as-is
+              return str
+            }
+          }
+          return str
+        })
+        .map((p) => this.normalizeEnum(p))
+        .filter((p) => p.length > 0)
+    } else if (typeof platforms === 'string') {
+      const platformsStr = platforms.trim()
+
+      // Handle PostgreSQL array format: {ANDROID} or {"ANDROID","IOS"}
+      if (platformsStr.startsWith('{') && platformsStr.endsWith('}')) {
+        try {
+          // PostgreSQL array format: remove braces and split by comma
+          const content = platformsStr.slice(1, -1) // Remove { and }
+          if (content.length === 0) {
+            parsedArray = ['ALL']
+          } else {
+            // Split by comma and remove quotes, then normalize
+            parsedArray = content
+              .split(',')
+              .map((p) => p.trim().replace(/^["']|["']$/g, '')) // Remove surrounding quotes
+              .map((p) => (p != null ? String(p) : '')) // Ensure string
+              .map((p) => this.normalizeEnum(p)) // Normalize each platform
+              .filter((p) => p.length > 0)
+            if (parsedArray.length === 0) {
+              parsedArray = ['ALL']
+            }
+          }
+        } catch (e) {
+          console.error('❌ [parsePlatforms] Failed to parse PostgreSQL array format:', e)
+          parsedArray = ['ALL']
+        }
+      } else {
+        // Try parsing as JSON: ["ANDROID"] or ["IOS", "ANDROID"]
+        try {
+          const parsed = JSON.parse(platformsStr)
+          if (Array.isArray(parsed)) {
+            parsedArray = parsed
+              .map((p) => (p != null ? String(p) : ''))
+              .map((p) => this.normalizeEnum(p))
+              .filter((p) => p.length > 0)
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            // Handle object format: {"platforms": ["ANDROID"]}
+            if (Array.isArray(parsed.platforms)) {
+              parsedArray = parsed.platforms
+                .map((p) => (p != null ? String(p) : ''))
+                .map((p) => this.normalizeEnum(p))
+                .filter((p) => p.length > 0)
+            } else {
+              parsedArray = ['ALL']
+            }
+          } else {
+            parsedArray = ['ALL']
+          }
+        } catch (e) {
+          console.error(
+            '❌ [parsePlatforms] Failed to parse platforms JSON:',
+            platformsStr,
+            'Error:',
+            e,
+          )
+          parsedArray = ['ALL']
+        }
+      }
+    } else {
+      console.warn('⚠️ [parsePlatforms] Platforms is not array or string, using default ALL')
+      parsedArray = ['ALL']
+    }
+
+    // Normalize: If array contains both IOS and ANDROID, convert to ALL
+    const hasIOS = parsedArray.includes('IOS')
+    const hasANDROID = parsedArray.includes('ANDROID')
+    const hasALL = parsedArray.includes('ALL')
+
+    if (hasALL) {
+      // If ALL is present, return just ALL
+      return ['ALL']
+    } else if (hasIOS && hasANDROID) {
+      // If both IOS and ANDROID are present, normalize to ALL
+      console.log(
+        `🔄 [parsePlatforms] Normalizing ["IOS", "ANDROID"] to ["ALL"] (they are equivalent)`,
+      )
+      return ['ALL']
+    }
+
+    // Filter out invalid platform values (only allow ALL, IOS, ANDROID)
+    const validPlatforms = parsedArray.filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID')
+    return validPlatforms.length > 0 ? validPlatforms : ['ALL']
+  }
 
   static handleDatabaseError(error: any, context?: string): BaseResponseDto {
     const driverError = error.driverError || {}
@@ -91,6 +218,8 @@ export class ValidationHelper {
       case ErrorCode.DATABASE_CHECK_CONSTRAINT_VIOLATION:
       case ErrorCode.DATABASE_CONSTRAINT_VIOLATION:
       case ErrorCode.SENT_TEMPLATE:
+      case ErrorCode.TEMPLATE_SEND_SCHEDULE_IN_PAST:
+      case ErrorCode.TEMPLATE_SEND_INTERVAL_INVAILD_DURATION:
         return 400
 
       case ErrorCode.FAILED_AUTHENTICATION:
@@ -106,6 +235,7 @@ export class ValidationHelper {
       case ErrorCode.USER_NOT_FOUND:
       case ErrorCode.RECORD_NOT_FOUND:
       case ErrorCode.NOTIFICATION_NOT_FOUND:
+      case ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM:
         return 404
 
       case ErrorCode.DATABASE_UNIQUE_CONSTRAINT_VIOLATION:
@@ -288,56 +418,44 @@ export class ValidationHelper {
       return false
     }
 
-    return token.length >= 100 && /^[A-Za-z0-9:_-]+$/.test(token)
+    return token.length >= 30 && /^[A-Za-z0-9:_-]+$/.test(token)
   }
 
+  /**
+   * Validate FCM token WITHOUT sending test notifications
+   *
+   * IMPORTANT: This function only validates token format, NOT Firebase validity.
+   * Invalid tokens will be caught when actually sending notifications.
+   *
+   * Why this approach?
+   * 1. Firebase Admin SDK doesn't have a dry-run API that doesn't send notifications
+   * 2. Sending test notifications bothers users with "Test message" notifications
+   * 3. Format validation + error handling on real sends is sufficient
+   * 4. Tokens are synced from mobile app, so they should be current
+   *
+   * @param token - FCM token to validate
+   * @param fcm - Firebase Messaging instance (not used, kept for API compatibility)
+   * @returns true if token format is valid (actual validity checked on send)
+   */
   static async validateFCMTokenWithFirebase(token: string, fcm: any): Promise<boolean> {
-    try {
-      try {
-        const auth = getAuth()
-        await auth.verifyIdToken(token)
-        return true
-      } catch (idTokenError) {
-        const testMessage = {
-          token: token,
-          notification: {
-            title: 'Test',
-            body: 'Test message for token validation',
-          },
-          data: {
-            test: 'true',
-          },
-        }
+    // Only validate format - don't send test notifications!
+    // Real validation happens when we try to send actual notifications
+    // Invalid tokens will fail with specific error codes that we handle
 
-        try {
-          await fcm.send(testMessage, true)
-          return true
-        } catch (fcmError) {
-          if (
-            fcmError.code === 'messaging/registration-token-not-registered' ||
-            fcmError.code === 'messaging/invalid-registration-token' ||
-            fcmError.code === 'messaging/invalid-argument'
-          ) {
-            return false
-          } else {
-            return true
-          }
-        }
-      }
-    } catch (error) {
-      if (
-        error.code === 'auth/invalid-id-token' ||
-        error.code === 'auth/id-token-expired' ||
-        error.code === 'auth/id-token-revoked' ||
-        error.code === 'messaging/invalid-argument' ||
-        error.code === 'messaging/registration-token-not-registered' ||
-        error.code === 'messaging/invalid-registration-token'
-      ) {
-        return false
-      }
-
-      return true
+    if (!this.isValidFCMTokenFormat(token)) {
+      console.warn(
+        `❌ [validateFCMTokenWithFirebase] Invalid token format: ${token.substring(0, 30)}...`,
+      )
+      return false
     }
+
+    // Token format is valid - assume it's valid
+    // If it's actually invalid, Firebase will return an error when we try to send
+    // This prevents users from receiving annoying "Test message" notifications
+    console.log(
+      `✅ [validateFCMTokenWithFirebase] Token format valid: ${token.substring(0, 30)}...`,
+    )
+    return true
   }
 
   static validateFirebaseMessageId(response: string): number {
@@ -404,33 +522,102 @@ export class ValidationHelper {
   static updateUserFields(user: any, updates: any): boolean {
     let hasChanges = false
 
-    if (updates.fcmToken !== undefined && user.fcmToken !== updates.fcmToken) {
-      user.fcmToken = updates.fcmToken
-      hasChanges = true
+    if (updates.fcmToken !== undefined) {
+      const currentToken = user.fcmToken || ''
+      const newToken = updates.fcmToken || ''
+      const tokensAreDifferent = currentToken.trim() !== newToken.trim()
+
+      // If existing token is valid and new token is empty/short, PRESERVE existing token
+      // This prevents overwriting with null or empty if we already have good data
+      if (currentToken.length >= 30 && (newToken === '' || newToken.length < 30)) {
+        console.log(
+          `⚠️ [updateUserFields] PRESERVING valid existing token for user ${user.accountId}. Incoming token is empty or too short: "${newToken}"`,
+        )
+      } else {
+        // Always update fcmToken when provided and valid (or if we didn't have one before)
+        // This ensures database stays in sync with mobile app and updates the timestamp
+        user.fcmToken = updates.fcmToken
+        hasChanges = true
+      }
+
+      if (hasChanges) {
+        if (tokensAreDifferent) {
+          console.log(`🔄 [updateUserFields] fcmToken CHANGED for user ${user.accountId}:`, {
+            current: currentToken
+              ? `${currentToken.substring(0, 30)}... (length: ${currentToken.length})`
+              : 'EMPTY',
+            new: newToken ? `${newToken.substring(0, 30)}... (length: ${newToken.length})` : 'EMPTY',
+            willUpdate: true,
+          })
+          hasChanges = true
+        } else {
+          console.log(
+            `🔄 [updateUserFields] fcmToken SAME for user ${user.accountId}, but updating anyway to sync timestamp:`,
+            {
+              token: newToken
+                ? `${newToken.substring(0, 30)}... (length: ${newToken.length})`
+                : 'EMPTY',
+              reason: 'Ensuring database stays in sync with mobile app',
+            },
+          )
+          // Still mark as changed to ensure save happens and updatedAt timestamp is updated
+          hasChanges = true
+        }
+      }
     }
 
     if (updates.platform !== undefined) {
       const platformValidation = this.validatePlatform(updates.platform)
-      if (platformValidation.isValid && user.platform !== platformValidation.normalizedValue) {
-        user.platform = platformValidation.normalizedValue
+      if (platformValidation.isValid) {
+        const normalizedPlatform = platformValidation.normalizedValue
+        if (user.platform !== normalizedPlatform) {
+          console.log(
+            `🔄 [updateUserFields] platform changed for user ${user.accountId}: ${user.platform || 'NULL'
+            } -> ${normalizedPlatform}`,
+          )
+        }
+        // Always update to ensure sync, even if same value
+        user.platform = normalizedPlatform
         hasChanges = true
       }
     }
 
     if (updates.language !== undefined) {
       const languageValidation = this.validateLanguage(updates.language)
-      if (languageValidation.isValid && user.language !== languageValidation.normalizedValue) {
-        user.language = languageValidation.normalizedValue
+      if (languageValidation.isValid) {
+        const normalizedLanguage = languageValidation.normalizedValue
+        if (user.language !== normalizedLanguage) {
+          console.log(
+            `🔄 [updateUserFields] language changed for user ${user.accountId}: ${user.language || 'NULL'
+            } -> ${normalizedLanguage}`,
+          )
+        }
+        // Always update to ensure sync, even if same value
+        user.language = normalizedLanguage
         hasChanges = true
       }
     }
 
-    if (updates.participantCode !== undefined && user.participantCode !== updates.participantCode) {
+    if (updates.participantCode !== undefined) {
+      if (user.participantCode !== updates.participantCode) {
+        console.log(
+          `🔄 [updateUserFields] participantCode changed for user ${user.accountId}: ${user.participantCode || 'NULL'
+          } -> ${updates.participantCode}`,
+        )
+      }
+      // Always update to ensure sync, even if same value
       user.participantCode = updates.participantCode
       hasChanges = true
     }
 
-    if (updates.bakongPlatform !== undefined && user.bakongPlatform !== updates.bakongPlatform) {
+    if (updates.bakongPlatform !== undefined) {
+      if (user.bakongPlatform !== updates.bakongPlatform) {
+        console.log(
+          `🔄 [updateUserFields] bakongPlatform changed for user ${user.accountId}: ${user.bakongPlatform || 'NULL'
+          } -> ${updates.bakongPlatform}`,
+        )
+      }
+      // Always update to ensure sync, even if same value
       user.bakongPlatform = updates.bakongPlatform
       hasChanges = true
     }

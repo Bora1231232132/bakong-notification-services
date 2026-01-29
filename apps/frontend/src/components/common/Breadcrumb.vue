@@ -1,14 +1,22 @@
-﻿<template>
-  <div v-if="shouldShowBreadcrumb" class="breadcrumb">
-    <template v-for="(item, index) in breadcrumbs" :key="item.path">
+<template>
+  <div v-if="shouldShowBreadcrumb && breadcrumbs.length > 0" class="breadcrumb">
+    <template v-for="(item, index) in breadcrumbs" :key="item.path || index">
       <span
         class="breadcrumb-item"
-        :class="{ active: index === breadcrumbs.length - 1 }"
+        :class="{
+          active: index === breadcrumbs.length - 1,
+          clickable: isClickable(item, index),
+        }"
         @click="handleClick(item, index)"
       >
         {{ item.label }}
       </span>
-      <span v-if="index < breadcrumbs.length - 1" class="breadcrumb-separator"> / </span>
+      <img
+        v-if="index < breadcrumbs.length - 1"
+        :src="chevronIcon"
+        alt=""
+        class="breadcrumb-separator"
+      />
     </template>
   </div>
 </template>
@@ -16,10 +24,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import chevronIcon from '@/assets/image/chevron--right_16.svg'
 
 interface BreadcrumbItem {
   label: string
-  path: string
+  path?: string
+  name?: string
   clickable?: boolean
 }
 
@@ -35,64 +45,88 @@ const props = withDefaults(defineProps<Props>(), {
 const router = useRouter()
 const route = useRoute()
 
-const mainSidebarPages = ['/', '/notifications', '/templates', '/users', '/schedule']
+interface RouteMeta {
+  breadcrumb?: {
+    label: string
+    parent?: {
+      name: string
+      label: string
+    }
+  }
+}
 
 const shouldShowBreadcrumb = computed(() => {
-  const currentPath = route.path
-  return !mainSidebarPages.includes(currentPath)
+  if (!props.autoGenerate && props.items) {
+    return props.items.length > 0
+  }
+
+  const matched = route.matched
+  const currentRoute = matched[matched.length - 1]
+  const meta = currentRoute?.meta as RouteMeta | undefined
+
+  return meta?.breadcrumb !== undefined
 })
 
-const autoBreadcrumbs = computed(() => {
-  const pathSegments = route.path.split('/').filter((segment) => segment)
+const generateBreadcrumbs = computed(() => {
   const breadcrumbs: BreadcrumbItem[] = []
-  let currentPath = ''
+  const matched = route.matched
+  const addedParents = new Set<string>()
 
-  for (let i = 0; i < pathSegments.length; i++) {
-    currentPath += `/${pathSegments[i]}`
-    let label = pathSegments[i]
-    let clickable = true
+  for (let i = 0; i < matched.length; i++) {
+    const routeRecord = matched[i]
+    const meta = routeRecord.meta as RouteMeta | undefined
 
-    switch (pathSegments[i]) {
-      case 'templates':
-        label = 'Templates'
-        break
-      case 'notifications':
-        label = 'Notifications'
-        break
-      case 'users':
-        label = 'Users'
-        break
-      case 'create':
-        label = 'Create New'
-        clickable = false
-        break
-      default:
-        if (/^\d+$/.test(pathSegments[i])) {
-          label = 'Detail'
-          clickable = false
-        } else {
-          label = pathSegments[i].charAt(0).toUpperCase() + pathSegments[i].slice(1)
-        }
+    if (!meta?.breadcrumb) {
+      continue
     }
-    breadcrumbs.push({
-      label,
-      path: currentPath,
-      clickable,
-    })
+
+    const breadcrumbConfig = meta.breadcrumb
+
+    if (breadcrumbConfig.parent && !addedParents.has(breadcrumbConfig.parent.name)) {
+      const parentItem: BreadcrumbItem = {
+        label: breadcrumbConfig.parent.label,
+        name: breadcrumbConfig.parent.name,
+        clickable: true,
+      }
+      breadcrumbs.push(parentItem)
+      addedParents.add(breadcrumbConfig.parent.name)
+    }
+
+    const isLast = i === matched.length - 1
+    const item: BreadcrumbItem = {
+      label: breadcrumbConfig.label,
+      name: routeRecord.name as string,
+      clickable: !isLast,
+    }
+
+    breadcrumbs.push(item)
   }
 
   return breadcrumbs
 })
 
 const breadcrumbs = computed(() => {
-  return props.items || autoBreadcrumbs.value
+  if (props.items) {
+    return props.items
+  }
+  return generateBreadcrumbs.value
 })
 
+const isClickable = (item: BreadcrumbItem, index: number): boolean => {
+  const isLast = index === breadcrumbs.value.length - 1
+  return !isLast && item.clickable === true && (!!item.name || !!item.path)
+}
+
 const handleClick = (item: BreadcrumbItem, index: number) => {
-  if (index === breadcrumbs.value.length - 1 || !item.clickable) {
+  if (index === breadcrumbs.value.length - 1 || !item.clickable || !item.name) {
     return
   }
-  router.push(item.path)
+
+  try {
+    router.push({ name: item.name })
+  } catch (error) {
+    console.error('Navigation error:', error)
+  }
 }
 </script>
 
@@ -101,28 +135,36 @@ const handleClick = (item: BreadcrumbItem, index: number) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-top: 4px;
   font-size: 14px;
+  color: #666;
 }
 
 .breadcrumb-item {
   color: #666;
-  cursor: pointer;
+  cursor: default;
   transition: color 0.2s ease;
 }
 
-.breadcrumb-item:not(.active):hover {
-  color: #409eff;
+.breadcrumb-item.clickable {
+  cursor: pointer;
+}
+
+.breadcrumb-item.clickable:not(.active):hover {
+  color: #001346;
 }
 
 .breadcrumb-item.active {
-  color: #333;
-  font-weight: 500;
+  color: #001346;
+  font-weight: 600;
   cursor: default;
 }
 
 .breadcrumb-separator {
-  color: #ccc;
+  width: 16px;
+  height: 16px;
   user-select: none;
+  display: inline-block;
+  vertical-align: middle;
 }
 </style>

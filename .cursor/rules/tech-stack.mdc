@@ -1,0 +1,398 @@
+---
+description: Complete technology stack, dependency versions, and best practices for Bakong Notification Service
+globs: **/*
+alwaysApply: true
+---
+
+# Technology Stack & Dependencies
+
+This document outlines the complete technology stack, dependency versions, and best practices for the Bakong Notification Service project.
+
+## Runtime & Language Requirements
+
+### Node.js
+- **Backend Requirement**: `>=16.0.0` (as specified in root `package.json`)
+- **Frontend Requirement**: `^20.19.0 || >=22.12.0` (as specified in `apps/frontend/package.json`)
+- **Recommended**: Use Node.js 20.x LTS or 22.x for frontend, Node.js 18.x LTS or 20.x LTS for backend
+- **Best Practice**: 
+  - Use LTS versions in production
+  - Frontend requires Node 20.19+ or 22.12+ due to modern tooling (Vite 7, Tailwind CSS 4)
+  - Consider aligning backend to Node 20+ for consistency
+
+### npm
+- **Requirement**: `>=8.0.0`
+- **Recommended**: npm 9.x or 10.x
+- **Best Practice**: Use npm workspaces (already configured) for monorepo management
+
+### TypeScript
+- **Backend**: `^4.7.4` (TypeScript 4.7)
+- **Frontend**: `~5.8.0` (TypeScript 5.8)
+- **Shared Package**: `^5.0.0` (TypeScript 5.0)
+- **Best Practices**:
+  - **Backend**: TypeScript 4.7 is stable but consider upgrading to 5.x for better performance and features
+  - **Frontend**: TypeScript 5.8 is modern and recommended
+  - **Note**: Backend uses `strict: false` - consider enabling strict mode gradually
+  - Use `experimentalDecorators: true` and `emitDecoratorMetadata: true` for NestJS decorators
+  - Target ES2020 for modern JavaScript features
+
+## Backend Stack (NestJS)
+
+### Core Framework
+- **@nestjs/common**: `11.1.9`
+- **@nestjs/core**: `11.1.9`
+- **@nestjs/platform-express**: `11.1.9`
+- **@nestjs/config**: `4.0.2`
+- **Version**: NestJS 11.x (Latest stable)
+- **Best Practices**:
+  - NestJS 11 is the latest major version with excellent TypeScript support
+  - Use dependency injection pattern consistently
+  - Follow module-based architecture (already implemented)
+  - Use `@Injectable()` decorator for all services
+  - Leverage `@nestjs/config` for environment configuration (already in use)
+
+### Authentication & Security
+- **@nestjs/jwt**: `11.0.1`
+- **@nestjs/passport**: `11.0.5`
+- **passport**: `^0.6.0`
+- **passport-jwt**: `^4.0.0`
+- **passport-local**: `^1.0.0`
+- **bcrypt**: `^5.1.0`
+- **helmet**: `^6.0.1`
+- **Best Practices**:
+  - Use JWT for stateless authentication (already implemented)
+  - Use bcrypt for password hashing (cost factor 10-12 recommended)
+  - Helmet provides security headers - ensure it's enabled in production
+  - Store JWT secrets in environment variables (not in code)
+  - Use refresh tokens for long-lived sessions
+
+### Database & ORM
+- **@nestjs/typeorm**: `11.0.0`
+- **typeorm**: `^0.3.10` (TypeORM 0.3.x)
+- **pg**: `^8.8.0` (PostgreSQL driver)
+- **Database**: PostgreSQL
+- **Best Practices**:
+  - **TypeORM 0.3.x**: This is a major version with breaking changes from 0.2.x
+    - Use DataSource instead of Connection (already implemented)
+    - Entity decorators remain the same
+    - Migration API has changed - use new migration commands
+  - **PostgreSQL**: 
+    - Use connection pooling (TypeORM handles this)
+    - Use transactions for multi-step operations
+    - Use migrations instead of `synchronize: true` in production
+    - Index frequently queried columns
+  - **Entity Pattern**: 
+    - Use `@Entity()` decorator
+    - Use `@PrimaryGeneratedColumn()` or `@PrimaryColumn()`
+    - Use `@Column()` with appropriate types
+    - Use relations (`@OneToMany`, `@ManyToOne`, etc.) for associations
+
+### Validation & Transformation
+- **class-validator**: `^0.14.2`
+- **class-transformer**: `^0.5.1`
+- **Best Practices**:
+  - Use DTOs with `class-validator` decorators for request validation
+  - Use `ValidationPipe` globally (already implemented)
+  - Use `class-transformer` for transforming plain objects to class instances
+  - Validate at the controller level, not in services
+
+### Scheduling & Background Jobs
+- **@nestjs/schedule**: `6.0.1`
+- **Best Practices**:
+  - Use `@Cron()` decorator for scheduled tasks
+  - Use `@Interval()` for periodic tasks
+  - Consider using a job queue (Bull/BullMQ) for complex background processing
+  - Log scheduled task executions
+
+### Health Checks
+- **@nestjs/terminus**: `11.0.0`
+- **Best Practices**:
+  - Implement health check endpoints for monitoring
+  - Check database connectivity
+  - Check external service dependencies (Firebase, etc.)
+
+### HTTP & API
+- **express**: `^5.1.0` (Express 5.x)
+- **axios**: `1.13.2`
+- **body-parser**: `^2.2.0`
+- **Best Practices**:
+  - **Express 5.x**: Major version with breaking changes
+    - Some middleware APIs have changed
+    - Better TypeScript support
+    - Ensure all middleware is compatible
+  - Use axios for external API calls (already implemented)
+  - Configure CORS properly for production
+  - Use rate limiting for API endpoints
+
+### Push Notifications
+- **firebase-admin**: `^13.6.0`
+- **Best Practices**:
+  - Store Firebase credentials securely (use environment variables)
+  - Handle Firebase errors gracefully
+  - Implement retry logic for failed notifications
+  - Batch notifications when possible
+
+### Utilities
+- **moment**: `^2.29.4`
+- **lodash**: `^4.17.21`
+- **uuid**: `^9.0.0`
+- **sharp**: `^0.34.4` (Image processing)
+- **Best Practices**:
+  - **Moment.js**: Consider migrating to `date-fns` or `dayjs` (moment is in maintenance mode)
+  - Use lodash sparingly - prefer native JavaScript when possible
+  - Use UUID v4 for generating unique IDs
+  - Sharp is excellent for image processing - use it for resizing/optimization
+
+### Testing
+- **@nestjs/testing**: `^11.1.9`
+- **jest**: `28.1.3`
+- **ts-jest**: `28.0.8`
+- **supertest**: `^6.1.3`
+- **Best Practices**:
+  - Write unit tests for services
+  - Write integration tests for controllers
+  - Use test database for E2E tests
+  - Mock external dependencies (Firebase, etc.)
+
+### Development Tools
+- **ts-node-dev**: `^2.0.0` (Hot reload)
+- **cross-env**: `^10.0.0` (Cross-platform env vars)
+- **tsc-alias**: `^1.8.16` (Path alias resolution)
+- **tsconfig-paths**: `4.1.0`
+- **Best Practices**:
+  - Use `ts-node-dev` for development (already configured)
+  - Use `cross-env` for environment variables in scripts
+  - Configure path aliases in `tsconfig.json` (already done)
+
+## Frontend Stack (Vue 3)
+
+### Core Framework
+- **vue**: `^3.5.18` (Vue 3.5)
+- **vue-router**: `^4.5.1`
+- **pinia**: `^3.0.3`
+- **Best Practices**:
+  - **Vue 3.5**: Latest stable version with excellent performance
+    - Use Composition API with `<script setup>` syntax (already implemented)
+    - Use `defineProps`, `defineEmits` for component props/events
+    - Use `ref()` and `reactive()` for reactivity
+    - Use `computed()` for derived state
+  - **Vue Router 4.x**: 
+    - Use `useRouter()` and `useRoute()` composables
+    - Configure route guards for authentication
+  - **Pinia 3.x**: Modern state management
+    - Use stores for global state
+    - Use `defineStore()` for store definitions
+    - Prefer composables over stores when possible
+
+### Build Tool
+- **vite**: `^7.0.6` (Vite 7.x)
+- **@vitejs/plugin-vue**: `^6.0.1`
+- **Best Practices**:
+  - **Vite 7.x**: Latest major version with improved performance
+    - Requires Node 20.19+ or 22.12+
+    - Excellent HMR (Hot Module Replacement)
+    - Fast builds with esbuild
+  - Use Vite's environment variables (`import.meta.env`)
+  - Configure build optimizations for production
+  - Use code splitting for large applications
+
+### UI Framework
+- **element-plus**: `^2.8.0` (Element Plus 2.x)
+- **@element-plus/icons-vue**: `^2.3.2`
+- **lucide-vue-next**: `^0.545.0`
+- **Best Practices**:
+  - Element Plus 2.x is stable and well-maintained
+  - Use component library components consistently
+  - Customize theme via CSS variables
+  - Use icons from `@element-plus/icons-vue` or `lucide-vue-next`
+
+### Styling
+- **tailwindcss**: `^4.1.14` (Tailwind CSS 4.x)
+- **@tailwindcss/forms**: `^0.5.10`
+- **@tailwindcss/postcss**: `^4.1.14`
+- **postcss**: `^8.5.6`
+- **autoprefixer**: `^10.4.21`
+- **Best Practices**:
+  - **Tailwind CSS 4.x**: Major version with new features
+    - Requires Node 20.19+ or 22.12+
+    - New CSS-first configuration
+    - Improved performance
+  - Use utility classes for styling
+  - Create custom components for repeated patterns
+  - Use `@apply` sparingly (prefer utility classes)
+
+### TypeScript
+- **typescript**: `~5.8.0`
+- **vue-tsc**: `^3.0.4`
+- **@vue/tsconfig**: `^0.7.0`
+- **Best Practices**:
+  - Use TypeScript 5.8 for best Vue 3 support
+  - Use `vue-tsc` for type checking
+  - Define component props with TypeScript interfaces
+  - Use generic types for composables
+
+### Testing
+- **vitest**: `^3.2.4`
+- **@vue/test-utils**: `^2.4.6`
+- **jsdom**: `^26.1.0`
+- **Best Practices**:
+  - Use Vitest for unit testing (faster than Jest)
+  - Use `@vue/test-utils` for component testing
+  - Mock API calls in tests
+  - Test user interactions, not implementation details
+
+### Code Quality
+- **eslint**: `^9.31.0`
+- **@typescript-eslint/eslint-plugin**: `^8.46.4`
+- **@typescript-eslint/parser**: `^8.46.4`
+- **eslint-plugin-vue**: `~10.3.0`
+- **prettier**: `3.6.2`
+- **Best Practices**:
+  - Use ESLint 9.x with flat config (new format)
+  - Configure TypeScript ESLint rules
+  - Use Prettier for code formatting
+  - Run linting in CI/CD pipeline
+
+### HTTP Client
+- **axios**: `^1.13.2`
+- **Best Practices**:
+  - Create axios instance with base URL and interceptors
+  - Handle errors consistently
+  - Use request/response interceptors for auth tokens
+  - Implement retry logic for failed requests
+
+## Shared Package
+
+### Dependencies
+- **typescript**: `^5.0.0`
+- **class-validator**: `^0.14.0`
+- **class-transformer**: `^0.5.1`
+- **Best Practices**:
+  - Keep shared package lightweight
+  - Only include code used by both frontend and backend
+  - Use TypeScript 5.x for modern features
+  - Export types, enums, and utilities
+
+## Database
+
+### PostgreSQL
+- **Driver**: `pg` `^8.8.0`
+- **ORM**: TypeORM `^0.3.10`
+- **Best Practices**:
+  - Use PostgreSQL 12+ (preferably 14+ or 15+)
+  - Use connection pooling (TypeORM handles this)
+  - Use prepared statements (TypeORM does this automatically)
+  - Use transactions for data consistency
+  - Use migrations for schema changes (never use `synchronize: true` in production)
+  - Create indexes on foreign keys and frequently queried columns
+  - Use ENUM types for fixed value sets (already implemented)
+  - Use UUID extension for unique IDs (already configured)
+
+## DevOps & Infrastructure
+
+### Docker
+- **docker-compose**: Multiple environment configurations
+- **Best Practices**:
+  - Use multi-stage builds for smaller images
+  - Use `.dockerignore` to exclude unnecessary files
+  - Use health checks in docker-compose
+  - Use environment-specific compose files
+
+### Version Control
+- **Git**: Standard version control
+- **Best Practices**:
+  - Use semantic versioning
+  - Create feature branches
+  - Use meaningful commit messages
+  - Keep `package-lock.json` in version control
+
+## Dependency Management Best Practices
+
+### Version Pinning
+- **Current Strategy**: Mix of exact versions and ranges
+- **Recommendations**:
+  - Pin major versions for critical dependencies (NestJS, Vue, TypeORM)
+  - Use ranges for patch/minor updates (e.g., `^11.1.9` allows 11.1.x)
+  - Pin exact versions for security-critical packages
+  - Regularly update dependencies (use `npm audit`)
+
+### Security
+- **Tools**: `npm audit`, `npm audit fix`
+- **Best Practices**:
+  - Run `npm audit` regularly
+  - Fix high/critical vulnerabilities immediately
+  - Keep dependencies up to date
+  - Review dependency licenses
+
+### Monorepo Management
+- **Workspace**: npm workspaces (already configured)
+- **Best Practices**:
+  - Use workspace protocol for internal packages (`file:../packages/shared`)
+  - Build shared packages before dependent packages
+  - Use consistent versions across workspaces when possible
+  - Run scripts from root when possible
+
+## Version Compatibility Matrix
+
+| Component | Version | Node.js | Notes |
+|-----------|---------|---------|-------|
+| NestJS | 11.1.9 | 18+ | Latest stable |
+| TypeORM | 0.3.10 | 16+ | Major version, breaking changes from 0.2.x |
+| Express | 5.1.0 | 18+ | Major version, breaking changes from 4.x |
+| Vue | 3.5.18 | 18+ | Latest stable |
+| Vite | 7.0.6 | 20.19+ or 22.12+ | Requires modern Node.js |
+| Tailwind CSS | 4.1.14 | 20.19+ or 22.12+ | Requires modern Node.js |
+| TypeScript (Backend) | 4.7.4 | 16+ | Consider upgrading to 5.x |
+| TypeScript (Frontend) | 5.8.0 | 18+ | Latest stable |
+
+## Migration Recommendations
+
+### High Priority
+1. **Backend TypeScript**: Upgrade from 4.7.4 to 5.x for better performance
+2. **Moment.js**: Migrate to `date-fns` or `dayjs` (moment is in maintenance mode)
+3. **Node.js Alignment**: Align backend to Node 20+ for consistency with frontend
+
+### Medium Priority
+1. **Express 5.x**: Review middleware compatibility
+2. **TypeORM**: Stay on 0.3.x but review migration patterns
+3. **Dependency Updates**: Regularly update patch/minor versions
+
+### Low Priority
+1. **Lodash**: Gradually replace with native JavaScript where possible
+2. **Code Style**: Consider enabling TypeScript strict mode gradually
+
+## Environment-Specific Considerations
+
+### Development
+- Use hot reload (`ts-node-dev` for backend, Vite HMR for frontend)
+- Enable detailed logging
+- Use development database
+- Enable CORS for local development
+
+### Staging/SIT
+- Use production-like configuration
+- Enable error tracking
+- Use staging database
+- Test with production-like data volumes
+
+### Production
+- Disable `synchronize` in TypeORM (use migrations)
+- Enable security headers (Helmet)
+- Use production database with proper backups
+- Enable rate limiting
+- Use HTTPS only
+- Minimize logging verbosity
+- Enable compression
+
+## Additional Resources
+
+- [NestJS Documentation](https://docs.nestjs.com/)
+- [Vue 3 Documentation](https://vuejs.org/)
+- [TypeORM Documentation](https://typeorm.io/)
+- [Vite Documentation](https://vitejs.dev/)
+- [Tailwind CSS Documentation](https://tailwindcss.com/)
+- [Element Plus Documentation](https://element-plus.org/)
+
+---
+
+**Last Updated**: Auto-updated when dependencies change
+**Maintenance**: Review and update this document when major dependencies are upgraded

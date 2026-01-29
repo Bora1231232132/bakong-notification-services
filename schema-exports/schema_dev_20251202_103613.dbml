@@ -1,0 +1,87 @@
+﻿Table bakong_user {
+  accountId varchar(32) [not null]
+  fcmToken varchar(255) [not null]
+  bakongPlatform varchar
+  id bigint [not null] [default: uto]
+  participantCode varchar(32)
+  platform varchar(32)
+  language varchar(2)
+  createdAt timestamp [not null] [default: "now()"]
+  updatedAt timestamp [default: "now()"]
+}
+
+Table category_type {
+  id int [not null]
+  name varchar(255) [not null]
+  icon bytea [not null]
+  mimeType varchar(255)
+  originalFileName varchar(255)
+  createdAt timestamp [not null] [default: "now()"]
+  updatedAt timestamp
+  deletedAt timestamp
+}
+
+Table image {
+  fileId varchar(255) [not null]
+  file bytea [not null]
+  originalFileName varchar(255)
+  id bigint [not null] [default: uto]
+  mimeType varchar(255) [not null]
+  createdAt timestamp [not null] [default: "now()"]
+}
+
+Table notification {
+  id bigint [not null] [default: uto]
+  accountId varchar(32) [not null]
+  fcmToken varchar(255) [not null]
+  templateId int [not null]
+  firebaseMessageId bigint
+  sendCount int [not null] [default: "1"]
+  createdAt timestamp [not null] [default: "now()"]
+}
+
+Table template {
+  id int [not null] [default: uto]
+  bakongPlatform varchar
+  sendType varchar [not null]
+  priority int [not null] [default: "0"]
+  isSent bool [not null] [default: "false"]
+  sendSchedule timestamptz
+  createdAt timestamptz [not null] [default: "now()"]
+  updatedAt timestamptz [not null] [default: "now()"]
+  deletedAt timestamptz
+  createdBy varchar
+  updatedBy varchar
+  publishedBy varchar
+  platforms varchar [not null]
+  notificationType varchar [not null]
+  sendInterval json
+  categoryTypeId int
+}
+
+Table template_translation {
+  id int [not null] [default: uto]
+  templateId int [not null]
+  language varchar [not null]
+  title varchar(1024) [not null]
+  content text [not null]
+  imageId varchar(255)
+  linkPreview text
+  createdAt timestamp [not null] [default: "now()"]
+  updatedAt timestamp [not null] [default: "now()"]
+}
+
+Table user {
+  id int [not null] [default: uto]
+  username varchar(255) [not null]
+  password varchar(255) [not null]
+  displayName varchar(255) [not null]
+  failLoginAttempt int [not null] [default: "0"]
+  role varchar [not null]
+  createdAt timestamp [not null] [default: "now()"]
+  updatedAt timestamp [not null] [default: "now()"]
+  deletedAt timestamp
+}
+
+Ref: template_translation.imageId > image.fileId
+Ref: template.categoryTypeId > category_type.id

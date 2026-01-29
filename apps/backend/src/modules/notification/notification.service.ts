@@ -6,6 +6,7 @@ import { Repository, Between } from 'typeorm'
 import { Messaging } from 'firebase-admin/messaging'
 import { Template } from 'src/entities/template.entity'
 import { TemplateTranslation } from 'src/entities/template-translation.entity'
+import { CategoryType } from 'src/entities/category-type.entity'
 import { ValidationHelper } from 'src/common/util/validation.helper'
 import { BaseFunctionHelper } from 'src/common/util/base-function.helper'
 import { FirebaseManager } from 'src/common/services/firebase-manager.service'
@@ -30,58 +31,317 @@ export class NotificationService {
     private readonly templateService: TemplateService,
     private readonly imageService: ImageService,
     private readonly baseFunctionHelper: BaseFunctionHelper,
-  ) {}
+  ) { }
 
   /**
    * Get Firebase Messaging instance for a specific Bakong platform
    * Falls back to default if platform is not specified
    */
-  private getFCM(bakongPlatform?: string | null): Messaging | null {
-    return FirebaseManager.getMessaging(bakongPlatform)
+  /**
+   * Test FCM token validation - sends a test notification to verify token validity
+   * This is useful for debugging token issues
+   */
+  async testFCMToken(
+    token: string,
+    bakongPlatform?: BakongApp | string | null,
+  ): Promise<{
+    isValid: boolean
+    formatValid: boolean
+    firebaseValid: boolean
+    error?: string
+    errorCode?: string
+    messageId?: string
+  }> {
+    console.log('🧪 [testFCMToken] Starting token test...')
+    console.log('🧪 [testFCMToken] Token:', token ? `${token.substring(0, 30)}...` : 'NO TOKEN')
+    console.log('🧪 [testFCMToken] Platform:', bakongPlatform || 'DEFAULT')
+
+    // Step 1: Format validation
+    const formatValid = ValidationHelper.isValidFCMTokenFormat(token)
+    console.log('🧪 [testFCMToken] Format validation:', formatValid ? '✅ PASS' : '❌ FAIL')
+
+    if (!formatValid) {
+      return {
+        isValid: false,
+        formatValid: false,
+        firebaseValid: false,
+        error: 'Token format is invalid',
+        errorCode: 'INVALID_FORMAT',
+      }
+    }
+
+    // Step 2: Get FCM instance
+    const fcm = this.getFCM(bakongPlatform)
+    if (!fcm) {
+      return {
+        isValid: false,
+        formatValid: true,
+        firebaseValid: false,
+        error: 'Firebase FCM is not initialized',
+        errorCode: 'FCM_NOT_INITIALIZED',
+      }
+    }
+
+    // Step 3: Try to send a test notification
+    // This will fail if token is invalid
+    const testMessage = {
+      token: token,
+      notification: {
+        title: '🧪 Token Test',
+        body: 'This is a test notification to validate your token',
+      },
+      data: {
+        test: 'true',
+        timestamp: new Date().toISOString(),
+      },
+    }
+
+    try {
+      console.log('🧪 [testFCMToken] Attempting to send test notification...')
+      const messageId = await fcm.send(testMessage)
+      console.log('✅ [testFCMToken] Token is VALID - notification sent successfully!')
+      console.log('✅ [testFCMToken] Message ID:', messageId)
+
+      return {
+        isValid: true,
+        formatValid: true,
+        firebaseValid: true,
+        messageId: String(messageId),
+      }
+    } catch (error: any) {
+      const errorCode = error.code || 'UNKNOWN_ERROR'
+      const errorMessage = error.message || 'Unknown error'
+
+      console.error('❌ [testFCMToken] Token is INVALID:', {
+        errorCode,
+        errorMessage,
+      })
+
+      // Check for specific invalid token errors
+      const isInvalidToken =
+        errorCode === 'messaging/registration-token-not-registered' ||
+        errorCode === 'messaging/invalid-registration-token' ||
+        errorCode === 'messaging/invalid-argument'
+
+      return {
+        isValid: false,
+        formatValid: true,
+        firebaseValid: !isInvalidToken,
+        error: errorMessage,
+        errorCode: errorCode,
+      }
+    }
   }
 
-  async sendWithTemplate(template: Template): Promise<number> {
-    console.log('📤 [sendWithTemplate] Starting to send notification for template:', template.id)
-    console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform)
+  private getFCM(bakongPlatform?: string | null): Messaging | null {
+    const fcm = FirebaseManager.getMessaging(bakongPlatform)
+    if (fcm) {
+      const appName = bakongPlatform ? FirebaseManager.getAppName(bakongPlatform) : 'DEFAULT'
+      const serviceAccountPath = bakongPlatform
+        ? FirebaseManager.getServiceAccountPath(bakongPlatform)
+        : null
+      console.log(
+        `🔥 [getFCM] Using Firebase app: ${appName} for platform: ${bakongPlatform || 'DEFAULT'}`,
+      )
+      console.log(`🔥 [getFCM] Service account path: ${serviceAccountPath || 'Using default'}`)
+
+      // Try to read and log project_id from service account
+      if (serviceAccountPath && require('fs').existsSync(serviceAccountPath)) {
+        try {
+          const fs = require('fs')
+          const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'))
+          console.log(
+            `🔥 [getFCM] Firebase Project ID: ${serviceAccount.project_id || 'NOT FOUND'}`,
+          )
+          console.log(
+            `🔥 [getFCM] Service Account Email: ${serviceAccount.client_email || 'NOT FOUND'}`,
+          )
+        } catch (e: any) {
+          console.warn(`⚠️ [getFCM] Could not read service account file: ${e.message}`)
+        }
+      }
+    } else {
+      console.error(
+        `❌ [getFCM] No FCM instance available for platform: ${bakongPlatform || 'DEFAULT'}`,
+      )
+    }
+    return fcm
+  }
+
+  async sendWithTemplate(
+    template: Template,
+    accountIdList?: string[],
+  ): Promise<{
+    successfulCount: number
+    failedCount: number
+    failedUsers?: string[]
+    failedDueToInvalidTokens?: boolean
+  }> {
+    console.log('📤 [sendWithTemplate] ========== STARTING SEND PROCESS ==========')
+    console.log('📤 [sendWithTemplate] Template ID:', template.id)
+    console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform, `(type: ${typeof template.bakongPlatform})`)
+    console.log('📤 [sendWithTemplate] Template created at:', template.createdAt)
+    console.log('📤 [sendWithTemplate] Template has translations:', template.translations?.length || 0)
+    if (template.translations && template.translations.length > 0) {
+      template.translations.forEach((t, idx) => {
+        console.log(`📤 [sendWithTemplate] Translation ${idx + 1}:`, {
+          language: t.language,
+          titleLength: t.title?.length || 0,
+          contentLength: t.content?.length || 0,
+          titlePreview: t.title ? `${t.title.substring(0, 50)}...` : 'NO TITLE',
+        })
+      })
+    }
 
     if (!template.translations?.length) {
       console.warn('⚠️ [sendWithTemplate] No translations found for template:', template.id)
-      return 0
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
-    // Parse platforms - handle both array and JSON string formats
-    let platformsArray: string[] = []
-    if (Array.isArray(template.platforms)) {
-      platformsArray = template.platforms
-    } else if (typeof template.platforms === 'string') {
-      try {
-        platformsArray = JSON.parse(template.platforms)
-      } catch (e) {
-        console.warn('⚠️ [sendWithTemplate] Failed to parse platforms JSON, using default ALL:', e)
-        platformsArray = ['ALL']
-      }
-    } else {
-      console.warn('⚠️ [sendWithTemplate] Platforms is not array or string, using default ALL')
-      platformsArray = ['ALL']
+    // Parse platforms using shared helper function
+    const platformsArray = ValidationHelper.parsePlatforms(template.platforms)
+
+    console.log('📤 [sendWithTemplate] Parsed platforms:', {
+      raw: template.platforms,
+      parsed: platformsArray,
+      type: typeof template.platforms,
+      isArray: Array.isArray(template.platforms),
+    })
+
+    // Normalize platforms and ensure they're valid Platform enum values
+    const normalizedPlatforms = platformsArray
+      .map((p) => ValidationHelper.normalizeEnum(p))
+      .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID') // Only allow valid platform values
+
+    if (normalizedPlatforms.length === 0) {
+      console.warn('⚠️ [sendWithTemplate] No valid platforms found, defaulting to ALL')
+      normalizedPlatforms.push('ALL')
     }
 
-    const normalizedPlatforms = platformsArray.map((p) => ValidationHelper.normalizeEnum(p))
     console.log('📤 [sendWithTemplate] Target platforms:', {
       raw: template.platforms,
       parsed: platformsArray,
       normalized: normalizedPlatforms,
     })
 
-    let users = await this.bkUserRepo.find()
-    console.log('📤 [sendWithTemplate] Total users in database:', users.length)
+    // Sync and normalize all users before checking availability
+    // This cleans up invalid tokens, normalizes platform/language values
+    // Note: This doesn't fetch NEW data from external sources - it only normalizes existing data
+    // New user data comes from mobile apps when they call /send or /inbox APIs
+    console.log('📤 [sendWithTemplate] Syncing and normalizing all users...')
+    const syncResult = await this.baseFunctionHelper.syncAllUsers()
+    console.log('📤 [sendWithTemplate] User sync complete:', {
+      totalUsers: syncResult.totalCount,
+      updatedUsers: syncResult.updatedCount,
+      invalidTokensCleaned: syncResult.invalidTokens,
+      updatedUserIds: syncResult.updatedIds?.slice(0, 10), // Log first 10 for debugging
+    })
+
+    // Query users from database again AFTER sync to ensure we have latest data
+    // Use QueryBuilder to ensure fresh data (no caching)
+    console.log('📤 [sendWithTemplate] Querying users from database again after sync (fresh query)...')
+    let users = await this.bkUserRepo
+      .createQueryBuilder('user')
+      .getMany()
+    console.log('📤 [sendWithTemplate] Total users fetched from database:', users.length)
+
+    // DEBUG: Log bakongPlatform values from database to check for NULL or mismatches
+    const bakongPlatformDebug: Record<string, number> = {}
+    const usersWithNullPlatform: string[] = []
+    users.forEach((user) => {
+      const platform = user.bakongPlatform || 'NULL'
+      bakongPlatformDebug[platform] = (bakongPlatformDebug[platform] || 0) + 1
+      if (!user.bakongPlatform) {
+        usersWithNullPlatform.push(user.accountId)
+      }
+    })
+    console.log('📤 [sendWithTemplate] DEBUG - BakongPlatform values from database:', bakongPlatformDebug)
+    if (usersWithNullPlatform.length > 0) {
+      console.warn('⚠️ [sendWithTemplate] DEBUG - Users with NULL bakongPlatform:', usersWithNullPlatform.slice(0, 10))
+    }
+
+    // Log specific users that were updated during sync for debugging
+    if (syncResult.updatedIds && syncResult.updatedIds.length > 0) {
+      const updatedUsers = users.filter((u) => syncResult.updatedIds.includes(u.accountId))
+      console.log('📤 [sendWithTemplate] Users that were updated during sync:', {
+        count: updatedUsers.length,
+        accountIds: updatedUsers.map((u) => u.accountId).slice(0, 10),
+        // Log token status for updated users
+        tokenStatus: updatedUsers.slice(0, 5).map((u) => ({
+          accountId: u.accountId,
+          hasToken: !!u.fcmToken?.trim(),
+          tokenLength: u.fcmToken?.length || 0,
+        })),
+      })
+    }
 
     // Filter by bakongPlatform if template has it
     if (template.bakongPlatform) {
       const beforeCount = users.length
-      users = users.filter((user) => user.bakongPlatform === template.bakongPlatform)
+
+      // Log bakongPlatform distribution BEFORE filtering for debugging
+      const bakongPlatformBreakdown: Record<string, number> = {}
+      const allUsersBeforeFilter = [...users] // Save copy before filtering
+      const usersWithTokensBeforeFilter: Array<{ accountId: string; bakongPlatform: string | null; fcmToken: string }> = []
+
+      users.forEach((user) => {
+        const platform = user.bakongPlatform || 'NULL'
+        bakongPlatformBreakdown[platform] = (bakongPlatformBreakdown[platform] || 0) + 1
+        if (user.fcmToken?.trim()) {
+          usersWithTokensBeforeFilter.push({
+            accountId: user.accountId,
+            bakongPlatform: user.bakongPlatform || null,
+            fcmToken: user.fcmToken.substring(0, 30) + '...',
+          })
+        }
+      })
+
+      console.log('📤 [sendWithTemplate] ========== BAKONGPLATFORM FILTERING DEBUG ==========')
+      console.log('📤 [sendWithTemplate] BakongPlatform distribution BEFORE filtering:', bakongPlatformBreakdown)
+      console.log('📤 [sendWithTemplate] Template bakongPlatform:', template.bakongPlatform, `(type: ${typeof template.bakongPlatform})`)
+      console.log('📤 [sendWithTemplate] Users with tokens BEFORE filtering:', usersWithTokensBeforeFilter.length)
+      if (usersWithTokensBeforeFilter.length > 0) {
+        console.log('📤 [sendWithTemplate] Sample users with tokens:', usersWithTokensBeforeFilter.slice(0, 5))
+      }
+
+      // Filter users by bakongPlatform (exact match)
+      // Normalize both values to ensure consistent comparison (handle string vs enum)
+      const templateBakongPlatform = String(template.bakongPlatform).toUpperCase()
+      const filteredOutUsers: Array<{ accountId: string; userPlatform: string | null; templatePlatform: string; hasToken: boolean }> = []
+
+      const filteredUsers = users.filter((user) => {
+        // Normalize user bakongPlatform for comparison
+        const userBakongPlatform = user.bakongPlatform ? String(user.bakongPlatform).toUpperCase() : null
+        const matches = userBakongPlatform === templateBakongPlatform
+
+        if (!matches) {
+          filteredOutUsers.push({
+            accountId: user.accountId,
+            userPlatform: user.bakongPlatform || null,
+            templatePlatform: template.bakongPlatform,
+            hasToken: !!user.fcmToken?.trim(),
+          })
+        }
+        return matches
+      })
+      users = filteredUsers
+
       console.log(
         `📤 [sendWithTemplate] Filtered by bakongPlatform (${template.bakongPlatform}): ${beforeCount} → ${users.length} users`,
       )
+
+      // Log users that were filtered out
+      if (filteredOutUsers.length > 0) {
+        console.log('📤 [sendWithTemplate] Users filtered out due to bakongPlatform mismatch:', filteredOutUsers.length)
+        const filteredOutWithTokens = filteredOutUsers.filter((u) => u.hasToken)
+        if (filteredOutWithTokens.length > 0) {
+          console.warn(
+            `⚠️ [sendWithTemplate] ${filteredOutWithTokens.length} user(s) with tokens were filtered out due to bakongPlatform mismatch:`,
+            filteredOutWithTokens.slice(0, 10),
+          )
+        }
+      }
+      console.log('📤 [sendWithTemplate] ====================================================')
 
       // Check if no users found for this bakongPlatform
       if (users.length === 0) {
@@ -108,41 +368,141 @@ export class NotificationService {
       console.log('📤 [sendWithTemplate] Targeting specific platforms:', normalizedPlatforms)
     }
 
+    // Log user platforms before filtering for debugging
+    const userPlatformBreakdown: Record<string, number> = {}
+    users.forEach((user) => {
+      const platform = user.platform || 'NULL'
+      const normalizedUserPlatform = user.platform
+        ? ValidationHelper.normalizeEnum(user.platform)
+        : 'NULL'
+      const key = `${platform} (normalized: ${normalizedUserPlatform})`
+      userPlatformBreakdown[key] = (userPlatformBreakdown[key] || 0) + 1
+    })
+    console.log('📤 [sendWithTemplate] User platforms BEFORE filtering:', userPlatformBreakdown)
+
     const matchingUsers = users.filter((user) => {
-      if (!user.platform) return false
-      if (targetsAllPlatforms) return true
-      return normalizedPlatforms.some((p) => ValidationHelper.normalizeEnum(user.platform) === p)
+      if (!user.platform) {
+        console.log(`📤 [sendWithTemplate] Filtering out user ${user.accountId}: no platform set`)
+        return false
+      }
+      if (targetsAllPlatforms) {
+        return true
+      }
+      const normalizedUserPlatform = ValidationHelper.normalizeEnum(user.platform)
+      const matches = normalizedPlatforms.some((p) => normalizedUserPlatform === p)
+      if (!matches) {
+        console.log(
+          `📤 [sendWithTemplate] Filtering out user ${user.accountId}: platform "${user.platform
+          }" (normalized: "${normalizedUserPlatform}") not in target platforms [${normalizedPlatforms.join(
+            ', ',
+          )}]`,
+        )
+      }
+      return matches
     })
 
     // Log platform breakdown for debugging
     if (matchingUsers.length > 0) {
-      const platformBreakdown = {}
+      const platformBreakdown: Record<string, number> = {}
       matchingUsers.forEach((user) => {
         const platform = user.platform || 'NULL'
-        platformBreakdown[platform] = (platformBreakdown[platform] || 0) + 1
+        const normalizedPlatform = user.platform
+          ? ValidationHelper.normalizeEnum(user.platform)
+          : 'NULL'
+        const key = `${platform} (normalized: ${normalizedPlatform})`
+        platformBreakdown[key] = (platformBreakdown[key] || 0) + 1
       })
-      console.log('📤 [sendWithTemplate] Platform breakdown:', platformBreakdown)
+      console.log('📤 [sendWithTemplate] Platform breakdown AFTER filtering:', platformBreakdown)
+    } else {
+      console.log('📤 [sendWithTemplate] No users match platform filter')
     }
 
     console.log('📤 [sendWithTemplate] Users matching platform filter:', matchingUsers.length)
 
-    if (!matchingUsers.length) {
+    // Filter by accountId list if provided (for targeted sending)
+    let finalUsers = matchingUsers
+    let notFoundAccountIds: string[] = []
+    if (accountIdList && accountIdList.length > 0) {
+      const beforeAccountIdFilter = finalUsers.length
+      const foundAccountIds = new Set(finalUsers.map((u) => u.accountId))
+      finalUsers = finalUsers.filter((user) => accountIdList.includes(user.accountId))
+      // Track which accountIds from the request were not found in the database
+      notFoundAccountIds = accountIdList.filter((accountId) => !foundAccountIds.has(accountId))
+      console.log(
+        `📤 [sendWithTemplate] Filtered by accountId list (${accountIdList.length} accountIds): ${beforeAccountIdFilter} → ${finalUsers.length} users`,
+      )
+      if (notFoundAccountIds.length > 0) {
+        console.warn(
+          `⚠️ [sendWithTemplate] ${notFoundAccountIds.length} accountId(s) not found in database: ${notFoundAccountIds.join(', ')}`,
+        )
+      }
+      if (finalUsers.length === 0) {
+        console.warn(
+          `⚠️ [sendWithTemplate] No users match the accountId list. Requested: ${accountIdList.join(', ')}`,
+        )
+        return { successfulCount: 0, failedCount: 0, failedUsers: accountIdList }
+      }
+    }
+
+    if (!finalUsers.length) {
       console.warn('⚠️ [sendWithTemplate] No users match the platform filter')
-      return 0
+      console.warn(
+        `⚠️ [sendWithTemplate] Template platform requirement: ${normalizedPlatforms.join(', ')}`,
+      )
+      console.warn(
+        `⚠️ [sendWithTemplate] Total users checked: ${users.length}, Users filtered out: ${users.length - matchingUsers.length
+        }`,
+      )
+      console.warn('⚠️ [sendWithTemplate] Template will be kept as draft - no matching users found')
+      return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
-    const defaultTranslation = this.templateService.findBestTranslation(template, Language.EN)
+    // Always use Khmer (KM) translation for FCM push notifications (banner/background)
+    // This ensures all users see notifications in Khmer regardless of their language preference
+    let defaultTranslation = this.templateService.findBestTranslation(template, Language.KM)
     if (!defaultTranslation) {
-      console.warn('⚠️ [sendWithTemplate] No default translation found')
-      return 0
+      console.warn('⚠️ [sendWithTemplate] No Khmer translation found, trying fallback')
+      // Fallback: try to find any available translation
+      defaultTranslation = this.templateService.findBestTranslation(template, undefined)
+      if (!defaultTranslation) {
+        console.warn('⚠️ [sendWithTemplate] No translation found at all')
+        return { successfulCount: 0, failedCount: 0, failedUsers: [] }
+      }
+      // Use fallback but log warning
+      console.warn(
+        `⚠️ [sendWithTemplate] Using fallback translation (${defaultTranslation.language}) instead of Khmer`,
+      )
     }
 
-    const usersWithTokens = matchingUsers.filter((user) => user.fcmToken?.trim())
+    // Track users with empty/invalid tokens BEFORE filtering
+    const usersWithoutTokens = finalUsers.filter((user) => !user.fcmToken?.trim())
+    const usersWithEmptyTokens = usersWithoutTokens.map((user) => ({
+      accountId: user.accountId,
+      error: 'FCM token is empty or missing',
+      errorCode: 'messaging/invalid-registration-token',
+    }))
+
+    console.log('📤 [sendWithTemplate] Users without FCM tokens:', usersWithoutTokens.length)
+    if (usersWithoutTokens.length > 0) {
+      console.log(
+        '📤 [sendWithTemplate] Users with empty tokens:',
+        usersWithoutTokens.map((u) => u.accountId),
+      )
+    }
+
+    const usersWithTokens = finalUsers.filter((user) => user.fcmToken?.trim())
     console.log('📤 [sendWithTemplate] Users with FCM tokens:', usersWithTokens.length)
 
-    if (!usersWithTokens.length) {
-      console.warn('⚠️ [sendWithTemplate] No users have FCM tokens')
-      return 0
+    // Log specific users for debugging inconsistent sends
+    if (usersWithTokens.length > 0) {
+      const userDetails = usersWithTokens.map((u) => ({
+        accountId: u.accountId,
+        platform: u.platform,
+        tokenLength: u.fcmToken?.length || 0,
+        tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+        bakongPlatform: u.bakongPlatform,
+      }))
+      console.log('📤 [sendWithTemplate] Users with tokens (for debugging):', userDetails.slice(0, 10))
     }
 
     // Get FCM instance for template's bakongPlatform
@@ -151,34 +511,148 @@ export class NotificationService {
       console.error(
         '❌ [sendWithTemplate] Firebase FCM is not initialized. Cannot send notifications.',
       )
-      return 0
+      // Return users with empty tokens as failed
+      return {
+        successfulCount: 0,
+        failedCount: usersWithoutTokens.length,
+        failedUsers: usersWithoutTokens.map((u) => u.accountId),
+        failedDueToInvalidTokens: usersWithoutTokens.length > 0,
+      }
     }
 
-    console.log('📤 [sendWithTemplate] Validating FCM tokens...')
-    const validUsers = await ValidationHelper.validateFCMTokens(usersWithTokens, fcm)
-    console.log('📤 [sendWithTemplate] Valid users after token validation:', validUsers.length)
+    console.log('📤 [sendWithTemplate] Preparing to send notifications...')
+    console.log('📤 [sendWithTemplate] Strategy: Try all format-valid tokens - Firebase will validate during actual send')
 
-    if (!validUsers.length) {
-      console.warn('⚠️ [sendWithTemplate] No users have valid FCM tokens after validation')
-      return 0
+    // Skip pre-validation - it's unreliable and slows things down
+    // Firebase will reject invalid tokens during actual send, which is more reliable
+    // This ensures both old and new templates get the same treatment
+
+    // Filter users with valid token format only
+    // CRITICAL: Always try sending to ALL format-valid tokens
+    // This ensures old notifications and new notifications both get attempted
+    const formatValidUsers = usersWithTokens.filter(
+      (user) => user.fcmToken &&
+        user.fcmToken.length > 50 &&
+        ValidationHelper.isValidFCMTokenFormat(user.fcmToken)
+    )
+
+    console.log('📤 [sendWithTemplate] Users with valid token format:', formatValidUsers.length)
+    console.log('📤 [sendWithTemplate] Will attempt to send to ALL format-valid tokens (skipping pre-validation for better reliability)')
+
+    // Track users filtered out due to invalid format (too short or wrong format)
+    const usersWithInvalidFormat = usersWithTokens.filter(
+      (user) => !formatValidUsers.some((vu) => vu.accountId === user.accountId),
+    )
+    const invalidFormatUsers = usersWithInvalidFormat.map((user) => ({
+      accountId: user.accountId,
+      error: 'FCM token format is invalid',
+      errorCode: 'messaging/invalid-registration-token',
+    }))
+
+    console.log(
+      '📤 [sendWithTemplate] Users filtered out due to invalid token format:',
+      invalidFormatUsers.length,
+    )
+    if (invalidFormatUsers.length > 0) {
+      console.log(
+        '📤 [sendWithTemplate] Users with invalid format:',
+        invalidFormatUsers.map((u) => u.accountId),
+      )
     }
 
-    console.log('📤 [sendWithTemplate] Sending FCM notifications to', validUsers.length, 'users...')
+    // ALWAYS try all format-valid tokens - no pre-validation filtering
+    // This ensures both old and new templates get the same treatment
+    // Firebase will reject invalid tokens during actual send, which is more reliable than pre-validation
+    const usersToSend = formatValidUsers
+
+    console.log('📤 [sendWithTemplate] Sending strategy:', {
+      formatValid: formatValidUsers.length,
+      willSendTo: usersToSend.length,
+      note: 'Trying all format-valid tokens - Firebase will reject invalid ones during actual send',
+    })
+
+    // Log token prefixes for debugging
+    if (usersToSend.length > 0) {
+      console.log(
+        '📤 [sendWithTemplate] Users that will receive notification:',
+        usersToSend.map((u) => ({
+          accountId: u.accountId,
+          tokenPrefix: u.fcmToken ? `${u.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+          platform: u.platform,
+        })),
+      )
+    }
+
+    if (!usersToSend.length) {
+      console.warn('⚠️ [sendWithTemplate] No users available to send to')
+      // Return all users with invalid tokens as failed
+      const allInvalidUsers = [...usersWithEmptyTokens, ...invalidFormatUsers]
+      return {
+        successfulCount: 0,
+        failedCount: allInvalidUsers.length,
+        failedUsers: allInvalidUsers.map((u) => u.accountId),
+        failedDueToInvalidTokens: allInvalidUsers.length > 0,
+      }
+    }
+
+    console.log(`📤 [sendWithTemplate] Attempting to send FCM notifications to ${usersToSend.length} users (all format-valid tokens)...`)
     const result = (await this.sendFCM(
       template,
       defaultTranslation,
-      validUsers,
+      usersToSend,
       undefined,
       'individual',
-    )) as { notificationId: number | null; successfulCount: number; failedCount: number }
+    )) as {
+      notificationId: number | null
+      successfulCount: number
+      failedCount: number
+      failedUsers?: string[]
+      failedDueToInvalidTokens?: boolean
+    }
+
+    // Combine users filtered out BEFORE sending (empty/invalid format) with users that failed DURING sending
+    // Also include accountIds that were not found in the database (when accountIdList is provided)
+    const allFailedUsers = [
+      ...usersWithEmptyTokens.map((u) => u.accountId),
+      ...invalidFormatUsers.map((u) => u.accountId),
+      ...(result.failedUsers || []),
+      ...notFoundAccountIds, // Add accountIds that were not found in database
+    ]
+
+    const totalFailedCount =
+      usersWithoutTokens.length + invalidFormatUsers.length + result.failedCount + notFoundAccountIds.length
+
+    // Check if failures are due to invalid tokens (empty, invalid format, or FCM errors)
+    // A failure is due to invalid tokens if:
+    // 1. Users have empty tokens (filtered before sending) - these are invalid tokens
+    // 2. Users have invalid token format (filtered before sending) - these are invalid tokens  
+    // 3. FCM send failed due to invalid token errors (during actual send) - check result flag from buildFCMResult
+    // Note: buildFCMResult checks error codes to determine if failures are due to invalid tokens
+    const hasInvalidTokens =
+      usersWithoutTokens.length > 0 ||
+      invalidFormatUsers.length > 0 ||
+      (result.failedDueToInvalidTokens === true)
 
     console.log('✅ [sendWithTemplate] Notification send complete:', {
       successfulCount: result.successfulCount,
-      failedCount: result.failedCount,
-      totalUsers: validUsers.length,
+      failedCount: totalFailedCount,
+      failedUsers: allFailedUsers.length,
+      failedDueToEmptyTokens: usersWithoutTokens.length,
+      failedDueToInvalidFormat: invalidFormatUsers.length,
+      failedDuringSend: result.failedCount,
+      failedDueToInvalidTokensFromResult: result.failedDueToInvalidTokens,
+      hasInvalidTokens: hasInvalidTokens,
+      totalUsers: finalUsers.length,
+      formatValidUsersAttempted: formatValidUsers.length,
+      note: 'Attempted to send to ALL format-valid tokens (no pre-validation filtering)',
     })
 
-    return result.successfulCount
+    return {
+      successfulCount: result.successfulCount,
+      failedCount: totalFailedCount,
+      failedUsers: allFailedUsers,
+      failedDueToInvalidTokens: hasInvalidTokens,
+    }
   }
 
   async sendNow(dto: SentNotificationDto, req?: any) {
@@ -187,7 +661,7 @@ export class NotificationService {
         // Mobile app fetching specific notification (e.g., after clicking flash notification)
         const notification = await this.notiRepo.findOne({
           where: { id: dto.notificationId },
-          relations: ['template', 'template.translations'],
+          relations: ['template', 'template.translations', 'template.categoryTypeEntity'],
         })
         if (!notification) throw new Error('Notification not found')
 
@@ -196,8 +670,8 @@ export class NotificationService {
         }
 
         // Get user's bakongPlatform from database
-        if (dto.accountId) {
-          const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+        if (typeof dto.accountId === 'string' && dto.accountId.trim()) {
+          const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId.trim())
           if (user && user.bakongPlatform && notification.template.bakongPlatform) {
             if (user.bakongPlatform !== notification.template.bakongPlatform) {
               // User's platform doesn't match template's platform
@@ -217,13 +691,25 @@ export class NotificationService {
         const trans = this.templateService.findBestTranslation(notification.template, dto.language)
         const imageUrl = trans?.imageId ? this.imageService.buildImageUrl(trans.imageId, req) : ''
 
+        const baseUrl = this.baseFunctionHelper
+          ? this.baseFunctionHelper.getBaseUrl(req)
+          : 'http://localhost:4005'
+
+        const language = (dto.language || 'EN') as Language
+        const categoryIcon = notification.template?.categoryTypeId
+          ? InboxResponseDto.buildCategoryIconUrl(baseUrl, notification.template.categoryTypeId)
+          : undefined
+
         const result = InboxResponseDto.buildSendApiNotificationData(
           notification.template,
           trans,
-          dto.language,
+          language,
           typeof imageUrl === 'string' ? imageUrl : '',
           notification.id,
           notification.sendCount,
+          baseUrl,
+          req,
+          categoryIcon,
         )
 
         return BaseResponseDto.success({
@@ -232,85 +718,33 @@ export class NotificationService {
         })
       }
 
-      // For flash notifications: Always sync user data and ensure bakongPlatform is set
-      // Priority: Use user's registered bakongPlatform > Infer from accountId/participantCode > Infer from template
+      // For flash notifications: User data was already synced in controller when app opened
+      // Just fetch the user to get bakongPlatform (already synced in controller)
       let userBakongPlatform: string | undefined = undefined
-      if (dto.accountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
-        // Always sync user data again to ensure all fields are up to date
-        const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        
-        console.log(`📤 [sendNow] Syncing user data for ${dto.accountId}`, {
-          existingBakongPlatform: user?.bakongPlatform || 'NULL',
-          providedBakongPlatform: dto.bakongPlatform || 'NULL',
-          accountId: dto.accountId,
-          participantCode: dto.participantCode || 'N/A',
-        })
-        
-        // Mobile app ALWAYS provides bakongPlatform in the request
-        // This is the primary path - mobile provides all data including bakongPlatform
-        let bakongPlatformToSync = dto.bakongPlatform
-        
-        // Fallback logic (shouldn't normally happen since mobile always provides bakongPlatform):
-        // Only used for edge cases like:
-        // - Old mobile app versions that don't send bakongPlatform
-        // - API calls from other sources
-        // - Backward compatibility
-        if (!bakongPlatformToSync) {
-          // Try existing user value first
-          if (user?.bakongPlatform) {
-            bakongPlatformToSync = user.bakongPlatform
-            console.warn(
-              `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), using existing from user: ${bakongPlatformToSync}`,
-            )
-          } else {
-            // Last resort: try to infer from accountId/participantCode
-            const inferred = this.inferBakongPlatform(dto.participantCode, dto.accountId)
-            if (inferred) {
-              bakongPlatformToSync = inferred
-              console.warn(
-                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId}, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
-              )
-            } else {
-              console.error(
-                `❌ [sendNow] CRITICAL: bakongPlatform not provided by mobile and cannot be determined for ${dto.accountId}`,
-              )
-            }
-          }
-        }
+      const singleAccountId = typeof dto.accountId === 'string' && dto.accountId.trim() ? dto.accountId.trim() : undefined
 
-        // Always sync ALL user data from mobile app
-        // Mobile app always provides all data including: language, fcmToken, platform, participantCode, bakongPlatform
-        const syncData: any = {
-          accountId: dto.accountId,
-          language: dto.language,
-          fcmToken: dto.fcmToken || '', // Use empty string as placeholder if not provided
-          platform: dto.platform,
-          participantCode: dto.participantCode,
-          bakongPlatform: bakongPlatformToSync, // Mobile always provides this
-        }
-        
-        console.log(`📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`, {
-          accountId: syncData.accountId,
-          language: syncData.language || 'N/A',
-          platform: syncData.platform || 'N/A',
-          participantCode: syncData.participantCode || 'N/A',
-          bakongPlatform: syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
-        })
-        
-        // Always sync all user data - mobile provides all fields including bakongPlatform
-        await this.baseFunctionHelper.updateUserData(syncData)
+      if (singleAccountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
+        // User data was already synced in controller - just fetch to get bakongPlatform
+        const user = await this.baseFunctionHelper.findUserByAccountId(singleAccountId)
 
-        // Re-fetch user to get the latest bakongPlatform
-        const updatedUser = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        if (updatedUser && updatedUser.bakongPlatform) {
-          userBakongPlatform = updatedUser.bakongPlatform
+        if (user && user.bakongPlatform) {
+          userBakongPlatform = user.bakongPlatform
           console.log(
-            `✅ [sendNow] User ${dto.accountId} bakongPlatform after sync: ${userBakongPlatform}`,
+            `✅ [sendNow] Using user ${dto.accountId} bakongPlatform (already synced in controller): ${userBakongPlatform}`,
+          )
+        } else if (dto.bakongPlatform) {
+          // Fallback: Use bakongPlatform from request if user doesn't have it
+          userBakongPlatform = dto.bakongPlatform
+          console.log(
+            `⚠️ [sendNow] User ${singleAccountId} has no bakongPlatform in DB, using from request: ${userBakongPlatform}`,
           )
         } else {
-          console.log(
-            `⚠️ [sendNow] User ${dto.accountId} still has no bakongPlatform after sync attempt`,
-          )
+          // Last resort: try to infer
+          const inferred = this.inferBakongPlatform(dto.participantCode, singleAccountId)
+          if (inferred) {
+            userBakongPlatform = inferred
+            console.warn(`⚠️ [sendNow] Inferring bakongPlatform for ${singleAccountId}: ${inferred}`)
+          }
         }
       }
 
@@ -331,7 +765,7 @@ export class NotificationService {
             bakongPlatform: userBakongPlatform as any,
             isSent: true, // Only published templates, exclude drafts
           },
-          relations: ['translations', 'translations.image'],
+          relations: ['translations', 'translations.image', 'categoryTypeEntity'],
           order: { priority: 'DESC', createdAt: 'DESC' },
         })
         template = templates.find((t) => t.translations && t.translations.length > 0) || null
@@ -357,32 +791,48 @@ export class NotificationService {
 
       if (!template) throw new Error(ResponseMessage.TEMPLATE_NOT_FOUND)
 
-      const translationValidation = ValidationHelper.validateTranslation(template, dto.language)
-      if (!translationValidation.isValid) throw new Error(translationValidation.errorMessage)
-      const translation = translationValidation.translation
+      // Always use Khmer (KM) translation for FCM push notifications (banner/background)
+      // This ensures all users see notifications in Khmer regardless of their language preference
+      const kmTranslationValidation = ValidationHelper.validateTranslation(template, Language.KM)
+      let translation: TemplateTranslation
+      if (!kmTranslationValidation.isValid) {
+        // Fallback: try to find any available translation
+        const fallbackValidation = ValidationHelper.validateTranslation(template, undefined)
+        if (!fallbackValidation.isValid) {
+          throw new Error('No Khmer translation found and no fallback translation available')
+        }
+        console.warn(
+          `⚠️ [sendNow] No Khmer translation found, using fallback translation (${fallbackValidation.translation.language})`,
+        )
+        // Use fallback translation for FCM
+        translation = fallbackValidation.translation
+      } else {
+        // Use KM translation for FCM push
+        translation = kmTranslationValidation.translation
+      }
 
       // For flash notifications: If user doesn't have bakongPlatform, infer it from template
       // This is a fallback for users who call /send before /inbox
       // IMPORTANT: Only update if user doesn't have bakongPlatform set (don't overwrite existing value)
       if (
-        dto.accountId &&
+        singleAccountId &&
         notificationType === NotificationType.FLASH_NOTIFICATION &&
         template.bakongPlatform &&
         !userBakongPlatform
       ) {
-        const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
+        const user = await this.baseFunctionHelper.findUserByAccountId(singleAccountId)
         if (user && !user.bakongPlatform) {
           // User exists but doesn't have bakongPlatform set - infer it from template
           await this.baseFunctionHelper.updateUserData({
-            accountId: dto.accountId,
+            accountId: singleAccountId,
             bakongPlatform: template.bakongPlatform,
           })
           console.log(
-            `📤 [sendNow] Auto-updated user ${dto.accountId} bakongPlatform to ${template.bakongPlatform} from template (user had no bakongPlatform)`,
+            `📤 [sendNow] Auto-updated user ${singleAccountId} bakongPlatform to ${template.bakongPlatform} from template (user had no bakongPlatform)`,
           )
         } else if (user && user.bakongPlatform) {
           console.log(
-            `📤 [sendNow] User ${dto.accountId} already has bakongPlatform: ${user.bakongPlatform} - not overwriting`,
+            `📤 [sendNow] User ${singleAccountId} already has bakongPlatform: ${user.bakongPlatform} - not overwriting`,
           )
         }
       }
@@ -487,7 +937,45 @@ export class NotificationService {
         }
       }
 
-      const refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
+      let refreshedWithTokens = refreshedUsers.filter((u) => u.fcmToken?.trim())
+
+      // Filter by accountId list if provided (for targeted sending in v2 API)
+      const accountIdList = Array.isArray(dto.accountId)
+        ? dto.accountId.map((x: any) => String(x).trim()).filter(Boolean)
+        : undefined
+
+      // Initialize notFoundAccountIds to track accountIds that don't exist in database
+      let notFoundAccountIds: string[] = []
+
+      if (accountIdList && accountIdList.length > 0) {
+        const beforeAccountIdFilter = refreshedWithTokens.length
+        const foundAccountIds = new Set(refreshedWithTokens.map((u) => u.accountId))
+        refreshedWithTokens = refreshedWithTokens.filter((u) => accountIdList.includes(u.accountId))
+        // Track which accountIds from the request were not found in the database
+        notFoundAccountIds = accountIdList.filter((accountId) => !foundAccountIds.has(accountId))
+        console.log(
+          `📤 [sendNow] Filtered by accountId list (${accountIdList.length} accountIds): ${beforeAccountIdFilter} → ${refreshedWithTokens.length} users`,
+        )
+        if (notFoundAccountIds.length > 0) {
+          console.warn(
+            `⚠️ [sendNow] ${notFoundAccountIds.length} accountId(s) not found in database: ${notFoundAccountIds.join(', ')}`,
+          )
+        }
+        if (refreshedWithTokens.length === 0) {
+          console.warn(
+            `⚠️ [sendNow] No users match the accountId list. Requested: ${accountIdList.join(', ')}`,
+          )
+          return BaseResponseDto.error({
+            errorCode: ErrorCode.NO_USERS_FOR_BAKONG_PLATFORM,
+            message: `No users found matching the provided accountId list: ${accountIdList.join(', ')}`,
+            data: {
+              requestedAccountIds: accountIdList,
+              bakongPlatform: template.bakongPlatform,
+            },
+          })
+        }
+      }
+
       // Get FCM instance for template's bakongPlatform
       const fcm = this.getFCM(template.bakongPlatform)
       if (!fcm) {
@@ -496,21 +984,9 @@ export class NotificationService {
       const validUsers = await ValidationHelper.validateFCMTokens(refreshedWithTokens, fcm)
       if (!validUsers.length) throw new Error('No valid FCM tokens found after user data sync')
 
-      const savedRecords = await Promise.all(
-        validUsers.map((u) =>
-          this.storeNotification({
-            accountId: u.accountId,
-            templateId: template.id,
-            fcmToken: u.fcmToken,
-            sendCount: 1,
-            firebaseMessageId: 0,
-          }),
-        ),
-      )
-
-      const firstRecord = savedRecords[0]
-
-      let fcmResult: { successfulCount: number; failedCount: number } | void
+      // Send FCM first (without creating notification records)
+      // Use notificationId = 0 for shared mode since we'll create records after successful sends
+      let fcmResult: { successfulCount: number; failedCount: number; failedUsers?: string[]; failedDueToInvalidTokens?: boolean } | void
       try {
         fcmResult = await this.sendFCM(
           template,
@@ -518,28 +994,154 @@ export class NotificationService {
           validUsers,
           req,
           'shared',
-          firstRecord.id,
+          0, // Use 0 as placeholder - we'll create records after successful sends
         )
       } catch (err) {
         throw new Error(`FCM ASYNC SEND ERROR: ${err}`)
       }
 
       // Check if FCM send was successful
-      if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
+      if (!fcmResult || typeof fcmResult !== 'object' || !('successfulCount' in fcmResult)) {
+        throw new Error('FCM send failed or returned invalid result')
+      }
+
+      console.log(
+        `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
+      )
+
+      // Log failed users if any - Make it very visible in Docker logs
+      if (fcmResult.failedUsers && fcmResult.failedUsers.length > 0) {
+        console.log('')
+        console.log('='.repeat(80))
         console.log(
-          `📊 FCM send result: ${fcmResult.successfulCount} successful, ${fcmResult.failedCount} failed`,
+          `❌ [sendNow] FAILED USERS LIST - ${fcmResult.failedUsers.length} user(s) failed to receive notification:`,
         )
-        if (fcmResult.successfulCount === 0 && fcmResult.failedCount > 0) {
-          throw new Error(
-            `Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`,
-          )
+        console.log('='.repeat(80))
+        console.log(JSON.stringify(fcmResult.failedUsers, null, 2))
+        console.log('='.repeat(80))
+        console.log('')
+      }
+
+      // Check for failure cases where we should return a rich response instead of throwing
+      if (fcmResult.successfulCount === 0) {
+        let errorMessage = 'Failed to send notification to any users.'
+        if (fcmResult.failedCount > 0) {
+          errorMessage = `Invalid Failed to send notification to any users. All ${fcmResult.failedCount} attempts failed.`
         }
-        if (fcmResult.successfulCount === 0) {
-          throw new Error('No notifications were sent. FCM send returned 0 successful sends.')
+
+        // 12) response build (even for failure)
+        const baseUrl = this.baseFunctionHelper
+          ? this.baseFunctionHelper.getBaseUrl(req)
+          : 'http://localhost:4005'
+        const userLanguage = (dto.language || Language.KM) as Language
+        const imageId = translation?.imageId || null
+        const imageUrl = imageId ? this.imageService.buildImageUrl(imageId, req) : ''
+
+        const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+        const categoryIcon = isV2 && template?.categoryTypeId
+          ? InboxResponseDto.buildCategoryIconUrl(baseUrl, template.categoryTypeId)
+          : undefined
+
+        const whatNewsObject = InboxResponseDto.buildSendApiNotificationData(
+          template,
+          translation,
+          userLanguage,
+          typeof imageUrl === 'string' ? imageUrl : '',
+          0, // No record ID
+          1,
+          baseUrl,
+          req,
+          categoryIcon,
+          fcmResult.failedUsers,
+        )
+
+        const errorResponseData: any = {
+          whatnews: whatNewsObject,
+          successfulCount: 0,
+          failedCount: fcmResult.failedCount + (notFoundAccountIds?.length || 0),
+          failedUsers: [...new Set([...(fcmResult.failedUsers || []), ...(notFoundAccountIds || [])])],
+          failedDueToInvalidTokens: fcmResult.failedDueToInvalidTokens || false,
+        }
+
+        errorResponseData.successfulUsers = []
+
+        return BaseResponseDto.error({
+          errorCode: 1, // Traditional error code
+          message: errorMessage,
+          data: errorResponseData,
+        })
+      }
+
+      // Only create notification records for users that successfully received FCM
+      const failedUserAccountIds = new Set(
+        (fcmResult.failedUsers || []).map((u: any) => String(u)),
+      )
+      const successfulUsers = validUsers.filter(
+        (u) => !failedUserAccountIds.has(String(u.accountId)),
+      )
+
+      if (successfulUsers.length === 0) {
+        throw new Error('No successful users to create notification records for')
+      }
+
+      console.log(
+        `✅ [sendNow] Creating notification records for ${successfulUsers.length} successful user(s)`,
+      )
+
+      // Create notification records only for successful users
+      const savedRecords = await Promise.all(
+        successfulUsers.map((u) =>
+          this.storeNotification({
+            accountId: u.accountId,
+            templateId: template.id,
+            fcmToken: u.fcmToken,
+            sendCount: 1,
+            firebaseMessageId: 0, // Will be updated after FCM send
+            language: translation.language,
+          }),
+        ),
+      )
+
+      // Update firebaseMessageId for successful sends
+      if (fcmResult && typeof fcmResult === 'object' && 'successfulSends' in fcmResult && fcmResult.successfulSends) {
+        const successfulSends = (fcmResult as any).successfulSends as Array<{ accountId: string; messageId: string }>
+        const messageIdMap = new Map(
+          successfulSends.map((s) => [s.accountId, s.messageId]),
+        )
+
+        for (const record of savedRecords) {
+          const messageIdStr = messageIdMap.get(record.accountId)
+          if (messageIdStr) {
+            try {
+              // Parse messageId from string (e.g., "1769572552587163" from "projects/.../messages/1769572552587163")
+              const messageId = ValidationHelper.validateFirebaseMessageId(messageIdStr)
+              await this.notiRepo.update(
+                { id: record.id },
+                { firebaseMessageId: messageId },
+              )
+              console.log(
+                `✅ [sendNow] Updated firebaseMessageId for notification ${record.id} (accountId: ${record.accountId}): ${messageId}`,
+              )
+            } catch (updateError) {
+              console.error(
+                `❌ [sendNow] Failed to update firebaseMessageId for notification ${record.id}:`,
+                updateError,
+              )
+            }
+          }
         }
       }
 
-      const responseTranslation = this.templateService.findBestTranslation(template, dto.language)
+      // Use the first successful record for response (most recent after sorting)
+      savedRecords.sort((a, b) => b.id - a.id)
+      const successfulRecord = savedRecords[0]
+      console.log(
+        `✅ [sendNow] Using successful notification record ID ${successfulRecord.id} for accountId ${successfulRecord.accountId}`,
+      )
+
+      // For send response: Use KM translation (what was actually sent in FCM push)
+      // But use user's language for categoryType/date display in the response
+      const responseTranslation = translation // Use the KM translation that was sent
       const imageUrl = responseTranslation?.imageId
         ? this.imageService.buildImageUrl(responseTranslation.imageId, req)
         : ''
@@ -547,16 +1149,55 @@ export class NotificationService {
       // Only mark as published if FCM send was successful
       await this.templateService.markAsPublished(template.id, req?.user)
 
+      // 12) response build
+      const baseUrl = this.baseFunctionHelper
+        ? this.baseFunctionHelper.getBaseUrl(req)
+        : 'http://localhost:4005'
+
+      // Use user's language preference for categoryType/date in response (with KM fallback)
+      const userLanguage = (dto.language || Language.KM) as Language
+
+      // Only build categoryIcon for v2
+      const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+      const categoryIcon = isV2 && template?.categoryTypeId
+        ? InboxResponseDto.buildCategoryIconUrl(baseUrl, template.categoryTypeId)
+        : undefined
+
       const whatNews = InboxResponseDto.buildSendApiNotificationData(
         template,
-        responseTranslation,
-        dto.language,
+        responseTranslation, // KM translation (what was sent)
+        userLanguage, // User's language for categoryType/date display
         typeof imageUrl === 'string' ? imageUrl : '',
-        firstRecord.id,
-        firstRecord.sendCount,
+        successfulRecord.id,
+        successfulRecord.sendCount,
+        baseUrl,
+        req,
+        categoryIcon,
+        fcmResult && typeof fcmResult === 'object' && 'failedUsers' in fcmResult ? fcmResult.failedUsers : undefined,
       )
+
+      // Include successful count and failed users in response
+      const responseData: any = { whatnews: whatNews }
+      if (fcmResult && typeof fcmResult === 'object' && 'successfulCount' in fcmResult) {
+        responseData.successfulCount = fcmResult.successfulCount
+
+        // Combine FCM failed users with accountIds that were not found in database
+        const fcmFailedUsers = fcmResult.failedUsers || []
+        // Ensure notFoundAccountIds is defined (it should be initialized earlier, but add safety check)
+        const notFoundIds = notFoundAccountIds || []
+        const allFailedUsers = [...new Set([...fcmFailedUsers, ...notFoundIds])]
+        responseData.failedUsers = allFailedUsers
+        // Update failed count to include not found accountIds
+        responseData.failedCount = allFailedUsers.length
+        responseData.failedDueToInvalidTokens = fcmResult.failedDueToInvalidTokens || false
+
+        // Add successfulUsers array (list of accountIds that received the notification)
+        const successfulUserAccountIds = successfulUsers.map((u) => String(u.accountId))
+        responseData.successfulUsers = successfulUserAccountIds
+      }
+
       return BaseResponseDto.success({
-        data: { whatnews: whatNews },
+        data: responseData,
         message: `Send ${template.notificationType} to users successfully`,
       })
     } catch (error: any) {
@@ -579,6 +1220,9 @@ export class NotificationService {
     notificationId: number | null
     successfulCount: number
     failedCount: number
+    failedUsers?: string[]
+    failedDueToInvalidTokens?: boolean
+    successfulSends?: Array<{ accountId: string; messageId: string }>
   } | void> {
     console.log('📨 [sendFCM] Starting FCM send process:', {
       templateId: template.id,
@@ -591,6 +1235,8 @@ export class NotificationService {
       const failedUsers: Array<{ accountId: string; error: string; errorCode?: string }> = []
       let sharedSuccessfulCount = 0
       let sharedFailedCount = 0
+      const sharedFailedUsers: Array<{ accountId: string; error: string; errorCode?: string }> = []
+      const successfulSends: Array<{ accountId: string; messageId: string }> = [] // Track successful sends with message IDs
 
       const imageUrl = translation.imageId
         ? this.imageService.buildImageUrl(translation.imageId, req)
@@ -609,6 +1255,7 @@ export class NotificationService {
       console.log('📨 [sendFCM] Filtered FCM users:', fcmUsers.length)
 
       for (const user of fcmUsers) {
+        let notificationId: number | null = null
         try {
           console.log('📨 [sendFCM] Sending to user:', {
             accountId: user.accountId,
@@ -617,7 +1264,8 @@ export class NotificationService {
             fcmToken: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           })
 
-          let notificationId = sharedNotificationId ?? 0
+          // For individual mode, we need to create notification record first to get ID for payload
+          // But we'll delete it if FCM send fails
           if (mode === 'individual') {
             const saved = await this.storeNotification({
               accountId: user.accountId,
@@ -625,20 +1273,19 @@ export class NotificationService {
               fcmToken: user.fcmToken,
               sendCount: 1,
               firebaseMessageId: 0,
+              language: translation.language,
             })
             notificationId = saved.id
-            console.log('📨 [sendFCM] Created notification record:', notificationId)
+            console.log('📨 [sendFCM] Created notification record (temporary):', notificationId)
+          } else {
+            notificationId = sharedNotificationId ?? 0
           }
 
           const notificationIdStr = String(notificationId)
 
-          if (
-            mode === 'shared' &&
-            template.notificationType === NotificationType.FLASH_NOTIFICATION
-          ) {
-            console.log('📨 [sendFCM] Skipping FLASH_NOTIFICATION in shared mode')
-            continue
-          }
+          // FLASH_NOTIFICATION now sends FCM push like other notification types
+          // Mobile app will display it differently (as popup/flash screen)
+          // No need to skip - send FCM push for all notification types
 
           console.log('📨 [sendFCM] Calling sendFCMPayloadToPlatform for user:', user.accountId)
           const response = await this.sendFCMPayloadToPlatform(
@@ -650,46 +1297,203 @@ export class NotificationService {
             notificationIdStr,
             imageUrlString,
             mode,
+            req,
           )
+
+          console.log('📨 [sendFCM] Response from sendFCMPayloadToPlatform:', {
+            accountId: user.accountId,
+            hasResponse: !!response,
+            responseType: typeof response,
+            responseValue: response ? `${String(response).substring(0, 50)}...` : 'NULL',
+            userPlatform: user.platform,
+            userBakongPlatform: user.bakongPlatform,
+            templatePlatforms: template.platforms,
+            templateBakongPlatform: template.bakongPlatform,
+          })
 
           if (response) {
             const responseString =
               typeof response === 'string' ? response : JSON.stringify(response)
-            await this.updateNotificationRecord(
-              user,
-              template,
-              notificationId,
-              responseString,
-              mode,
-            )
+
+            // Track successful send with full response (for parsing messageId later)
+            successfulSends.push({
+              accountId: user.accountId,
+              messageId: responseString, // Store full response string for parsing
+            })
+
+            // Only update notification record if it exists (individual mode or shared mode with existing record)
+            if (mode === 'individual' || (mode === 'shared' && notificationId && notificationId > 0)) {
+              await this.updateNotificationRecord(
+                user,
+                template,
+                notificationId!,
+                responseString,
+                mode,
+              )
+            }
+            // In shared mode with notificationId = 0, we'll update records after they're created
+
             console.log('✅ [sendFCM] Successfully sent to user:', user.accountId)
             if (mode === 'individual') {
-              successfulNotifications.push({ id: notificationId })
+              successfulNotifications.push({ id: notificationId! })
             } else if (mode === 'shared') {
               sharedSuccessfulCount++
             }
           } else {
             console.warn('⚠️ [sendFCM] No response from FCM for user:', user.accountId)
-            if (mode === 'shared') {
+            // Delete notification record if it was created but FCM send failed
+            if (mode === 'individual' && notificationId) {
+              try {
+                await this.notiRepo.delete({ id: notificationId })
+                console.log(
+                  `🗑️ [sendFCM] Deleted notification record ${notificationId} due to failed FCM send`,
+                )
+              } catch (deleteError) {
+                console.error(
+                  `❌ [sendFCM] Failed to delete notification record ${notificationId}:`,
+                  deleteError,
+                )
+              }
+            }
+            // Count as failed for BOTH individual and shared modes
+            if (mode === 'individual') {
+              failedUsers.push({
+                accountId: user.accountId,
+                error: 'No response from FCM (platform mismatch or unrecognized platform)',
+                errorCode: 'NO_RESPONSE',
+              })
+            } else if (mode === 'shared') {
               sharedFailedCount++
+              sharedFailedUsers.push({
+                accountId: user.accountId,
+                error: 'No response from FCM (platform mismatch or unrecognized platform)',
+              })
             }
           }
         } catch (error: any) {
-          console.error(
-            '❌ [sendFCM] Failed to send to user:',
-            user.accountId,
-            'Error:',
-            error.message,
-          )
+          // Extract Firebase error code from wrapped error or original error
+          // Check multiple possible locations for the error code
+          const errorCode =
+            error?.firebaseErrorCode || // Explicit Firebase code property we set
+            error?.code || // Direct code property
+            error?.originalError?.code || // From original Firebase error
+            error?.originalError?.errorInfo?.code || // From Firebase errorInfo structure
+            (error?.message?.match(/\(code: ([^)]+)\)/)?.[1]) || // Extract from message like "(code: messaging/invalid-argument)"
+            'UNKNOWN_ERROR'
+          const errorMessage = error?.message || 'Unknown error'
+
+          console.error('❌ [sendFCM] Failed to send to user:', {
+            accountId: user.accountId,
+            errorMessage: errorMessage,
+            errorCode: errorCode,
+            errorDetails: error?.details || error?.originalError?.details || 'N/A',
+            userPlatform: user.platform,
+            userBakongPlatform: user.bakongPlatform,
+            templatePlatforms: template.platforms,
+            templateBakongPlatform: template.bakongPlatform,
+            tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+            tokenLength: user.fcmToken?.length || 0,
+            fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
+          })
+
+          // Delete notification record if it was created but FCM send failed
+          if (mode === 'individual' && notificationId) {
+            try {
+              await this.notiRepo.delete({ id: notificationId })
+              console.log(
+                `🗑️ [sendFCM] Deleted notification record ${notificationId} due to FCM send error: ${errorMessage} (code: ${errorCode})`,
+              )
+            } catch (deleteError) {
+              console.error(
+                `❌ [sendFCM] Failed to delete notification record ${notificationId}:`,
+                deleteError,
+              )
+            }
+          }
+
           if (mode === 'individual') {
             failedUsers.push({
               accountId: user.accountId,
-              error: error.message,
-              errorCode: error.code,
+              error: errorMessage,
+              errorCode: errorCode,
             })
           } else if (mode === 'shared') {
             sharedFailedCount++
+            sharedFailedUsers.push({
+              accountId: user.accountId,
+              error: errorMessage,
+              errorCode: errorCode,
+            })
           }
+
+          // Check if error is due to invalid token
+          // STRATEGY: Keep token that fails FCM sends (don't clear immediately)
+          // Reasons:
+          // 1. Token might become valid again (rare but possible)
+          // 2. Mobile app can update it when they call API
+          // 3. Preserves historical data for tracking/debugging
+          // 4. Users with invalid tokens are already filtered out before sending (line 321: filter by fcmToken?.trim())
+          // 5. Prevents data loss - mobile app will sync new token when they call API
+          const isInvalidTokenError =
+            errorCode === 'messaging/registration-token-not-registered' ||
+            errorCode === 'messaging/invalid-registration-token' ||
+            errorCode === 'messaging/invalid-argument' ||
+            errorCode === 'messaging/authentication-error' ||
+            errorCode === 'messaging/server-unavailable'
+
+          if (isInvalidTokenError) {
+            console.log(
+              `⚠️ [sendFCM] Invalid token detected for user ${user.accountId} (error: ${errorCode})`,
+            )
+            console.log(
+              `📝 [sendFCM] Token format was valid but Firebase rejected it. Possible reasons:`,
+            )
+            console.log(
+              `   1. Token expired or invalidated by Firebase`,
+            )
+            console.log(
+              `   2. Token belongs to different Firebase project`,
+            )
+            console.log(
+              `   3. APNs certificate not configured (for iOS tokens)`,
+            )
+            console.log(
+              `   4. Device uninstalled app or token revoked`,
+            )
+            console.log(
+              `📝 [sendFCM] User will be skipped in future sends until mobile app updates token via API`,
+            )
+            // NOTE: We keep the token because:
+            // - Users are filtered by fcmToken?.trim() before sending, so invalid tokens won't cause repeated failures
+            // - Mobile app can update token when they call /send or /inbox
+            // - Preserves data for debugging and tracking
+            // - Only obviously invalid tokens (too short/wrong format) are cleared in syncAllUsers()
+          } else {
+            // Check if error code is actually an invalid token error but wasn't caught above
+            // This can happen if error code extraction failed
+            const mightBeInvalidToken =
+              errorCode.includes('registration-token') ||
+              errorCode.includes('invalid-registration') ||
+              errorCode.includes('invalid-argument') ||
+              errorCode.includes('invalid-token')
+
+            if (mightBeInvalidToken) {
+              console.warn(
+                `⚠️ [sendFCM] FCM send failed for user ${user.accountId} - error code suggests invalid token but wasn't recognized (code: ${errorCode})`,
+              )
+              console.warn(
+                `   This might indicate: Token expired, invalidated, or belongs to different Firebase project`,
+              )
+            } else {
+              console.warn(
+                `⚠️ [sendFCM] FCM send failed for user ${user.accountId} but error is NOT invalid token (code: ${errorCode})`,
+              )
+              console.warn(
+                `   This might indicate: Firebase configuration issue, network problem, or other FCM error`,
+              )
+            }
+          }
+
           // Continue to next user instead of throwing - don't stop sending to other users
           continue
         }
@@ -706,7 +1510,28 @@ export class NotificationService {
         mode: mode,
       })
 
-      return InboxResponseDto.buildFCMResult(
+      // Log failed users summary if any - Make it very visible in Docker logs
+      const allFailedUsers = mode === 'individual' ? failedUsers : sharedFailedUsers
+      if (allFailedUsers.length > 0) {
+        const failedAccountIds = allFailedUsers.map((u) => u.accountId)
+        console.log('')
+        console.log('='.repeat(80))
+        console.log(`❌ [sendFCM] FAILED USERS SUMMARY - ${allFailedUsers.length} user(s) failed:`)
+        console.log('='.repeat(80))
+        console.log('Failed Account IDs:', JSON.stringify(failedAccountIds, null, 2))
+        console.log('')
+        console.log('Detailed Error Information:')
+        allFailedUsers.forEach((failedUser, index) => {
+          console.log(
+            `  ${index + 1}. ${failedUser.accountId}: ${failedUser.error}${failedUser.errorCode ? ` (Code: ${failedUser.errorCode})` : ''
+            }`,
+          )
+        })
+        console.log('='.repeat(80))
+        console.log('')
+      }
+
+      const result = InboxResponseDto.buildFCMResult(
         mode,
         successfulNotifications,
         failedUsers,
@@ -714,10 +1539,20 @@ export class NotificationService {
         sharedNotificationId,
         sharedSuccessfulCount,
         sharedFailedCount,
+        sharedFailedUsers,
       )
+      // Add successful sends with message IDs for updating firebaseMessageId after record creation
+      return {
+        ...result,
+        successfulSends: successfulSends,
+      }
     } catch (error: any) {
       console.error('❌ [sendFCM] Critical error in sendFCM:', error.message)
-      return InboxResponseDto.buildFCMResult(
+      const allFailedUsers = validUsers.map((u) => ({
+        accountId: u.accountId,
+        error: error.message || 'Critical error in sendFCM',
+      }))
+      const errorResult = InboxResponseDto.buildFCMResult(
         mode,
         [],
         [],
@@ -725,7 +1560,12 @@ export class NotificationService {
         undefined,
         0,
         validUsers.length,
+        allFailedUsers,
       )
+      return {
+        ...errorResult,
+        successfulSends: [],
+      }
     }
   }
 
@@ -738,10 +1578,40 @@ export class NotificationService {
     notificationIdStr: string,
     imageUrlString: string,
     mode: 'individual' | 'shared',
+    req?: any,
   ): Promise<string | null> {
+    // Parse template platforms using shared helper function
+    const templatePlatformsArray = ValidationHelper.parsePlatforms(template.platforms)
+
+    const normalizedTemplatePlatforms = templatePlatformsArray
+      .map((p) => ValidationHelper.normalizeEnum(p))
+      .filter((p) => p === 'ALL' || p === 'IOS' || p === 'ANDROID')
+
+    const targetsAllPlatforms = normalizedTemplatePlatforms.includes('ALL')
+    const normalizedUserPlatform = user.platform
+      ? ValidationHelper.normalizeEnum(user.platform)
+      : null
+
+    // CRITICAL: Double-check platform match before sending
+    if (!targetsAllPlatforms && normalizedUserPlatform) {
+      const platformMatches = normalizedTemplatePlatforms.some((p) => normalizedUserPlatform === p)
+      if (!platformMatches) {
+        console.warn(
+          `⚠️ [sendFCMPayloadToPlatform] SKIPPING user ${user.accountId}: platform "${user.platform
+          }" (normalized: "${normalizedUserPlatform}") does NOT match template platforms [${normalizedTemplatePlatforms.join(
+            ', ',
+          )}]`,
+        )
+        return null
+      }
+    }
+
     const platform = ValidationHelper.isPlatform(user.platform)
     console.log('📱 [sendFCMPayloadToPlatform] Platform detection:', {
       userPlatform: user.platform,
+      normalizedUserPlatform: normalizedUserPlatform,
+      templatePlatforms: normalizedTemplatePlatforms,
+      targetsAllPlatforms: targetsAllPlatforms,
       isIOS: platform.ios,
       isAndroid: platform.android,
       mode: mode,
@@ -751,55 +1621,302 @@ export class NotificationService {
 
     if (platform.ios) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing iOS notification...')
+
+      // CRITICAL: iOS APNs has strict size limits:
+      // - Alert title: ~40 characters (recommended, can be up to 50 but may be truncated by iOS)
+      // - Alert body: ~100 characters (recommended, can be up to 200 but may be truncated by iOS)
+      // - Total payload: 4KB maximum
+      // For Unicode/Khmer characters, we need to be more conservative
+      // Truncate title and body specifically for iOS to prevent "invalid-argument" errors
+      const iosTitleMaxLength = 40 // Conservative limit for APNs alert title
+      const iosBodyMaxLength = 100 // Conservative limit for APNs alert body
+
+      const iosTitle = title && title.length > iosTitleMaxLength
+        ? title.substring(0, iosTitleMaxLength - 3) + '...'
+        : title || ''
+      const iosBody = body && body.length > iosBodyMaxLength
+        ? body.substring(0, iosBodyMaxLength - 3) + '...'
+        : body || ''
+
+      console.log('📱 [sendFCMPayloadToPlatform] iOS text truncation:', {
+        originalTitleLength: title?.length || 0,
+        truncatedTitleLength: iosTitle.length,
+        originalBodyLength: body?.length || 0,
+        truncatedBodyLength: iosBody.length,
+        note: 'Full text still available in data payload for app to display',
+      })
+
+      // Build notification data - truncate content in data payload if too long to prevent FCM payload size issues
+      // FCM has a 4KB limit for the entire payload, so we need to be careful with long content
       const whatNews = InboxResponseDto.buildBaseNotificationData(
         template,
         translation,
         translation.language,
         imageUrlString,
         parseInt(notificationIdStr),
+        undefined, // sendCount
+        undefined, // baseUrl
+        req, // Pass req for version awareness
       )
 
-      const iosPayloadResponse =
+      // CRITICAL FIX: Truncate content to ensure iOS payload stays under 4KB limit
+      // FCM rejects iOS payloads over 4KB with "messaging/invalid-argument" error
+      // The payload includes: token, notification (title/body), apns.payload.aps.notification (full data), and data payload
+      // Content is duplicated in BOTH aps.payload.aps.notification.content AND data.content
+      // Base payload overhead: ~800-1000 bytes (token ~142, headers ~100, other fields ~600-800)
+      // Available for content: ~3000 bytes, but content appears TWICE, so max ~1500 bytes per instance
+      // For Unicode/Khmer text: ~3-4 bytes per char in UTF-8, so we need to be VERY conservative
+      if (whatNews && typeof whatNews === 'object') {
+        // VERY AGGRESSIVE truncation: Start with 500 chars for Khmer text (3-4 bytes per char)
+        // 500 chars × 3.5 bytes × 2 (duplication) = ~3500 bytes, leaving ~500 bytes for other fields
+        // We'll iteratively truncate further if needed after building the payload
+        const MAX_CONTENT_LENGTH_FOR_IOS = 500 // Very conservative limit for Khmer/Unicode text
+        const MAX_TITLE_LENGTH_FOR_IOS = 100 // Title also appears multiple times
+
+        const originalContent = String((whatNews as any).content || '')
+        const originalTitle = String((whatNews as any).title || '')
+
+        if (originalContent.length > MAX_CONTENT_LENGTH_FOR_IOS) {
+          console.warn('⚠️ [sendFCMPayloadToPlatform] CRITICAL: Content exceeds iOS 4KB payload limit, truncating:', {
+            originalContentLength: originalContent.length,
+            truncatedLength: MAX_CONTENT_LENGTH_FOR_IOS,
+            accountId: user.accountId,
+            note: 'Full content available via API - mobile app can fetch separately if needed',
+          })
+            ; (whatNews as any).content = originalContent.substring(0, MAX_CONTENT_LENGTH_FOR_IOS - 3) + '...'
+        }
+
+        // Also truncate title more aggressively (though alert title is already truncated to 40 chars)
+        // Title appears in multiple places (aps.notification.title, data.title), so keep it reasonable
+        if (originalTitle.length > MAX_TITLE_LENGTH_FOR_IOS) {
+          console.warn('⚠️ [sendFCMPayloadToPlatform] Title in data payload is very long, truncating:', {
+            originalTitleLength: originalTitle.length,
+            truncatedLength: MAX_TITLE_LENGTH_FOR_IOS,
+            accountId: user.accountId,
+          })
+            ; (whatNews as any).title = originalTitle.substring(0, MAX_TITLE_LENGTH_FOR_IOS - 3) + '...'
+        }
+      }
+
+      // Note: Mobile app will determine redirect screen based on notificationType:
+      // - FLASH_NOTIFICATION → Home screen
+      // - ANNOUNCEMENT → Notification Center screen
+
+      let iosPayloadResponse =
         mode === 'individual'
           ? InboxResponseDto.buildIOSAlertPayload(
-              user.fcmToken,
-              title,
-              body,
-              notificationIdStr,
-              whatNews as unknown as Record<string, string | number>,
-            )
+            user.fcmToken,
+            iosTitle,
+            iosBody,
+            notificationIdStr,
+            whatNews as unknown as Record<string, string | number>,
+          )
           : InboxResponseDto.buildIOSPayload(
-              user.fcmToken,
-              template.notificationType,
-              title,
-              body,
-              notificationIdStr,
-              whatNews as unknown as Record<string, string | number>,
-            )
+            user.fcmToken,
+            template.notificationType,
+            iosTitle,
+            iosBody,
+            notificationIdStr,
+            whatNews as unknown as Record<string, string | number>,
+          )
 
       try {
         // Get FCM instance for user's bakongPlatform
+        // CRITICAL: Use user's bakongPlatform to get correct Firebase instance
+        // If user's bakongPlatform doesn't match template's bakongPlatform, this could cause failures
         const fcm = this.getFCM(user.bakongPlatform)
         if (!fcm) {
-          console.warn('⚠️  FCM not available - skipping iOS notification send')
+          console.error('❌ [sendFCMPayloadToPlatform] FCM not available for iOS notification:', {
+            accountId: user.accountId,
+            userBakongPlatform: user.bakongPlatform,
+            templateBakongPlatform: template.bakongPlatform,
+            error: 'Firebase Cloud Messaging is not initialized for this bakongPlatform',
+          })
           throw new Error(
-            'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
+            `Firebase Cloud Messaging is not initialized for bakongPlatform: ${user.bakongPlatform || 'DEFAULT'}. Please check Firebase configuration.`,
           )
         }
+
+        // Log Firebase instance info for debugging
+        console.log('📱 [sendFCMPayloadToPlatform] Using FCM instance:', {
+          accountId: user.accountId,
+          userBakongPlatform: user.bakongPlatform,
+          templateBakongPlatform: template.bakongPlatform,
+          fcmAvailable: !!fcm,
+          note: user.bakongPlatform !== template.bakongPlatform
+            ? '⚠️ WARNING: User bakongPlatform differs from template bakongPlatform - this might cause issues'
+            : '✅ User and template bakongPlatform match',
+        })
+        // Log iOS payload structure for debugging
+        console.log('📱 [sendFCMPayloadToPlatform] iOS payload structure:', {
+          token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+          hasNotification: !!iosPayloadResponse.notification, // Root-level notification field (like Firebase Console)
+          hasApns: !!iosPayloadResponse.apns,
+          hasData: !!iosPayloadResponse.data,
+          notificationTitle: iosPayloadResponse.notification?.title,
+          notificationBody: iosPayloadResponse.notification?.body,
+          apnsHeaders: iosPayloadResponse.apns?.headers,
+          apsAlert: iosPayloadResponse.apns?.payload?.aps?.alert,
+          apsSound: iosPayloadResponse.apns?.payload?.aps?.sound,
+          apsBadge: iosPayloadResponse.apns?.payload?.aps?.badge,
+          dataKeys: iosPayloadResponse.data ? Object.keys(iosPayloadResponse.data) : [],
+        })
+
+        // Log full iOS payload (sanitized) for debugging
+        const sanitizedIOSPayload = {
+          ...iosPayloadResponse,
+          token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+        }
+        console.log(
+          '📱 [sendFCMPayloadToPlatform] Full iOS payload:',
+          JSON.stringify(sanitizedIOSPayload, null, 2),
+        )
+
+        // Check payload size before sending (FCM has 4KB limit for iOS)
+        // CRITICAL: Use Buffer.byteLength to get UTF-8 byte size, not character count
+        // JSON.stringify().length counts UTF-16 characters, but FCM counts UTF-8 bytes
+        // For Unicode/Khmer text, each character can be 2-4 bytes in UTF-8
+        // Iteratively truncate content until payload is under 4KB
+        let payloadJsonString = JSON.stringify(iosPayloadResponse)
+        let payloadSizeBytes = Buffer.byteLength(payloadJsonString, 'utf8')
+        let payloadSizeChars = payloadJsonString.length
+        let currentContentLength = (whatNews as any)?.content?.length || 0
+        let currentTitleLength = (whatNews as any)?.title?.length || 0
+        let truncationAttempts = 0
+        const MAX_TRUNCATION_ATTEMPTS = 10
+
+        // Iteratively truncate content if payload exceeds 4KB
+        while (payloadSizeBytes >= 4096 && truncationAttempts < MAX_TRUNCATION_ATTEMPTS) {
+          truncationAttempts++
+          console.warn(`⚠️ [sendFCMPayloadToPlatform] Payload exceeds 4KB (${(payloadSizeBytes / 1024).toFixed(2)}KB), truncating further (attempt ${truncationAttempts})...`, {
+            sizeBytes: payloadSizeBytes,
+            sizeKB: (payloadSizeBytes / 1024).toFixed(2),
+            currentContentLength,
+            currentTitleLength,
+            accountId: user.accountId,
+          })
+
+          // Reduce content length by 20% each iteration
+          if (whatNews && typeof whatNews === 'object' && (whatNews as any).content) {
+            const newContentLength = Math.floor(currentContentLength * 0.8)
+            const originalContent = String((whatNews as any).content || '')
+            if (originalContent.length > newContentLength && newContentLength > 50) {
+              ; (whatNews as any).content = originalContent.substring(0, newContentLength - 3) + '...'
+              currentContentLength = newContentLength
+
+              // Rebuild payload with truncated content
+              iosPayloadResponse =
+                mode === 'individual'
+                  ? InboxResponseDto.buildIOSAlertPayload(
+                    user.fcmToken,
+                    iosTitle,
+                    iosBody,
+                    notificationIdStr,
+                    whatNews as unknown as Record<string, string | number>,
+                  )
+                  : InboxResponseDto.buildIOSPayload(
+                    user.fcmToken,
+                    template.notificationType,
+                    iosTitle,
+                    iosBody,
+                    notificationIdStr,
+                    whatNews as unknown as Record<string, string | number>,
+                  )
+
+              // Recalculate size
+              payloadJsonString = JSON.stringify(iosPayloadResponse)
+              payloadSizeBytes = Buffer.byteLength(payloadJsonString, 'utf8')
+              payloadSizeChars = payloadJsonString.length
+            } else {
+              // Can't truncate further, break
+              break
+            }
+          } else {
+            break
+          }
+        }
+
+        const payloadSizeKB = (payloadSizeBytes / 1024).toFixed(2)
+        console.log('📱 [sendFCMPayloadToPlatform] iOS payload size check:', {
+          sizeBytes: payloadSizeBytes,
+          sizeChars: payloadSizeChars,
+          sizeKB: payloadSizeKB,
+          isWithinLimit: payloadSizeBytes < 4096,
+          accountId: user.accountId,
+          contentLength: currentContentLength,
+          titleLength: currentTitleLength,
+          truncationAttempts,
+          note: 'FCM checks UTF-8 byte size, not character count',
+        })
+
+        if (payloadSizeBytes >= 4096) {
+          console.error('❌ [sendFCMPayloadToPlatform] iOS payload STILL exceeds 4KB limit after truncation!', {
+            sizeBytes: payloadSizeBytes,
+            sizeChars: payloadSizeChars,
+            sizeKB: payloadSizeKB,
+            accountId: user.accountId,
+            contentLength: currentContentLength,
+            titleLength: currentTitleLength,
+            truncationAttempts,
+            warning: 'Payload will be rejected by FCM - content too large even after truncation',
+          })
+          // CRITICAL: Throw error to prevent sending oversized payload
+          throw new Error(`iOS payload exceeds 4KB limit (${payloadSizeKB}KB, ${payloadSizeBytes} bytes) for user ${user.accountId}. Content truncated ${truncationAttempts} times but still too large.`)
+        }
+
         console.log('📱 [sendFCMPayloadToPlatform] Sending iOS FCM message...', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
           bakongPlatform: user.bakongPlatform || 'NULL',
+          payloadSizeKB: payloadSizeKB,
         })
         const sendResponse = await fcm.send(iosPayloadResponse)
         console.log('✅ [sendFCMPayloadToPlatform] iOS FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
+          fullResponse: sendResponse,
+          messageId: sendResponse,
+          bakongPlatform: user.bakongPlatform,
+          accountId: user.accountId,
+          tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
         })
+
+        // Log success with full details
+        console.log('='.repeat(80))
+        console.log('✅ [FCM SEND SUCCESS] iOS Notification sent successfully!')
+        console.log('='.repeat(80))
+        console.log('Message ID:', sendResponse)
+        console.log('Account ID:', user.accountId)
+        console.log('Platform:', user.platform)
+        console.log('Bakong Platform:', user.bakongPlatform)
+        console.log(
+          'Token (first 50 chars):',
+          user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN',
+        )
+        console.log('Token length:', user.fcmToken?.length || 0)
+        console.log('Title:', title)
+        console.log('Body:', body?.substring(0, 100))
+        console.log('')
+        console.log('⚠️  IMPORTANT: If notification not received on device, check:')
+        console.log('   1. iOS app has notification permissions enabled')
+        console.log('   2. App is not in Do Not Disturb mode')
+        console.log('   3. Firebase project has APNs certificates configured')
+        console.log('   4. Token matches the Firebase project (dnode-176823)')
+        console.log('   5. App is properly configured to receive FCM notifications')
+        console.log('='.repeat(80))
+
+        // Verify we got a valid message ID (should be a string)
+        if (!sendResponse || typeof sendResponse !== 'string') {
+          console.warn(
+            '⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:',
+            typeof sendResponse,
+          )
+        }
         return sendResponse
       } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error'
-        const errorCode = error?.code || 'N/A'
+        // Extract Firebase error code from multiple possible locations
+        const errorCode = error?.code || error?.errorInfo?.code || 'N/A'
         console.error('❌ [sendFCMPayloadToPlatform] iOS FCM send failed:', {
           accountId: user.accountId,
           errorMessage: errorMessage,
@@ -807,60 +1924,287 @@ export class NotificationService {
           errorDetails: error?.details || 'N/A',
           fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
         })
-        throw new Error(`iOS FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        // Preserve the original Firebase error code by attaching it to the Error object
+        const wrappedError: any = new Error(`iOS FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        wrappedError.code = errorCode !== 'N/A' ? errorCode : undefined // Only set if we have a valid code
+        wrappedError.originalError = error // Keep reference to original error for deeper extraction
+        wrappedError.firebaseErrorCode = errorCode !== 'N/A' ? errorCode : undefined // Explicit Firebase code property
+        throw wrappedError
       }
     }
     if (platform.android) {
       console.log('📱 [sendFCMPayloadToPlatform] Preparing Android notification...')
+
+      // Ensure categoryType is always a string, never null or undefined
+      // Android mobile app requires this field to be a string value
+      // Use the same robust check as buildBaseNotificationData
+      const categoryTypeName = template.categoryTypeEntity?.name
+      const safeCategoryType =
+        categoryTypeName &&
+          typeof categoryTypeName === 'string' &&
+          categoryTypeName.trim() !== ''
+          ? categoryTypeName
+          : 'NEWS'
+
+      console.log('📱 [sendFCMPayloadToPlatform] Android categoryType check:', {
+        templateId: template.id,
+        categoryTypeEntityExists: !!template.categoryTypeEntity,
+        categoryTypeName: categoryTypeName,
+        categoryTypeNameType: typeof categoryTypeName,
+        safeCategoryType: safeCategoryType,
+        finalCategoryType: String(safeCategoryType),
+      })
+
+      // CRITICAL FIX: Truncate content to ensure Android payload stays under 4KB limit
+      // FCM rejects Android payloads over 4KB with "Android message is too big" error
+      // Base payload overhead: ~800-1000 bytes (token ~142, headers ~100, other fields ~600-800)
+      // Available for content: ~3000 bytes
+      // For Unicode/Khmer text: ~3-4 bytes per char in UTF-8, so we need to be conservative
+      const MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL = 800 // Initial conservative limit for Android
+      const MAX_TITLE_LENGTH_FOR_ANDROID = 200 // Title limit for Android
+
+      let androidContent = String(translation.content || '')
+      let androidTitle = String(title || '')
+
+      // Initial truncation before building payload
+      if (androidContent.length > MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL) {
+        console.warn('⚠️ [sendFCMPayloadToPlatform] CRITICAL: Content exceeds Android 4KB payload limit, truncating:', {
+          originalContentLength: androidContent.length,
+          truncatedLength: MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL,
+          accountId: user.accountId,
+          note: 'Full content available via API - mobile app can fetch separately if needed',
+        })
+        androidContent = androidContent.substring(0, MAX_CONTENT_LENGTH_FOR_ANDROID_INITIAL - 3) + '...'
+      }
+
+      if (androidTitle.length > MAX_TITLE_LENGTH_FOR_ANDROID) {
+        console.warn('⚠️ [sendFCMPayloadToPlatform] Title exceeds Android limit, truncating:', {
+          originalTitleLength: androidTitle.length,
+          truncatedLength: MAX_TITLE_LENGTH_FOR_ANDROID,
+          accountId: user.accountId,
+        })
+        androidTitle = androidTitle.substring(0, MAX_TITLE_LENGTH_FOR_ANDROID - 3) + '...'
+      }
+
       const extraData = {
         templateId: template.id,
         notificationType: String(template.notificationType),
-        categoryType: String(template.categoryType),
+        // Use categoryTypeEntity.name (string enum) instead of categoryTypeId (numeric ID)
+        // Mobile app expects category name like "NEWS", "ANNOUNCEMENT", etc., not numeric ID
+        // CRITICAL: Use robust null/empty/type check to ensure it's always a valid string
+        categoryType: String(safeCategoryType),
         language: String(translation.language),
         accountId: String(user.accountId),
         platform: String(user.platform || 'android'),
         imageUrl: imageUrlString || '',
-        content: translation.content || '',
+        content: androidContent, // Use truncated content
         linkPreview: translation.linkPreview || '',
         createdDate: template.createdAt
-          ? DateFormatter.formatDateByLanguage(template.createdAt, translation.language)
+          ? DateFormatter.formatDateByLanguage(
+            template.createdAt instanceof Date ? template.createdAt : new Date(template.createdAt),
+            translation.language,
+          )
           : DateFormatter.formatDateByLanguage(new Date(), translation.language),
-
-        notification_title: title,
+        notification_title: androidTitle, // Use truncated title
         notification_body: body,
       }
 
-      const msg = InboxResponseDto.buildAndroidDataOnlyPayload(
+      // Note: Mobile app will determine redirect screen based on notificationType:
+      // - FLASH_NOTIFICATION → Home screen
+      // - ANNOUNCEMENT → Notification Center screen
+
+      // Use buildAndroidPayload instead of buildAndroidDataOnlyPayload
+      // This includes the 'notification' field which makes notifications display automatically
+      // (like Firebase Console does)
+      let androidPayload = InboxResponseDto.buildAndroidPayload(
         user.fcmToken,
-        title,
+        androidTitle, // Use truncated title
         body,
         notificationIdStr,
-        extraData,
+        extraData as Record<string, string>,
+      )
+
+      // Check payload size before sending (FCM has 4KB limit for Android too)
+      // CRITICAL: Use Buffer.byteLength to get UTF-8 byte size, not character count
+      // JSON.stringify().length counts UTF-16 characters, but FCM counts UTF-8 bytes
+      // For Unicode/Khmer text, each character can be 2-4 bytes in UTF-8
+      let androidPayloadJsonString = JSON.stringify(androidPayload)
+      let androidPayloadSizeBytes = Buffer.byteLength(androidPayloadJsonString, 'utf8')
+      let androidPayloadSizeChars = androidPayloadJsonString.length
+      let androidContentLength = String(extraData.content || '').length
+      let androidTitleLength = String(title || '').length
+      let androidTruncationAttempts = 0
+      const MAX_ANDROID_TRUNCATION_ATTEMPTS = 10
+      const MAX_ANDROID_PAYLOAD_BYTES = 4096 // FCM 4KB limit
+
+      // Iteratively truncate content if payload exceeds 4KB
+      while (androidPayloadSizeBytes >= MAX_ANDROID_PAYLOAD_BYTES && androidTruncationAttempts < MAX_ANDROID_TRUNCATION_ATTEMPTS) {
+        androidTruncationAttempts++
+        console.warn(`⚠️ [sendFCMPayloadToPlatform] Android payload exceeds 4KB (${(androidPayloadSizeBytes / 1024).toFixed(2)}KB), truncating content (attempt ${androidTruncationAttempts})...`, {
+          sizeBytes: androidPayloadSizeBytes,
+          sizeKB: (androidPayloadSizeBytes / 1024).toFixed(2),
+          currentContentLength: androidContentLength,
+          currentTitleLength: androidTitleLength,
+          accountId: user.accountId,
+        })
+
+        // Reduce content length by 20% each iteration
+        const newContentLength = Math.floor(androidContentLength * 0.8)
+        if (newContentLength > 50 && androidContentLength > newContentLength) {
+          const originalContent = String(extraData.content || '')
+          extraData.content = originalContent.substring(0, newContentLength - 3) + '...'
+          androidContentLength = newContentLength
+
+          // Rebuild payload with truncated content
+          androidPayload = InboxResponseDto.buildAndroidPayload(
+            user.fcmToken,
+            title,
+            body,
+            notificationIdStr,
+            extraData as Record<string, string>,
+          )
+
+          // Recalculate size
+          androidPayloadJsonString = JSON.stringify(androidPayload)
+          androidPayloadSizeBytes = Buffer.byteLength(androidPayloadJsonString, 'utf8')
+          androidPayloadSizeChars = androidPayloadJsonString.length
+        } else {
+          // Can't truncate further, break
+          break
+        }
+      }
+
+      const androidPayloadSizeKB = (androidPayloadSizeBytes / 1024).toFixed(2)
+      console.log('📱 [sendFCMPayloadToPlatform] Android payload size check:', {
+        sizeBytes: androidPayloadSizeBytes,
+        sizeChars: androidPayloadSizeChars,
+        sizeKB: androidPayloadSizeKB,
+        isWithinLimit: androidPayloadSizeBytes < MAX_ANDROID_PAYLOAD_BYTES,
+        accountId: user.accountId,
+        contentLength: androidContentLength,
+        titleLength: androidTitleLength,
+        truncationAttempts: androidTruncationAttempts,
+        note: 'FCM checks UTF-8 byte size, not character count',
+      })
+
+      if (androidPayloadSizeBytes >= MAX_ANDROID_PAYLOAD_BYTES) {
+        console.error('❌ [sendFCMPayloadToPlatform] Android payload STILL exceeds 4KB limit after truncation!', {
+          sizeBytes: androidPayloadSizeBytes,
+          sizeChars: androidPayloadSizeChars,
+          sizeKB: androidPayloadSizeKB,
+          accountId: user.accountId,
+          contentLength: androidContentLength,
+          titleLength: androidTitleLength,
+          truncationAttempts: androidTruncationAttempts,
+          warning: 'Payload will be rejected by FCM - need to truncate content further',
+        })
+        // CRITICAL: Throw error to prevent sending oversized payload
+        throw new Error(`Android payload exceeds 4KB limit (${androidPayloadSizeKB}KB) for user ${user.accountId}. Content truncated ${androidTruncationAttempts} times but still too large.`)
+      }
+
+      const msg = androidPayload
+
+      // Log the full payload structure for debugging
+      console.log('📱 [sendFCMPayloadToPlatform] Android payload structure:', {
+        token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+        tokenLength: user.fcmToken?.length || 0,
+        hasNotification: !!msg.notification,
+        hasAndroid: !!msg.android,
+        hasData: !!msg.data,
+        notificationTitle: msg.notification?.title,
+        notificationBody: msg.notification?.body,
+        dataKeys: msg.data ? Object.keys(msg.data) : [],
+        androidPriority: msg.android?.priority,
+        androidTtl: msg.android?.ttl,
+        androidCollapseKey: msg.android?.collapseKey,
+        androidNotificationChannelId: msg.android?.notification?.channelId,
+        androidNotificationSound: msg.android?.notification?.sound,
+      })
+
+      // Log full payload (sanitized) for debugging
+      const sanitizedPayload = {
+        ...msg,
+        token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
+      }
+      console.log(
+        '📱 [sendFCMPayloadToPlatform] Full Android payload:',
+        JSON.stringify(sanitizedPayload, null, 2),
       )
 
       try {
         // Get FCM instance for user's bakongPlatform
+        // CRITICAL: Use user's bakongPlatform to get correct Firebase instance
+        // If user's bakongPlatform doesn't match template's bakongPlatform, this could cause failures
         const fcm = this.getFCM(user.bakongPlatform)
         if (!fcm) {
-          console.warn('⚠️  FCM not available - skipping Android notification send')
+          console.error('❌ [sendFCMPayloadToPlatform] FCM not available for Android notification:', {
+            accountId: user.accountId,
+            userBakongPlatform: user.bakongPlatform,
+            templateBakongPlatform: template.bakongPlatform,
+            error: 'Firebase Cloud Messaging is not initialized for this bakongPlatform',
+          })
           throw new Error(
-            'Firebase Cloud Messaging is not initialized. Please check Firebase configuration.',
+            `Firebase Cloud Messaging is not initialized for bakongPlatform: ${user.bakongPlatform || 'DEFAULT'}. Please check Firebase configuration.`,
           )
         }
+
+        // Log Firebase instance info for debugging
+        console.log('📱 [sendFCMPayloadToPlatform] Using FCM instance:', {
+          accountId: user.accountId,
+          userBakongPlatform: user.bakongPlatform,
+          templateBakongPlatform: template.bakongPlatform,
+          fcmAvailable: !!fcm,
+          note: user.bakongPlatform !== template.bakongPlatform
+            ? '⚠️ WARNING: User bakongPlatform differs from template bakongPlatform - this might cause issues'
+            : '✅ User and template bakongPlatform match',
+        })
         console.log('📱 [sendFCMPayloadToPlatform] Sending Android FCM message...', {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
           bakongPlatform: user.bakongPlatform || 'NULL',
+          payloadType: 'notification+data',
+          hasClickAction: !!msg.android?.notification?.clickAction,
+          clickAction: msg.android?.notification?.clickAction || 'NONE',
         })
         const sendResponse = await fcm.send(msg)
         console.log('✅ [sendFCMPayloadToPlatform] Android FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
+          fullResponse: sendResponse,
+          messageId: sendResponse,
+          bakongPlatform: user.bakongPlatform,
+          accountId: user.accountId,
+          tokenPrefix: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
         })
+
+        // Log success with full details
+        console.log('='.repeat(80))
+        console.log('✅ [FCM SEND SUCCESS] Notification sent successfully!')
+        console.log('='.repeat(80))
+        console.log('Message ID:', sendResponse)
+        console.log('Account ID:', user.accountId)
+        console.log('Platform:', user.platform)
+        console.log('Bakong Platform:', user.bakongPlatform)
+        console.log(
+          'Token (first 50 chars):',
+          user.fcmToken ? `${user.fcmToken.substring(0, 50)}...` : 'NO TOKEN',
+        )
+        console.log('Title:', title)
+        console.log('Body:', body?.substring(0, 100))
+        console.log('='.repeat(80))
+
+        // Verify we got a valid message ID (should be a string)
+        if (!sendResponse || typeof sendResponse !== 'string') {
+          console.warn(
+            '⚠️ [sendFCMPayloadToPlatform] Unexpected FCM response format:',
+            typeof sendResponse,
+          )
+        }
         return sendResponse
       } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error'
-        const errorCode = error?.code || 'N/A'
+        // Extract Firebase error code from multiple possible locations
+        const errorCode = error?.code || error?.errorInfo?.code || 'N/A'
         console.error('❌ [sendFCMPayloadToPlatform] Android FCM send failed:', {
           accountId: user.accountId,
           errorMessage: errorMessage,
@@ -869,7 +2213,12 @@ export class NotificationService {
           fullError: process.env.NODE_ENV === 'development' ? error : 'Hidden in production',
         })
         console.error('❌ Error code:', errorCode)
-        throw new Error(`Android FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        // Preserve the original Firebase error code by attaching it to the Error object
+        const wrappedError: any = new Error(`Android FCM send failed: ${errorMessage} (code: ${errorCode})`)
+        wrappedError.code = errorCode !== 'N/A' ? errorCode : undefined // Only set if we have a valid code
+        wrappedError.originalError = error // Keep reference to original error for deeper extraction
+        wrappedError.firebaseErrorCode = errorCode !== 'N/A' ? errorCode : undefined // Explicit Firebase code property
+        throw wrappedError
       }
     }
 
@@ -896,7 +2245,8 @@ export class NotificationService {
     dto: SentNotificationDto,
     req?: any,
   ) {
-    const { accountId, language, templateId } = dto
+    const { language, templateId } = dto
+    const accountId = typeof dto.accountId === 'string' && dto.accountId.trim() ? dto.accountId.trim() : (Array.isArray(dto.accountId) && dto.accountId.length > 0 ? String(dto.accountId[0]).trim() : undefined)
 
     if (!accountId) {
       return BaseResponseDto.error({
@@ -916,7 +2266,7 @@ export class NotificationService {
     if (templateId) {
       selectedTemplate = await this.templateRepo.findOne({
         where: { id: templateId, notificationType: NotificationType.FLASH_NOTIFICATION },
-        relations: ['translations'],
+        relations: ['translations', 'categoryTypeEntity'],
       })
 
       if (!selectedTemplate) {
@@ -947,7 +2297,17 @@ export class NotificationService {
         )
       }
 
-      selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, language)
+      // Always use Khmer (KM) translation for FCM push notifications
+      selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, Language.KM)
+      if (!selectedTranslation) {
+        // Fallback: try to find any available translation
+        selectedTranslation = this.templateService.findBestTranslation(selectedTemplate, undefined)
+        if (selectedTranslation) {
+          console.warn(
+            `⚠️ [handleFlashNotification] No Khmer translation found for template ${templateId}, using fallback (${selectedTranslation.language})`,
+          )
+        }
+      }
     } else {
       // Find template matching user's bakongPlatform (excluding templates sent 2+ times)
       // The limit is PER TEMPLATE: Each template can be sent 2 times per user per 24 hours
@@ -987,36 +2347,34 @@ export class NotificationService {
           return createdAt >= last24Hours && createdAt <= now
         })
 
-        const templateCounts = todayNotifications.reduce(
-          (acc, notif) => {
-            if (notif.templateId) {
-              acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
-            }
-            return acc
-          },
-          {} as Record<number, number>,
-        )
+        const templateCounts = todayNotifications.reduce((acc, notif) => {
+          if (notif.templateId) {
+            acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
+          }
+          return acc
+        }, {} as Record<number, number>)
 
         const templatesAtLimit = Object.entries(templateCounts)
           .filter(([_, count]) => count >= 2)
           .map(([templateId]) => parseInt(templateId))
 
-        // If all available templates have been sent 2+ times, return limit error
+        // If all available templates have reached their limits, return limit error
+        // Note: This check is now handled by findBestTemplateForUser which checks per-template limits
+        // This is kept for backward compatibility
         if (
           allAvailableTemplates.length > 0 &&
           templatesAtLimit.length === allAvailableTemplates.length &&
           allAvailableTemplates.every((t) => templatesAtLimit.includes(t.id))
         ) {
           console.warn(
-            `⚠️ [handleFlashNotification] All ${allAvailableTemplates.length} templates have been sent 2+ times for user ${accountId}`,
+            `⚠️ [handleFlashNotification] All ${allAvailableTemplates.length} templates have reached their limits for user ${accountId}`,
           )
           return BaseResponseDto.error({
             errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
             message: ResponseMessage.FLASH_LIMIT_REACHED_IN_TODAY,
             data: {
               message:
-                'You have reached the daily limit for flash notifications. All available templates have been sent 2 times. Please try again tomorrow.',
-              limit: 2,
+                'You have reached the limit for flash notifications. All available templates have reached their daily or maximum day limits. Please try again later.',
               templatesAtLimit: templatesAtLimit,
               totalTemplates: allAvailableTemplates.length,
             },
@@ -1033,7 +2391,8 @@ export class NotificationService {
       selectedTranslation = bestTemplate.translation
 
       console.log(
-        `📤 [handleFlashNotification] Found template ${selectedTemplate.id} for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
+        `📤 [handleFlashNotification] Found template ${selectedTemplate.id
+        } for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
       )
     }
 
@@ -1044,25 +2403,35 @@ export class NotificationService {
       })
     }
 
+    // Get flash notification limit settings from template (default: 1 per day, 1 day max)
+    const showPerDay = selectedTemplate.showPerDay ?? 1
+    const maxDayShowing = selectedTemplate.maxDayShowing ?? 1
+
+    console.log(
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} limits: showPerDay=${showPerDay}, maxDayShowing=${maxDayShowing}`,
+    )
+
+    // Check 1: Has user seen this template showPerDay times TODAY?
     const now = new Date()
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    const existingCount = await this.notiRepo.count({
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    const todayCount = await this.notiRepo.count({
       where: {
         accountId,
         templateId: selectedTemplate.id,
-        createdAt: Between(twentyFourHoursAgo, now),
+        createdAt: Between(todayStart, todayEnd),
       },
     })
 
     console.log(
-      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been sent ${existingCount} times to user ${accountId} in last 24h`,
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been sent ${todayCount} times to user ${accountId} today (limit: ${showPerDay} per day)`,
     )
 
-    // Check if user has already received this template 2+ times in last 24 hours
-    // IMPORTANT: Check BEFORE storing notification to prevent sending
-    if (existingCount >= 2) {
+    // Check if user has already received this template showPerDay times today
+    if (todayCount >= showPerDay) {
       console.warn(
-        `⚠️ [handleFlashNotification] LIMIT REACHED: User ${accountId} has already received template ${selectedTemplate.id} ${existingCount} times in last 24h (limit: 2)`,
+        `⚠️ [handleFlashNotification] DAILY LIMIT REACHED: User ${accountId} has already received template ${selectedTemplate.id} ${todayCount} times today (limit: ${showPerDay} per day)`,
       )
       return BaseResponseDto.error({
         errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
@@ -1070,16 +2439,62 @@ export class NotificationService {
         data: {
           templateId: selectedTemplate.id,
           templateTitle: selectedTranslation?.title || 'Unknown',
-          sendCount: existingCount,
-          limit: 2,
-          message: `You have already received this notification ${existingCount} times today. Please try again tomorrow.`,
+          sendCount: todayCount,
+          limit: showPerDay,
+          message: `You have already received this notification ${todayCount} time(s) today. Please try again tomorrow.`,
         },
       })
     }
 
-    const newSendCount = existingCount + 1
+    // Check 2: Has user seen this template for maxDayShowing days?
+    // Count distinct days user has received this template
+    const allNotifications = await this.notiRepo.find({
+      where: {
+        accountId,
+        templateId: selectedTemplate.id,
+      },
+      select: ['createdAt'],
+    })
+
+    // Get distinct days (YYYY-MM-DD format)
+    const distinctDays = new Set<string>()
+    allNotifications.forEach((notif) => {
+      const date = new Date(notif.createdAt)
+      const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+        2,
+        '0',
+      )}-${String(date.getDate()).padStart(2, '0')}`
+      distinctDays.add(dayKey)
+    })
+
+    const daysCount = distinctDays.size
     console.log(
-      `✅ [handleFlashNotification] Proceeding to send template ${selectedTemplate.id} (will be send #${newSendCount} for this user)`,
+      `📊 [handleFlashNotification] Template ${selectedTemplate.id} has been shown to user ${accountId} for ${daysCount} distinct day(s) (limit: ${maxDayShowing} days)`,
+    )
+
+    // Check if user has already seen this template for maxDayShowing days
+    if (daysCount >= maxDayShowing) {
+      console.warn(
+        `⚠️ [handleFlashNotification] MAX DAYS LIMIT REACHED: User ${accountId} has already seen template ${selectedTemplate.id} for ${daysCount} days (limit: ${maxDayShowing} days)`,
+      )
+      return BaseResponseDto.error({
+        errorCode: ErrorCode.FLASH_LIMIT_REACHED_IN_TODAY,
+        message: ResponseMessage.FLASH_LIMIT_REACHED_IN_TODAY,
+        data: {
+          templateId: selectedTemplate.id,
+          templateTitle: selectedTranslation?.title || 'Unknown',
+          daysCount: daysCount,
+          limit: maxDayShowing,
+          message: `This notification has already been shown to you for ${daysCount} day(s). The maximum limit of ${maxDayShowing} day(s) has been reached.`,
+        },
+      })
+    }
+
+    const newSendCount = todayCount + 1
+    console.log(
+      `✅ [handleFlashNotification] Proceeding to send template ${selectedTemplate.id
+      } (will be send #${newSendCount} for this user today, day ${daysCount + 1
+      } of ${maxDayShowing})`,
     )
 
     // User already fetched above, reuse it
@@ -1089,6 +2504,7 @@ export class NotificationService {
       fcmToken: user?.fcmToken,
       sendCount: newSendCount,
       firebaseMessageId: 0,
+      language: selectedTranslation?.language,
     })
 
     await this.templateService.markAsPublished(selectedTemplate.id, req?.user)
@@ -1096,6 +2512,17 @@ export class NotificationService {
     const imageUrl = selectedTranslation?.imageId
       ? this.imageService.buildImageUrl(selectedTranslation.imageId, req)
       : ''
+
+    const baseUrl = this.baseFunctionHelper
+      ? this.baseFunctionHelper.getBaseUrl(req)
+      : 'http://localhost:4005'
+
+    // Only build categoryIcon for v2
+    const isV2 = (req as any)?.version === '2' || req?.url?.includes('/v2/') || req?.originalUrl?.includes('/v2/')
+    const categoryIcon = isV2 && selectedTemplate?.categoryTypeId
+      ? InboxResponseDto.buildCategoryIconUrl(baseUrl, selectedTemplate.categoryTypeId)
+      : undefined
+
     const whatNews = InboxResponseDto.buildSendApiNotificationData(
       selectedTemplate,
       selectedTranslation,
@@ -1103,6 +2530,9 @@ export class NotificationService {
       typeof imageUrl === 'string' ? imageUrl : '',
       saved.id,
       saved.sendCount,
+      baseUrl,
+      req,
+      categoryIcon,
     )
     return BaseResponseDto.success({
       data: { whatnews: whatNews },
@@ -1122,28 +2552,137 @@ export class NotificationService {
         size,
         bakongPlatform,
       } = dto
-      const { skip, take } = PaginationUtils.normalizePagination(page, size)
 
-      // Handle typo: "bakongPlatfrom" -> "bakongPlatform"
-      // Check raw request body if bakongPlatform is not set but typo field exists
-      let finalBakongPlatform = bakongPlatform
-      if (!finalBakongPlatform && req?.body && req.body.bakongPlatfrom) {
-        console.warn(
-          `⚠️  Typo detected for user ${accountId}: "bakongPlatfrom" should be "bakongPlatform". Using value from typo field.`,
+      // Detect flow: sync data (no page/size) vs notification center (with page/size)
+      const isSyncFlow = page === null || page === undefined || size === null || size === undefined
+
+      console.log('📥 [getNotificationCenter] /inbox API called with:', {
+        accountId,
+        flow: isSyncFlow ? 'SYNC_DATA' : 'NOTIFICATION_CENTER',
+        page: page ?? 'null',
+        size: size ?? 'null',
+        fcmToken: fcmToken
+          ? `${fcmToken.substring(0, 30)}...`
+          : fcmToken === ''
+            ? 'EMPTY (explicitly cleared)'
+            : 'NOT PROVIDED',
+        platform: platform || 'N/A',
+        language: language || 'N/A',
+        bakongPlatform: bakongPlatform || 'N/A',
+      })
+
+      // bakongPlatform is required - validation will reject if missing
+      if (!bakongPlatform) {
+        return BaseResponseDto.error({
+          errorCode: ErrorCode.FLASH_NOTIFICATION_POPUP_FAILED,
+          message:
+            'bakongPlatform is required. Must be one of: BAKONG, BAKONG_JUNIOR, BAKONG_TOURIST',
+          data: { accountId },
+        })
+      }
+
+      // Check existing user before sync
+      const existingUser = await this.baseFunctionHelper.findUserByAccountId(accountId)
+      if (existingUser) {
+        console.log(
+          `📋 [getNotificationCenter] Existing user found: ${accountId}, current fcmToken: ${existingUser.fcmToken ? `${existingUser.fcmToken.substring(0, 30)}...` : 'EMPTY'
+          }`,
         )
-        finalBakongPlatform = req.body.bakongPlatfrom
+      } else {
+        console.log(`📋 [getNotificationCenter] New user: ${accountId}`)
       }
 
       // Store bakongPlatform when user calls API
-      const syncResult = await this.baseFunctionHelper.updateUserData({
+      // fcmToken is required in NotificationInboxDto, so it should always be provided
+      // If it's an empty string, that means app was deleted - we should clear old token
+      // Always pass fcmToken as-is (even if empty string) to ensure sync happens
+      console.log(`🔄 [getNotificationCenter] Preparing to sync user data:`, {
         accountId,
-        fcmToken,
-        participantCode,
-        platform,
-        language,
-        bakongPlatform: finalBakongPlatform,
+        fcmTokenProvided: fcmToken !== undefined,
+        fcmTokenValue: fcmToken
+          ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length})`
+          : fcmToken === ''
+            ? 'EMPTY STRING'
+            : 'UNDEFINED',
+        fcmTokenType: typeof fcmToken,
       })
+      console.log(`🔄 [getNotificationCenter] Calling updateUserData with:`, {
+        accountId,
+        fcmToken: fcmToken
+          ? `${fcmToken.substring(0, 30)}... (length: ${fcmToken.length}, type: ${typeof fcmToken})`
+          : fcmToken === ''
+            ? 'EMPTY STRING'
+            : 'UNDEFINED',
+        participantCode: participantCode || 'NOT PROVIDED',
+        platform: platform || 'NOT PROVIDED',
+        language: language || 'NOT PROVIDED',
+        bakongPlatform: bakongPlatform || 'NOT PROVIDED',
+      })
+
+      // CRITICAL: Only include fields if they have actual values
+      // Exception: fcmToken empty string means app deleted - should clear token
+      // If a field is not provided (undefined) or null, we keep the existing value in database
+      // This prevents accidentally overwriting existing data with null/undefined values
+      const syncData: any = {
+        accountId,
+      }
+
+      // fcmToken: Include even if empty string (means app deleted, should clear token)
+      // Only skip if undefined or null
+      if (fcmToken !== undefined && fcmToken !== null) {
+        syncData.fcmToken = fcmToken
+      }
+
+      // bakongPlatform: Enum type (BakongApp) - only check for undefined/null
+      if (bakongPlatform !== undefined && bakongPlatform !== null) {
+        syncData.bakongPlatform = bakongPlatform
+      }
+
+      // participantCode: String - check for undefined/null/empty
+      if (participantCode !== undefined && participantCode !== null && participantCode !== '') {
+        syncData.participantCode = participantCode
+      }
+
+      // platform: Enum type (Platform) - only check for undefined/null
+      if (platform !== undefined && platform !== null) {
+        syncData.platform = platform
+      }
+
+      // language: Enum type (Language) - only check for undefined/null
+      if (language !== undefined && language !== null) {
+        syncData.language = language
+      }
+
+      const syncResult = await this.baseFunctionHelper.updateUserData(syncData)
+
+      // Log sync result
+      if ('isNewUser' in syncResult) {
+        const result = syncResult as any
+        console.log(
+          `✅ [getNotificationCenter] User sync complete: ${accountId}, isNewUser: ${result.isNewUser
+          }, savedUser fcmToken: ${result.savedUser?.fcmToken
+            ? `${result.savedUser.fcmToken.substring(0, 30)}...`
+            : 'EMPTY'
+          }`,
+        )
+      } else {
+        console.log(
+          `✅ [getNotificationCenter] All users sync complete: ${(syncResult as any).updatedCount
+          } users updated`,
+        )
+      }
+
+      // Re-fetch user to verify it was saved
       const user = await this.baseFunctionHelper.findUserByAccountId(accountId)
+      console.log(`🔍 [getNotificationCenter] Re-fetched user after sync:`, {
+        accountId,
+        found: !!user,
+        fcmToken: user?.fcmToken
+          ? `${user.fcmToken.substring(0, 30)}... (length: ${user.fcmToken.length})`
+          : 'EMPTY',
+        bakongPlatform: user?.bakongPlatform || 'NULL',
+        updatedAt: user?.updatedAt,
+      })
 
       if (!user) {
         return BaseResponseDto.error({
@@ -1156,37 +2695,91 @@ export class NotificationService {
       // Get user's bakongPlatform from database (stored when user called API)
       const userPlatform = user.bakongPlatform
 
-      const [notifications, totalCount] = await this.notiRepo.findAndCount({
-        where: { accountId: accountId.trim() },
-        order: { createdAt: 'DESC' },
-        skip,
-        take,
-      })
+      // SYNC FLOW: Return sync response without notifications
+      if (isSyncFlow) {
+        const isNewUser = 'isNewUser' in syncResult ? (syncResult as any).isNewUser : false
+        // dataUpdated only exists in SingleUserSyncResult, not AllUsersSyncResult
+        const dataUpdated =
+          'isNewUser' in syncResult && 'dataUpdated' in syncResult
+            ? (syncResult as any).dataUpdated
+            : true // Default to true if not available (shouldn't happen for single user sync)
+        console.log(
+          `✅ [getNotificationCenter] Sync flow complete for ${accountId}, isNewUser: ${isNewUser}, dataUpdated: ${dataUpdated}`,
+        )
+
+        // Get syncStatus from user after sync
+        const syncedUser = await this.baseFunctionHelper.findUserByAccountId(accountId)
+        const syncStatus = syncedUser?.syncStatus || null
+
+        return InboxResponseDto.getSyncResponse(accountId, userPlatform, dataUpdated, syncStatus)
+      }
+
+      // NOTIFICATION CENTER FLOW: Return paginated notifications (existing behavior)
+      const { skip, take } = PaginationUtils.normalizePagination(page || 1, size || 10)
+
+      // Use query builder with proper LEFT JOINs to ensure categoryTypeEntity is always loaded
+      // This prevents null categoryType issues on Android
+      const queryBuilder = this.notiRepo
+        .createQueryBuilder('notification')
+        .leftJoinAndSelect('notification.template', 'template')
+        .leftJoinAndSelect('template.translations', 'translations')
+        .leftJoinAndSelect('template.categoryTypeEntity', 'categoryTypeEntity')
+        .where('notification.accountId = :accountId', { accountId: accountId.trim() })
+        .orderBy('notification.createdAt', 'DESC')
+        .skip(skip)
+        .take(take)
+
+      const [notifications, totalCount] = await queryBuilder.getManyAndCount()
 
       // Filter notifications by user's bakongPlatform
       const filteredNotifications = []
       for (const notification of notifications) {
-        if (notification.templateId) {
-          notification.template = await this.templateRepo.findOne({
-            where: { id: notification.templateId },
-            relations: ['translations'],
-          })
-
-          if (notification.template && !notification.template.translations) {
+        if (notification.templateId && notification.template) {
+          // Ensure translations array exists
+          if (!notification.template.translations) {
             notification.template.translations = []
           }
 
-          // Filter: only include if template.bakongPlatform matches user's platform
+          // Log if categoryTypeEntity is missing for debugging
+          if (!notification.template.categoryTypeEntity && notification.template.categoryTypeId) {
+            console.warn(
+              `⚠️ [getNotificationCenter] Template ${notification.templateId} has categoryTypeId ${notification.template.categoryTypeId} but categoryTypeEntity is null`,
+            )
+            // Try to reload the categoryTypeEntity if it's missing
+            if (notification.template.categoryTypeId) {
+              const categoryType = await this.templateRepo.manager.findOne(CategoryType, {
+                where: { id: notification.template.categoryTypeId },
+              })
+              if (categoryType) {
+                notification.template.categoryTypeEntity = categoryType
+              } else {
+                console.error(
+                  `❌ [getNotificationCenter] CategoryType with id ${notification.template.categoryTypeId} not found in database`,
+                )
+              }
+            }
+          }
+
+          // Filter: only include if template exists and bakongPlatform matches user's platform
           // OR if template has no bakongPlatform (backward compatibility)
           if (
-            !notification.template.bakongPlatform ||
-            notification.template.bakongPlatform === userPlatform
+            notification.template &&
+            (!notification.template.bakongPlatform ||
+              notification.template.bakongPlatform === userPlatform)
           ) {
             filteredNotifications.push(notification)
           }
-        } else {
-          // If no template, include notification
+        } else if (!notification.templateId) {
+          // If no templateId, include notification (backward compatibility)
+          // But ensure it has a valid categoryType
           filteredNotifications.push(notification)
+        } else {
+          // Template ID exists but template not found - this is a data integrity issue
+          // Log error and skip this notification to prevent null categoryType issues
+          console.error(
+            `❌ [getNotificationCenter] Notification ${notification.id} has templateId ${notification.templateId} but template not found in database. Skipping to prevent null categoryType.`,
+          )
+          // Skip this notification to prevent Android from receiving null categoryType
         }
       }
 
@@ -1202,6 +2795,7 @@ export class NotificationService {
               this.baseFunctionHelper.getBaseUrl(req),
               this.templateService,
               this.imageService,
+              req,
             ),
         ),
         PaginationUtils.generateResponseMessage(
@@ -1226,10 +2820,15 @@ export class NotificationService {
         userPlatform,
       )
     } catch (error) {
+      const errorMessage = (error as any).message || ResponseMessage.INTERNAL_SERVER_ERROR
+      console.error(`❌ [getNotificationCenter] Error for ${dto.accountId}:`, errorMessage)
       return BaseResponseDto.error({
-        errorCode: ErrorCode.FLASH_NOTIFICATION_POPUP_FAILED,
-        message: ResponseMessage.FLASH_NOTIFICATION_POPUP_FAILED,
-        data: { accountId: dto.accountId, error: (error as any).message },
+        errorCode: ErrorCode.INTERNAL_SERVER_ERROR,
+        message: ResponseMessage.INTERNAL_SERVER_ERROR,
+        data: {
+          accountId: dto.accountId,
+          error: errorMessage,
+        },
       })
     }
   }
@@ -1240,6 +2839,7 @@ export class NotificationService {
     fcmToken?: string
     sendCount?: number
     firebaseMessageId?: number
+    language?: string
   }): Promise<Notification> {
     // NOTE: Deduplication removed - we now allow multiple records for the same template
     // The limit check (2 times per 24h) is handled in handleFlashNotification BEFORE calling this method
@@ -1251,6 +2851,7 @@ export class NotificationService {
       fcmToken: params.fcmToken ?? '',
       sendCount: params.sendCount ?? 1,
       firebaseMessageId: params.firebaseMessageId ?? 0,
+      language: params.language,
     })
     return this.notiRepo.save(entity)
   }
@@ -1308,7 +2909,7 @@ export class NotificationService {
         await this.notiRepo.update({ id: fallbackNotification.id }, { firebaseMessageId })
         return
       }
-    } catch (error) {}
+    } catch (error) { }
   }
 
   async deleteNotificationsByTemplateId(templateId: number): Promise<void> {
@@ -1318,6 +2919,26 @@ export class NotificationService {
       console.log(`Deleted ${result.affected || 0} notification records for template ${templateId}`)
     } catch (error) {
       console.error(`Error deleting notification records for template ${templateId}:`, error)
+      throw error
+    }
+  }
+
+  async updateNotificationTemplateId(oldTemplateId: number, newTemplateId: number): Promise<void> {
+    try {
+      console.log(`Updating notification records: templateId ${oldTemplateId} -> ${newTemplateId}`)
+      const result = await this.notiRepo.update(
+        { templateId: oldTemplateId },
+        { templateId: newTemplateId },
+      )
+      console.log(
+        `Updated ${result.affected || 0
+        } notification records from template ${oldTemplateId} to ${newTemplateId}`,
+      )
+    } catch (error) {
+      console.error(
+        `Error updating notification records from template ${oldTemplateId} to ${newTemplateId}:`,
+        error,
+      )
       throw error
     }
   }

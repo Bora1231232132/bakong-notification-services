@@ -1,0 +1,721 @@
+---
+description: Complete guide for Docker setup, deployment, and configuration for Bakong Notification Services
+alwaysApply: false
+---
+# Docker Setup Guide
+
+Complete guide for setting up, building, and deploying the Bakong Notification Services using Docker and Docker Compose.
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Quick Start](#quick-start)
+3. [Docker Compose Files](#docker-compose-files)
+4. [Environment Configurations](#environment-configurations)
+5. [Building Images](#building-images)
+6. [Running Containers](#running-containers)
+7. [Common Operations](#common-operations)
+8. [Troubleshooting](#troubleshooting)
+9. [Best Practices](#best-practices)
+
+## Prerequisites
+
+### Required Software
+
+- **Docker**: Version 20.10+ (recommended: latest stable)
+- **Docker Compose**: Version 2.0+ (included with Docker Desktop)
+- **Git**: For cloning the repository
+- **Node.js**: 20+ (only needed if building images locally without Docker)
+
+### Verify Installation
+
+```powershell
+# Check Docker version
+docker --version
+
+# Check Docker Compose version
+docker compose version
+
+# Verify Docker is running
+docker ps
+```
+
+### Required Files
+
+Before running Docker, ensure you have:
+
+1. **Firebase Service Account JSON**: `firebase-service-account.json` in project root
+   - Required for push notifications
+   - Must be placed at: `./firebase-service-account.json`
+
+2. **Environment Files**: Located in `apps/backend/`
+   - `env.development` - For local development
+   - `env.staging` - For SIT/staging environment
+   - `env.production` - For production environment
+   - Copy from `env.example` if missing
+
+3. **Database Initialization**: `apps/backend/init-db.sql`
+   - Automatically loaded on first database container start
+
+## Quick Start
+
+### Local Development (First Time)
+
+```powershell
+# 1. Clone the repository
+git clone <repository-url>
+cd bakong-notification-services
+
+# 2. Ensure required files exist
+# - firebase-service-account.json (in root)
+# - apps/backend/env.development
+
+# 3. Start all services
+docker compose up -d --build
+
+# 4. View logs
+docker compose logs -f
+
+# 5. Access services:
+# - Frontend: http://localhost:3001
+# - Backend API: http://localhost:4004
+# - Database: localhost:5437
+```
+
+### Stop Services
+
+```powershell
+# Stop all containers
+docker compose down
+
+# Stop and remove volumes (⚠️ deletes database data)
+docker compose down -v
+```
+
+## Docker Compose Files
+
+The project uses multiple Docker Compose files for different environments:
+
+| File | Environment | Ports | Usage |
+|------|------------|-------|-------|
+| `docker-compose.yml` | Local Development | Frontend: 3001, Backend: 4004, DB: 5437 | Local testing on your machine |
+| `docker-compose.sit.yml` | SIT/Staging | Frontend: 80/443, Backend: 4002, DB: 5434 | Deploy to staging server (10.20.6.57) |
+| `docker-compose.production.yml` | Production | Frontend: 80/443, Backend: 8080, DB: 5433 | Deploy to production server (10.20.6.58) |
+| `docker-compose.test-server.yml` | Test Server | Frontend: 8090, Backend: 4002, DB: 5434 | Local testing with SIT-like config |
+
+### Using Different Compose Files
+
+```powershell
+# Local development (default)
+docker compose up -d
+
+# SIT/Staging
+docker compose -f docker-compose.sit.yml up -d --build
+
+# Production
+docker compose -f docker-compose.production.yml up -d --build
+
+# Test server (local with SIT config)
+docker compose -f docker-compose.test-server.yml up -d --build
+```
+
+## Environment Configurations
+
+### Service Ports
+
+#### Local Development (`docker-compose.yml`)
+- **Frontend**: `3001:80` (HTTP), `3443:443` (HTTPS)
+- **Backend**: `4004:8080`
+- **Database**: `5437:5432`
+
+#### SIT/Staging (`docker-compose.sit.yml`)
+- **Frontend**: `80:80` (HTTP), `443:443` (HTTPS)
+- **Backend**: `4002:8080`
+- **Database**: `5434:5432`
+
+#### Production (`docker-compose.production.yml`)
+- **Frontend**: `80:80` (HTTP), `443:443` (HTTPS)
+- **Backend**: `8080:8080`
+- **Database**: `5433:5432`
+
+### Environment Variables
+
+Docker Compose automatically sets `NODE_ENV` which determines which env file is loaded:
+
+- **Development**: `NODE_ENV=development` → loads `env.development`
+- **Staging**: `NODE_ENV=staging` → loads `env.staging`
+- **Production**: `NODE_ENV=production` → loads `env.production`
+
+### Database Configuration
+
+Each environment uses separate database credentials:
+
+| Environment | Database Name | User | Password | Port |
+|-------------|---------------|------|----------|------|
+| Development | `bakong_notification_services_dev` | `bkns_dev` | `dev` | 5437 |
+| SIT | `bakong_notification_services_sit` | `bkns_sit` | `0101bkns_sit` | 5434 |
+| Production | `bakong_notification_services` | `bkns` | `010110bkns` | 5433 |
+
+### Volume Mounts
+
+#### Backend Volumes
+- `firebase-service-account.json` → `/opt/bk_notification_service/firebase-service-account.json:ro`
+- `apps/backend/env.{environment}` → `/opt/bk_notification_service/env.{environment}:ro`
+
+#### Database Volumes
+- `postgres_data_{env}` → `/var/lib/postgresql/data` (persistent storage)
+- `apps/backend/init-db.sql` → `/docker-entrypoint-initdb.d/init-db.sql:ro` (initialization script)
+
+## Building Images
+
+### Build All Services
+
+```powershell
+# Build all services (default compose file)
+docker compose build
+
+# Build specific service
+docker compose build backend
+docker compose build frontend
+
+# Build with no cache (fresh build)
+docker compose build --no-cache
+```
+
+### Build for Specific Environment
+
+```powershell
+# Build for SIT
+docker compose -f docker-compose.sit.yml build
+
+# Build for Production
+docker compose -f docker-compose.production.yml build
+```
+
+### Using Docker Bake (Multi-stage Builds)
+
+The project includes `docker-bake.hcl` for advanced builds:
+
+```powershell
+# Build both backend and frontend
+docker buildx bake
+
+# Build specific target
+docker buildx bake backend
+docker buildx bake frontend
+
+# Build and push to registry
+docker buildx bake --push
+```
+
+### Build Arguments (Frontend)
+
+Frontend build accepts these arguments:
+
+```yaml
+args:
+  VITE_API_BASE_URL: ""  # Empty = relative URLs
+  VITE_FRONTEND_PORT: 3000
+  VITE_BASE_URL: /
+```
+
+Override in compose file or command:
+
+```powershell
+docker compose build --build-arg VITE_API_BASE_URL=http://localhost:4004 frontend
+```
+
+## Running Containers
+
+### Start Services
+
+```powershell
+# Start in detached mode (background)
+docker compose up -d
+
+# Start and build if needed
+docker compose up -d --build
+
+# Start with specific compose file
+docker compose -f docker-compose.sit.yml up -d --build
+```
+
+### View Logs
+
+```powershell
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+
+# Last 100 lines
+docker compose logs --tail=100
+
+# Since specific time
+docker compose logs --since 10m
+```
+
+### Container Status
+
+```powershell
+# List running containers
+docker compose ps
+
+# Detailed status
+docker ps
+
+# Container resource usage
+docker stats
+```
+
+### Stop Services
+
+```powershell
+# Stop containers (keeps data)
+docker compose down
+
+# Stop and remove volumes (⚠️ deletes database)
+docker compose down -v
+
+# Stop specific service
+docker compose stop backend
+```
+
+### Restart Services
+
+```powershell
+# Restart all services
+docker compose restart
+
+# Restart specific service
+docker compose restart backend
+
+# Recreate containers (rebuilds if needed)
+docker compose up -d --force-recreate
+```
+
+## Common Operations
+
+### Database Operations
+
+#### Access Database
+
+```powershell
+# Connect to database container
+docker compose exec db psql -U bkns_dev -d bakong_notification_services_dev
+
+# Run SQL file
+Get-Content script.sql | docker compose exec -T db psql -U bkns_dev -d bakong_notification_services_dev
+
+# Backup database
+docker compose exec db pg_dump -U bkns_dev bakong_notification_services_dev | Out-File -FilePath backup.sql -Encoding utf8
+
+# Restore database
+Get-Content backup.sql | docker compose exec -T db psql -U bkns_dev -d bakong_notification_services_dev
+```
+
+#### Database Volumes
+
+```powershell
+# List volumes
+docker volume ls
+
+# Inspect volume
+docker volume inspect bakong-notification-services_postgres_data_dev
+
+# Remove volume (⚠️ deletes data)
+docker volume rm bakong-notification-services_postgres_data_dev
+```
+
+### Backend Operations
+
+#### Execute Commands in Backend Container
+
+```powershell
+# Access backend container shell
+docker compose exec backend sh
+
+# Run npm commands
+docker compose exec backend npm run build
+
+# Check environment variables
+docker compose exec backend env | Select-String NODE_ENV
+```
+
+#### View Backend Logs
+
+```powershell
+# Follow logs
+docker compose logs -f backend
+
+# Last 50 lines
+docker compose logs --tail=50 backend
+```
+
+### Frontend Operations
+
+#### Rebuild Frontend
+
+```powershell
+# Rebuild frontend container
+docker compose build frontend
+docker compose up -d frontend
+
+# Rebuild with no cache
+docker compose build --no-cache frontend
+```
+
+#### Check Frontend Build
+
+```powershell
+# Access frontend container
+docker compose exec frontend sh
+
+# Check nginx config
+docker compose exec frontend nginx -t
+
+# Reload nginx
+docker compose exec frontend nginx -s reload
+```
+
+### Network Operations
+
+```powershell
+# List networks
+docker network ls
+
+# Inspect network
+docker network inspect bakong-notification-services_bakong-network
+
+# Test connectivity between containers
+docker compose exec backend ping db
+docker compose exec frontend ping backend
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Port Already in Use
+
+**Error**: `Bind for 0.0.0.0:3001 failed: port is already allocated`
+
+**Solution**:
+```powershell
+# Find process using port (PowerShell)
+Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue | Select-Object -Property LocalAddress, LocalPort, State, OwningProcess
+
+# Alternative: Using netstat
+netstat -ano | findstr :3001
+
+# Stop the process (replace PID with actual process ID)
+Stop-Process -Id <PID> -Force
+
+# Or change port in docker-compose.yml
+```
+
+#### 2. Database Connection Failed
+
+**Error**: `Connection to database failed`
+
+**Solutions**:
+```powershell
+# Check database container is running
+docker compose ps db
+
+# Check database logs
+docker compose logs db
+
+# Wait for database to be ready
+docker compose up -d db
+# Wait 10-15 seconds, then start backend
+Start-Sleep -Seconds 15
+docker compose up -d backend
+
+# Verify database health
+docker compose exec db pg_isready -U bkns_dev
+```
+
+#### 3. Backend Won't Start
+
+**Error**: `Cannot find module '@nestjs/core'`
+
+**Solutions**:
+```powershell
+# Rebuild backend with no cache
+docker compose build --no-cache backend
+
+# Check if shared package is built
+docker compose exec backend ls -la apps/packages/shared/dist
+
+# Rebuild shared package first
+docker compose exec backend sh -c "cd apps/packages/shared && npm run build"
+```
+
+#### 4. Frontend Build Fails
+
+**Error**: `Cannot find module` or build errors
+
+**Solutions**:
+```powershell
+# Rebuild with no cache
+docker compose build --no-cache frontend
+
+# Check Node.js version (should be 20+)
+docker compose exec frontend node --version
+
+# Verify workspace dependencies
+docker compose exec frontend npm list
+```
+
+#### 5. Firebase Service Account Not Found
+
+**Error**: `ENOENT: no such file or directory, open 'firebase-service-account.json'`
+
+**Solution**:
+```powershell
+# Ensure file exists in project root
+Get-ChildItem firebase-service-account.json
+
+# Or use dir/ls
+dir firebase-service-account.json
+
+# Check volume mount in docker-compose.yml
+# Should have: ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
+```
+
+#### 6. Environment File Not Found
+
+**Error**: `Cannot find env.development`
+
+**Solution**:
+```powershell
+# Check file exists
+Get-ChildItem apps/backend/env.development
+
+# Copy from example if missing
+Copy-Item apps/backend/env.example apps/backend/env.development
+
+# Edit with your values (using notepad)
+notepad apps/backend/env.development
+
+# Or using VS Code
+code apps/backend/env.development
+```
+
+### Debugging Commands
+
+```powershell
+# Check all container statuses
+docker compose ps
+
+# View all logs
+docker compose logs
+
+# Check container resource usage
+docker stats
+
+# Inspect container configuration
+docker compose config
+
+# Validate compose file
+docker compose config --quiet
+
+# Check network connectivity
+docker compose exec backend ping db
+docker compose exec frontend curl http://backend:8080/api/v1/health
+```
+
+### Health Checks
+
+```powershell
+# Backend health (using Invoke-WebRequest)
+Invoke-WebRequest -Uri http://localhost:4004/api/v1/health -UseBasicParsing
+
+# Or using curl (if available)
+curl http://localhost:4004/api/v1/health
+
+# Frontend (should return HTML)
+Invoke-WebRequest -Uri http://localhost:3001 -UseBasicParsing
+
+# Database
+docker compose exec db pg_isready -U bkns_dev
+```
+
+## Best Practices
+
+### 1. Use Environment-Specific Compose Files
+
+Always use the appropriate compose file for your environment:
+- Local development: `docker-compose.yml`
+- Staging: `docker-compose.sit.yml`
+- Production: `docker-compose.production.yml`
+
+### 2. Never Commit Secrets
+
+- Keep `firebase-service-account.json` out of version control
+- Use environment files (`env.*`) for configuration
+- Use Docker secrets or environment variables for sensitive data
+
+### 3. Database Backups
+
+```powershell
+# Regular backups
+$backupFile = "backup_$(Get-Date -Format 'yyyyMMdd').sql"
+docker compose exec db pg_dump -U bkns_dev bakong_notification_services_dev | Out-File -FilePath $backupFile -Encoding utf8
+
+# Automated backup script
+# Create: scripts/backup-db.ps1
+```
+
+### 4. Resource Limits
+
+For production, add resource limits in `docker-compose.production.yml`:
+
+```yaml
+services:
+  backend:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+```
+
+### 5. Health Checks
+
+All services have health checks configured. Monitor them:
+
+```powershell
+# Check health status
+docker compose ps
+
+# View health check logs
+docker inspect bakong-notification-services-api-dev | Select-String -Pattern "Health" -Context 0,10
+```
+
+### 6. Log Management
+
+```bash
+# Limit log size in docker-compose.yml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+```
+
+### 7. Clean Up
+
+Regular cleanup to free disk space:
+
+```powershell
+# Remove unused containers
+docker container prune
+
+# Remove unused images
+docker image prune
+
+# Remove unused volumes (⚠️ be careful)
+docker volume prune
+
+# Remove everything unused
+docker system prune -a
+```
+
+### 8. Multi-Stage Builds
+
+The Dockerfiles use multi-stage builds for smaller images:
+- **Builder stage**: Installs dependencies and builds code
+- **Runtime stage**: Only includes production dependencies
+
+### 9. Build Cache
+
+Leverage Docker build cache by ordering Dockerfile commands:
+- Copy package files first
+- Install dependencies
+- Copy source code last
+
+### 10. Security
+
+- Use `:ro` (read-only) for volume mounts when possible
+- Run containers as non-root user (if possible)
+- Keep base images updated
+- Scan images for vulnerabilities: `docker scan <image>`
+
+## Deployment Workflow
+
+### Local Development
+
+```powershell
+# 1. Start services
+docker compose up -d --build
+
+# 2. Check logs
+docker compose logs -f
+
+# 3. Access services
+# Frontend: http://localhost:3001
+# Backend: http://localhost:4004
+```
+
+### Deploy to SIT/Staging
+
+```powershell
+# 1. SSH to server (using PowerShell SSH)
+ssh deploy@10.20.6.57
+
+# 2. Navigate to project
+cd /path/to/bakong-notification-services
+
+# 3. Pull latest code
+git pull origin develop
+
+# 4. Deploy
+docker compose -f docker-compose.sit.yml up -d --build
+
+# 5. Verify
+Invoke-WebRequest -Uri http://10.20.6.57:4002/api/v1/health -UseBasicParsing
+```
+
+### Deploy to Production
+
+```powershell
+# 1. SSH to server (using PowerShell SSH)
+ssh deploy@10.20.6.58
+
+# 2. Navigate to project
+cd /path/to/bakong-notification-services
+
+# 3. Pull latest code
+git pull origin main
+
+# 4. Backup database first
+$backupFile = "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
+docker compose -f docker-compose.production.yml exec db pg_dump -U bkns bakong_notification_services | Out-File -FilePath $backupFile -Encoding utf8
+
+# 5. Deploy
+docker compose -f docker-compose.production.yml up -d --build
+
+# 6. Verify
+Invoke-WebRequest -Uri https://prod-bakong-notification.nbc.gov.kh/api/v1/health -UseBasicParsing
+```
+
+## Additional Resources
+
+- [Docker Documentation](https://docs.docker.com/)
+- [Docker Compose Documentation](https://docs.docker.com/compose/)
+- [PostgreSQL Docker Image](https://hub.docker.com/_/postgres)
+- [Nginx Docker Image](https://hub.docker.com/_/nginx)
+- [Node.js Docker Image](https://hub.docker.com/_/node)
+
+---
+
+**Last Updated**: Auto-updated when Docker configuration changes
+**Maintenance**: Review and update this guide when Docker setup is modified

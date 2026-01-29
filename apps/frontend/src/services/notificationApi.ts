@@ -1,4 +1,4 @@
-﻿import { api, uploadApi } from './api'
+import { api, uploadApi } from './api'
 import { TimezoneUtils } from '@bakong/shared'
 
 export interface CreateTemplateRequest {
@@ -21,7 +21,7 @@ export interface CreateTemplateRequest {
     linkPreview?: string
   }[]
   notificationType?: string
-  categoryType?: string
+  categoryTypeId?: number
   priority?: number
 }
 
@@ -85,6 +85,103 @@ const formatNotificationDate = (date: Date | string): string => {
     month: 'long',
     year: 'numeric',
   })
+}
+
+export interface TestTokenRequest {
+  token: string
+  bakongPlatform?: string
+}
+
+export interface TestTokenResponse {
+  isValid: boolean
+  formatValid: boolean
+  firebaseValid: boolean
+  error?: string
+  errorCode?: string
+  messageId?: string
+}
+
+export const testFCMToken = async (data: TestTokenRequest): Promise<TestTokenResponse> => {
+  const response = await api.post('/api/v1/notification/test-token', data)
+  console.log('🔍 [testFCMToken] Full API response:', response.data)
+
+  // Handle response structure: response.data.data contains the TestTokenResponse
+  const result = response.data?.data || response.data
+
+  console.log('🔍 [testFCMToken] Parsed result:', result)
+
+  // Ensure we have the expected structure
+  if (!result || typeof result !== 'object') {
+    throw new Error('Invalid response structure from token test endpoint')
+  }
+
+  return result as TestTokenResponse
+}
+
+export interface SyncUsersResponse {
+  totalCount: number
+  updatedCount: number
+  platformUpdates: number
+  languageUpdates: number
+  invalidTokens: number
+  updatedIds: string[]
+  updatedIdsCount: number
+}
+
+export const syncUsers = async (): Promise<SyncUsersResponse> => {
+  const response = await api.post('/api/v1/notification/sync-users')
+  console.log('🔍 [syncUsers] Full API response:', response.data)
+
+  // Handle response structure: response.data.data contains the SyncUsersResponse
+  const result = response.data?.data || response.data
+
+  console.log('🔍 [syncUsers] Parsed result:', result)
+
+  // Ensure we have the expected structure
+  if (!result || typeof result !== 'object') {
+    throw new Error('Invalid response structure from sync users endpoint')
+  }
+
+  return result as SyncUsersResponse
+}
+
+export interface InboxRequest {
+  fcmToken: string
+  accountId: string
+  platform?: string
+  participantCode?: string
+  language?: string
+  bakongPlatform: string
+  page?: number | null
+  size?: number | null
+}
+
+export interface InboxSyncResponse {
+  accountId: string
+  bakongPlatform: string
+  syncedAt: string
+}
+
+export interface InboxNotificationCenterResponse {
+  notifications: any[]
+  page: number
+  size: number
+  itemCount: number
+  pageCount: number
+  totalCount: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
+  userBakongPlatform?: string
+}
+
+export const testInbox = async (data: InboxRequest): Promise<any> => {
+  const response = await api.post('/api/v1/notification/inbox', data)
+  console.log('🔍 [testInbox] Full API response:', response.data)
+
+  // Backend returns BaseResponseDto format:
+  // { responseCode, errorCode, responseMessage, data }
+  // Return the full response object so TestView can access all fields
+  return response.data
 }
 
 const mapBackendStatusToFrontend = (backendStatus: string): string => {
@@ -185,11 +282,16 @@ export const notificationApi = {
           status: notification.status,
           type: notification.type,
           createdAt: notification.createdAt,
+          updatedAt: notification.updatedAt,
           templateId: notification.templateId,
           isSent: notification.isSent,
           sendType: notification.sendType,
           scheduledTime: notification.scheduledTime,
           language: notification.language,
+          bakongPlatform: notification.bakongPlatform,
+          approvalStatus: notification.approvalStatus,
+          approvedBy: notification.approvedBy,
+          approvedAt: notification.approvedAt,
         }
       })
 
@@ -238,7 +340,14 @@ export const notificationApi = {
               image: translation.image ? `/api/v1/image/${translation.image.fileId}` : '',
               linkPreview: translation.linkPreview,
               date: template.date,
-              status: mapBackendStatusToFrontend(template.isSent ? 'SENT' : 'SCHEDULED'),
+              // Map status based on isSent and sendType
+              // If isSent is true, it's published (regardless of sendType)
+              // If isSent is false, status is determined by sendType
+              status: template.isSent
+                ? 'published'
+                : template.sendType === 'SEND_SCHEDULE' || template.sendType === 'SEND_INTERVAL'
+                  ? 'scheduled'
+                  : 'draft',
               type: template.notificationType,
               createdAt: template.createdAt,
               templateId: template.templateId || template.id,
@@ -325,8 +434,15 @@ export const notificationApi = {
     try {
       const response = await api.post('/api/v1/template/create', templateData)
       return response.data
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating template:', error)
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response,
+        responseData: error.response?.data,
+        status: error.response?.status,
+      })
+      // Re-throw to let the calling component handle the error display
       throw error
     }
   },
@@ -354,6 +470,40 @@ export const notificationApi = {
         Array.isArray(items) && (items as any[])[0] && (items as any[])[0].file
           ? (items as any)
           : (items as File[]).map((f) => ({ file: f }))
+
+      // Validate total size before upload (safety check)
+      // Nginx limit is 20MB, but we'll use 18MB as safe limit (leaves 2MB buffer for FormData overhead)
+      const MAX_TOTAL_SIZE = 18 * 1024 * 1024 // 18MB
+      const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024 // 10MB per file (backend limit)
+
+      let totalSize = 0
+      const sizeErrors: string[] = []
+
+      normalized.forEach((item, index) => {
+        const fileSize = item.file.size
+
+        // Check individual file size
+        if (fileSize > MAX_SINGLE_FILE_SIZE) {
+          sizeErrors.push(
+            `File ${index + 1} (${item.file.name}) is ${(fileSize / 1024 / 1024).toFixed(2)}MB, exceeds 10MB limit`,
+          )
+        }
+
+        totalSize += fileSize
+      })
+
+      // Check total size
+      if (totalSize > MAX_TOTAL_SIZE) {
+        const totalMB = (totalSize / 1024 / 1024).toFixed(2)
+        throw new Error(
+          `Total upload size (${totalMB}MB) exceeds limit (18MB). Please compress images further or upload fewer images.`,
+        )
+      }
+
+      // Check individual file errors
+      if (sizeErrors.length > 0) {
+        throw new Error(sizeErrors.join('; '))
+      }
 
       const languages: string[] = []
       normalized.forEach((item) => {
@@ -386,7 +536,7 @@ export const notificationApi = {
   },
 
   async updateNotification(id: number, notification: Partial<Notification>): Promise<Notification> {
-    const response = await api.put(`/api/v1/template/${id}`, notification)
+    const response = await api.post(`/api/v1/template/${id}/update-publish`, notification)
     return response.data
   },
 
@@ -425,12 +575,66 @@ export const notificationApi = {
     await api.post(`/api/v1/template/${id}/schedule`, { scheduleTime })
   },
 
+  async approveTemplate(id: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/approve`)
+      return response.data
+    } catch (error: any) {
+      console.error('Error approving template:', error)
+      throw error
+    }
+  },
+
+  async rejectTemplate(id: number, reasonForRejection?: string): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/reject`, {
+        reasonForRejection,
+      })
+      return response.data
+    } catch (error: any) {
+      console.error('Error rejecting template:', error)
+      throw error
+    }
+  },
+
+  async submitTemplate(id: number): Promise<any> {
+    try {
+      const response = await api.post(`/api/v1/template/${id}/submit`)
+      return response.data
+    } catch (error: any) {
+      console.error('Error submitting template for approval:', error)
+      throw error
+    }
+  },
+
   async updateTemplate(id: number, templateData: CreateTemplateRequest): Promise<any> {
     try {
-      const response = await api.post(`/api/v1/template/${id}/update`, templateData)
+      // Ensure no file buffers are included in the request - only fileIds (strings)
+      const sanitizedData = {
+        ...templateData,
+        translations: templateData.translations?.map((t) => ({
+          language: t.language,
+          title: t.title,
+          content: t.content,
+          image: typeof t.image === 'string' ? t.image : '', // Ensure image is only a string (fileId), not a File or Buffer
+          linkPreview: t.linkPreview,
+        })),
+      }
+
+      // Use longer timeout for template updates (60 seconds)
+      const response = await api.post(`/api/v1/template/${id}/update-publish`, sanitizedData, {
+        timeout: 60000,
+      })
       return response.data
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error updating template ${id}:`, error)
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response,
+        responseData: error.response?.data,
+        status: error.response?.status,
+      })
+      // Re-throw to let the calling component handle the error display
       throw error
     }
   },

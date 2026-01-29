@@ -24,7 +24,7 @@ export class Notification {
   @Column({ nullable: false, type: 'bigint' })
   templateId: number
 
-  @ManyToOne(() => Template, { eager: true })
+  @ManyToOne(() => Template, { eager: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'templateId' })
   template: Template
 
@@ -36,4 +36,7 @@ export class Notification {
 
   @Column({ nullable: false, type: 'int', default: 1 })
   sendCount: number
+
+  @Column({ nullable: true, length: 10 })
+  language?: string
 }

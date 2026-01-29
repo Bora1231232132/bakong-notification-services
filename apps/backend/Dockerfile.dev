@@ -1,0 +1,61 @@
+# Development Dockerfile for Backend with Hot Reload
+FROM node:20-alpine
+
+WORKDIR /opt/bk_notification_service
+
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++
+
+# Copy package files for dependency installation
+COPY package*.json ./
+COPY package-lock.json* ./
+COPY apps/backend/package*.json ./apps/backend/
+COPY apps/packages/shared/package*.json ./apps/packages/shared/
+
+# Install all dependencies (including dev dependencies for ts-node-dev)
+# Use npm install for development (more flexible than npm ci)
+RUN npm install --legacy-peer-deps
+
+# Copy TypeScript configs (needed for shared package build)
+COPY tsconfig.json ./
+
+# Build shared package first (needed by backend)
+COPY apps/packages/shared/tsconfig.json ./apps/packages/shared/
+COPY apps/packages/shared/src ./apps/packages/shared/src
+WORKDIR /opt/bk_notification_service/apps/packages/shared
+RUN npm run build
+
+# Return to root and copy backend TypeScript configs
+WORKDIR /opt/bk_notification_service
+COPY apps/backend/tsconfig.json ./apps/backend/
+COPY apps/backend/nest-cli.json ./apps/backend/
+
+# Copy source code (will be overridden by volume mount, but needed for initial setup)
+COPY apps/backend/src ./apps/backend/src
+
+# Copy runtime files
+COPY apps/backend/runtime-path-resolver.js ./runtime-path-resolver.js
+
+# Copy environment and config files
+COPY firebase-service-account.json ./firebase-service-account.json
+COPY apps/backend/env.development ./env.development
+
+# Set NODE_PATH for module resolution
+ENV NODE_PATH=/opt/bk_notification_service/node_modules:/opt/bk_notification_service/apps/backend/node_modules
+ENV PATH=/opt/bk_notification_service/node_modules/.bin:/opt/bk_notification_service/apps/backend/node_modules/.bin:$PATH
+
+# Set NODE_ENV (no need for cross-env in Docker/Linux)
+ENV NODE_ENV=development
+
+# Expose ports
+EXPOSE 8080 9229
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/api/v1/health', (r) => { if (r.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1))"
+
+# Run in development mode with hot-reload
+# Source code is mounted as volume, so changes will trigger reload
+# Use npx to find cross-env, or run ts-node-dev directly since NODE_ENV is already set
+WORKDIR /opt/bk_notification_service/apps/backend
+CMD ["npx", "ts-node-dev", "--respawn", "--transpile-only", "-r", "tsconfig-paths/register", "src/main.ts"]

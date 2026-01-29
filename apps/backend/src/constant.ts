@@ -12,12 +12,18 @@ const k = {
   API_ADMIN_USERNAME: configService.adminUsername,
   API_ADMIN_PASSWORD: configService.adminPassword,
   API_MOBILE_KEY: configService.mobileApiKey,
+  DEFAULT_USER_PASSWORD: configService.defaultUserPassword,
 
   POSTGRES_HOST: configService.databaseHost,
   POSTGRES_PORT: configService.databasePort,
   POSTGRES_DB: configService.databaseName,
   POSTGRES_USER: configService.databaseUsername,
   POSTGRES_PASSWORD: configService.databasePassword,
+  SMTP_HOST: process.env.SMTP_HOST,
+  SMTP_PORT: process.env.SMTP_PORT,
+  SMTP_USER: process.env.SMTP_USER,
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD,
+  SMTP_FROM: process.env.SMTP_FROM,
 }
 
 export default k

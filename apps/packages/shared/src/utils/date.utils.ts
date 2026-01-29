@@ -124,7 +124,7 @@ export class DateUtils {
     const day = this.convertToKhmerNumbers(date.getDate().toString())
     const year = this.convertToKhmerNumbers(date.getFullYear().toString())
 
-    return `${month} ${day}, ${year}`
+    return `${month} ${day} ${year}`
   }
 
   private static formatEnglishDate(date: Date): string {
@@ -139,7 +139,7 @@ export class DateUtils {
     const year = date.getFullYear()
     const month = date.getMonth() + 1
     const day = date.getDate()
-    return `${year}年${month}月${day}日`
+    return `${month}月 ${day}日 ${year}年`
   }
 
   private static convertToKhmerNumbers(arabicNumber: string): string {
@@ -201,7 +201,7 @@ export class DateUtils {
 
   static formatUTCToCambodiaDateTime(utcDate: Date | string): { date: string; time: string } {
     const date = new Date(utcDate)
-    const cambodiaDateStr = date.toLocaleString('en-US', {
+    const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Phnom_Penh',
       year: 'numeric',
       month: 'numeric',
@@ -210,10 +210,17 @@ export class DateUtils {
       minute: '2-digit',
       hour12: false,
     })
-    const [datePart, timePart] = cambodiaDateStr.split(', ')
+
+    const parts = formatter.formatToParts(date)
+    const month = parts.find((p) => p.type === 'month')?.value
+    const day = parts.find((p) => p.type === 'day')?.value
+    const year = parts.find((p) => p.type === 'year')?.value
+    const hour = parts.find((p) => p.type === 'hour')?.value
+    const minute = parts.find((p) => p.type === 'minute')?.value
+
     return {
-      date: datePart || '',
-      time: timePart || '',
+      date: `${month}/${day}/${year}`,
+      time: `${hour}:${minute}`,
     }
   }
 

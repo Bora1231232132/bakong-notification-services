@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <button :class="buttonClass" :style="buttonStyle" :disabled="disabled" @click="handleClick">
     <span v-if="icon && iconPosition === 'left'" class="button-icon-left">
       <img :src="icon" :alt="iconAlt" />

@@ -13,19 +13,19 @@ export const useLogin = () => {
 
   const loginFormRef = ref<FormInstance>()
   const loginFormData: IRequestLogin = reactive({
-    Username: '',
+    Email: '',
     Password: '',
   })
 
   const passwordRule = () => passwordFormat(loginFormData.Password, true)
-  const usernameRule = () => {
-    if (!loginFormData.Username) {
-      return 'Username is required'
+  const emailRule = () => {
+    if (!loginFormData.Email) {
+      return 'Email is required'
     }
     return true
   }
   const rules = {
-    Username: { customRule: usernameRule, required: true },
+    Email: { customRule: emailRule, required: true },
     Password: { customRule: passwordRule, required: true },
   }
   const loginRules = getRules(rules)
@@ -38,7 +38,7 @@ export const useLogin = () => {
       if (!valid) return { success: false, error: 'Form validation failed' }
 
       const request: IRequestLogin = {
-        Username: loginFormData.Username,
+        Email: loginFormData.Email,
         Password: loginFormData.Password,
       }
       return await proceedLogin(request)

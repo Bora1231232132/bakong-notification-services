@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="loading-spinner" :class="spinnerClass">
     <div v-if="type === 'spinner'" class="spinner" :style="spinnerStyle">
       <div class="spinner-inner"></div>

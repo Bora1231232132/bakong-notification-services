@@ -1,14 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { authApi } from '@/services/api'
-import { mockAuthApi, isMockMode } from '@/services/mockAuth'
-import { handleApiError, getApiErrorMessage, showSuccess } from '@/services/errorHandler'
+import { handleApiError, showSuccess, getApiErrorMessage } from '@/services/errorHandler'
+import { getPermissions } from '@/utils/permissions'
 import { ErrorCode } from '@bakong/shared'
 
 export enum UserRole {
-  ADMIN_USER = 'ADMIN_USER',
-  NORMAL_USER = 'NORMAL_USER',
-  API_USER = 'API_USER',
+  ADMINISTRATOR = 'ADMINISTRATOR',
+  APPROVAL = 'APPROVAL',
+  EDITOR = 'EDITOR',
+  VIEW_ONLY = 'VIEW_ONLY',
 }
 
 export interface User {
@@ -17,10 +18,12 @@ export interface User {
   email?: string
   displayName: string
   role: UserRole
+  image?: string | null
+  mustChangePassword?: boolean
 }
 
 export interface LoginCredentials {
-  username: string
+  email: string
   password: string
 }
 
@@ -36,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('auth_token'))
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const userAvatar = ref<string | null>(localStorage.getItem('user_avatar') || null)
 
   const isAuthenticated = computed(() => !!token.value && !!user.value)
 
@@ -44,6 +48,14 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem('auth_token', newToken)
     } else {
       localStorage.removeItem('auth_token')
+    }
+  })
+
+  watch(userAvatar, (newAvatar) => {
+    if (newAvatar) {
+      localStorage.setItem('user_avatar', newAvatar)
+    } else {
+      localStorage.removeItem('user_avatar')
     }
   })
 
@@ -87,81 +99,84 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const mockMode = isMockMode()
-      const api = mockMode ? mockAuthApi : authApi
+      const response = await authApi.login(credentials)
 
-      const response = await api.login(credentials)
+      // DEBUG: Log API response
+      console.log('🔍 API Response:', response.data)
 
       if (response.data.responseCode === 0) {
-        const { accessToken, user: userData } = response.data.data
+        const { accessToken, user: userData, mustChangePassword } = response.data.data
+
+        // DEBUG: Log extracted values
+        console.log('🔍 Extracted from API:')
+        console.log('  - accessToken:', !!accessToken)
+        console.log('  - userData:', userData)
+        console.log('  - mustChangePassword:', mustChangePassword)
 
         token.value = accessToken
         user.value = userData
 
+        // Use image path directly from backend response
+        if (userData.image) {
+          // In dev mode, use relative URL as-is (goes through Vite proxy)
+          // In production, prepend base URL if needed
+          const avatarUrl = import.meta.env.DEV
+            ? userData.image // Use relative URL in dev (goes through Vite proxy)
+            : import.meta.env.VITE_API_BASE_URL && !userData.image.startsWith('http')
+              ? `${import.meta.env.VITE_API_BASE_URL}${userData.image}`
+              : userData.image
+          userAvatar.value = avatarUrl
+          localStorage.setItem('user_avatar', avatarUrl)
+        } else {
+          // Clear avatar if backend doesn't provide image
+          userAvatar.value = null
+          localStorage.removeItem('user_avatar')
+        }
+
         localStorage.setItem('auth_token', accessToken)
 
-        return { success: true }
+        // Propagate mustChangePassword flag so caller can redirect user
+        const returnValue = { success: true, mustChangePassword: !!mustChangePassword }
+        console.log('🔍 Returning from login():', returnValue)
+        return returnValue
       } else {
-        // Use error handler to get the correct message based on errorCode (without showing notification)
+        // Handle failed login response from API
         const apiError = {
           responseCode: response.data.responseCode ?? 1,
           responseMessage: response.data.responseMessage ?? 'Unknown error',
           errorCode: response.data.errorCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
           data: response.data.data,
         }
-        const errorMessage = getApiErrorMessage(
-          { response: { data: apiError } },
-          { operation: 'login', component: 'AuthStore' },
-        )
+        
+        // Get error message without showing notification (view will handle notification)
+        const errorMessage = getApiErrorMessage(apiError, { operation: 'login', component: 'AuthStore' })
         error.value = errorMessage
-        return { success: false, error: errorMessage }
+        return {
+          success: false,
+          error: errorMessage, // mapped fallback
+          errorCode: apiError.errorCode,
+          responseMessage: apiError.responseMessage, // ✅ backend message
+        }
+        
       }
     } catch (err: any) {
-      if (!isMockMode()) {
-        try {
-          const mockResponse = await mockAuthApi.login(credentials)
-          if (mockResponse.data.responseCode === 0) {
-            const { accessToken, user: userData } = mockResponse.data.data
+      // Handle network errors or other unexpected errors
+      const errorMessage = getApiErrorMessage(err, { operation: 'login', component: 'AuthStore' })
+      error.value = errorMessage
 
-            token.value = accessToken
-            user.value = userData
+      const apiResponseMessage =
+        typeof err?.response?.data?.responseMessage === 'string' ? err.response.data.responseMessage : ''
 
-            localStorage.setItem('auth_token', accessToken)
+      const apiErrorCode =
+        typeof err?.response?.data?.errorCode === 'number' ? err.response.data.errorCode : ErrorCode.INTERNAL_SERVER_ERROR
 
-            showSuccess('Login successful! (Mock Mode)', { operation: 'login' })
-
-            return { success: true }
-          } else {
-            // Use error handler to get the correct message based on errorCode (without showing notification)
-            const apiError = {
-              responseCode: mockResponse.data.responseCode ?? 1,
-              responseMessage: mockResponse.data.responseMessage ?? 'Unknown error',
-              errorCode: mockResponse.data.responseCode ?? ErrorCode.INTERNAL_SERVER_ERROR,
-              data: mockResponse.data.data,
-            }
-            const errorMessage = getApiErrorMessage(
-              { response: { data: apiError } },
-              { operation: 'login', component: 'AuthStore' },
-            )
-            error.value = errorMessage
-            return { success: false, error: errorMessage }
-          }
-        } catch (mockErr: any) {
-          const errorMessage = handleApiError(mockErr, {
-            operation: 'login',
-            component: 'AuthStore',
-          })
-          error.value = errorMessage
-          return { success: false, error: errorMessage }
-        }
+      return {
+        success: false,
+        error: errorMessage,               // mapped fallback
+        errorCode: apiErrorCode,
+        responseMessage: apiResponseMessage, // ✅ backend message (if any)
       }
 
-      const errorMessage = handleApiError(err, {
-        operation: 'login',
-        component: 'AuthStore',
-      })
-      error.value = errorMessage
-      return { success: false, error: errorMessage }
     } finally {
       loading.value = false
     }
@@ -193,9 +208,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const api = isMockMode() ? mockAuthApi : authApi
-
-      const response = await api.register(userData)
+      const response = await authApi.register(userData)
       if (response.data.responseCode === 0) {
         const { accessToken, user: newUserData } = response.data.data
 
@@ -211,33 +224,6 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: false, error: errorMessage }
       }
     } catch (err: any) {
-      if (!isMockMode()) {
-        try {
-          const mockResponse = await mockAuthApi.register(userData)
-          if (mockResponse.data.responseCode === 0) {
-            const { accessToken, user: newUserData } = mockResponse.data.data
-
-            token.value = accessToken
-            user.value = newUserData
-
-            showSuccess('Registration successful! (Mock Mode)', { operation: 'register' })
-
-            return { success: true, data: mockResponse.data }
-          } else {
-            const errorMessage = mockResponse.data.responseMessage || 'Registration failed'
-            error.value = errorMessage
-            return { success: false, error: errorMessage }
-          }
-        } catch (mockErr: any) {
-          const errorMessage = handleApiError(mockErr, {
-            operation: 'register',
-            component: 'AuthStore',
-          })
-          error.value = errorMessage
-          return { success: false, error: errorMessage }
-        }
-      }
-
       const errorMessage = handleApiError(err, {
         operation: 'register',
         component: 'AuthStore',
@@ -252,6 +238,18 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     user.value = null
     token.value = null
+    userAvatar.value = null
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user')
+    localStorage.removeItem('user_avatar')
+  }
+
+  const updateUserAvatar = (avatarUrl: string | null) => {
+    userAvatar.value = avatarUrl
+    // Also update the user object's image property to keep it in sync
+    if (user.value) {
+      user.value.image = avatarUrl
+    }
   }
 
   const clearError = () => {
@@ -292,13 +290,20 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       if (!user.value || !token.value) {
+        // Get avatar from localStorage if available
+        const storedAvatar = localStorage.getItem('user_avatar')
         user.value = {
           id: parseInt(payload.sub),
           username: payload.username,
           role: payload.role,
           displayName: payload.username,
+          image: storedAvatar || null,
+          mustChangePassword: payload.mustChangePassword || false,
         }
         token.value = storedToken
+        if (storedAvatar) {
+          userAvatar.value = storedAvatar
+        }
       }
     } catch (error) {
       localStorage.removeItem('auth_token')
@@ -311,19 +316,28 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value?.role === role
   }
 
-  const isAdmin = computed(() => hasRole(UserRole.ADMIN_USER))
-  const isNormalUser = computed(() => hasRole(UserRole.NORMAL_USER))
-  const isApiUser = computed(() => hasRole(UserRole.API_USER))
+  const isAdmin = computed(() => user.value?.role === 'ADMINISTRATOR')
+  const isApproval = computed(() => hasRole(UserRole.APPROVAL))
+  const isEditor = computed(() => hasRole(UserRole.EDITOR))
+  const isViewOnly = computed(() => hasRole(UserRole.VIEW_ONLY))
+
+  // Permission helpers
+  const permissions = computed(() => {
+    return getPermissions(user.value?.role)
+  })
 
   return {
     user,
     token,
     loading,
     error,
+    userAvatar,
     isAuthenticated,
     isAdmin,
-    isNormalUser,
-    isApiUser,
+    isApproval,
+    isEditor,
+    isViewOnly,
+    permissions,
     login,
     register,
     logout,
@@ -334,5 +348,6 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     isTokenExpired,
     checkAndRefreshToken,
+    updateUserAvatar,
   }
 })

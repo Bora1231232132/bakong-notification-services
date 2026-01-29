@@ -24,6 +24,11 @@
     "docker:up": "docker-compose up -d --build",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
+    "docker:up:dev": "docker-compose -f docker-compose.dev.yml up --build",
+    "docker:up:dev:detached": "docker-compose -f docker-compose.dev.yml up -d --build",
+    "docker:down:dev": "docker-compose -f docker-compose.dev.yml down",
+    "docker:logs:dev": "docker-compose -f docker-compose.dev.yml logs -f",
+    "docker:restart:dev": "docker-compose -f docker-compose.dev.yml restart",
     "docker:up:sit": "docker-compose -f docker-compose.sit.yml up -d --build",
     "docker:down:sit": "docker-compose -f docker-compose.sit.yml down",
     "docker:logs:sit": "docker-compose -f docker-compose.sit.yml logs -f",
@@ -32,7 +37,8 @@
     "docker:logs:prod": "docker-compose -f docker-compose.production.yml logs -f",
     "clean": "cd apps/backend && npm run prebuild && cd ../frontend && rm -rf dist",
     "fix": "npm run format && npm run lint",
-    "fix:check": "npm run format:check && npm run lint:check"
+    "fix:check": "npm run format:check && npm run lint:check",
+    "update:project-structure": "node .cursor/scripts/update-project-structure.js"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
@@ -58,10 +64,15 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "class-validator": "0.14.3",
     "element-plus": "^2.11.4",
     "lucide-vue-next": "^0.545.0",
     "nestjs": "^0.0.1",
+    "passport": "^0.6.0",
+    "passport-jwt": "^4.0.1",
+    "passport-local": "^1.0.0",
     "pinia": "^3.0.3",
+    "typeorm": "^0.3.10",
     "u": "^0.1.0"
   }
 }

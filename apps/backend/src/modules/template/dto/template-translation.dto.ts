@@ -6,11 +6,16 @@ import {
   Matches,
   IsUrl,
   ValidateIf,
+  IsNumber,
 } from 'class-validator'
 import { Transform } from 'class-transformer'
 import { Language } from '@bakong/shared'
 
 export class TemplateTranslationDto {
+  @IsOptional()
+  @IsNumber()
+  id?: number
+
   @IsNotEmpty()
   @IsEnum(Language)
   language: Language

@@ -5,7 +5,7 @@
         class="change-password-container grid grid-cols-1 lg:grid-cols-3 grid-rows-1 lg:grid-rows-4 gap-4 lg:gap-[60px] w-full h-full"
       >
         <div
-          class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-[345px] mx-auto lg:mx-0 lg:w-[345px] h-auto lg:h-[232px] opacity-100 lg:row-span-2"
+          class="rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-[345px] mx-auto lg:mx-0 lg:w-[345px] h-auto lg:min-h-[232px] opacity-100 lg:row-span-2 lg:relative lg:overflow-visible"
         >
           <form
             ref="changePasswordFormRef"
@@ -135,13 +135,13 @@
             </div>
           </form>
           <div
-            class="w-full max-w-[259px] h-[56px] lg:absolute lg:w-[259px] lg:top-[355px] lg:left-0 opacity-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-[12px]"
-            style="margin-top: -55px"
+            class="w-full max-w-[300px] h-auto min-h-[56px] opacity-100 flex flex-col sm:flex-row justify-start items-center gap-3 sm:gap-[15px] mt-[25px]!"
           >
             <button
-              type="submit"
+              type="button"
               class="flex justify-center items-center gap-[8px] w-full sm:w-[285px] h-[56px] pt-[8px] pr-[16px] pb-[8px] pl-[16px] border-none rounded-[32px] bg-[#0F4AEA] text-white font-['IBM_Plex_Sans'] font-semibold text-[16px] cursor-pointer transition-all hover:bg-[#0d3ec7] hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(15,74,234,0.3)] active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none whitespace-nowrap"
               :disabled="isLoading"
+              @click="handleChangePassword"
             >
               <span v-if="!isLoading" class="text-sm whitespace-nowrap">Change Password</span>
               <span v-else class="text-sm whitespace-nowrap">Changing...</span>
@@ -172,8 +172,11 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { View, Hide, ArrowRight } from '@element-plus/icons-vue'
+import { userApi } from '@/services/userApi'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const formData = ref({
   currentPassword: '',
@@ -239,6 +242,7 @@ const handleChangePassword = async () => {
     errors.value.confirmPassword = 'Passwords do not match'
     hasErrors = true
   }
+
   if (hasErrors) {
     return
   }
@@ -246,20 +250,20 @@ const handleChangePassword = async () => {
   try {
     isLoading.value = true
 
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const result = await userApi.changePassword(
+      formData.value.currentPassword,
+      formData.value.newPassword,
+    )
 
-    const mockResponse = {
-      success: true,
-      message: 'Password changed successfully',
-    }
-    if (mockResponse.success) {
+    if (result.success) {
       ElNotification({
         title: 'Success',
-        message: 'Password changed successfully!',
+        message: result.message || 'Password changed successfully!',
         type: 'success',
-        duration: 2000,
+        duration: 3000,
       })
 
+      // Clear form data
       formData.value.currentPassword = ''
       formData.value.newPassword = ''
       formData.value.confirmPassword = ''
@@ -267,18 +271,71 @@ const handleChangePassword = async () => {
       showNewPassword.value = false
       showConfirmPassword.value = false
 
+      // Redirect to settings page after a short delay
       setTimeout(() => {
         router.push('/settings')
       }, 1500)
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: result.message || 'Failed to change password. Please try again.',
+        type: 'error',
+        duration: 3000,
+      })
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Settings change password error:', error)
-    ElNotification({
-      title: 'Error',
-      message: 'Failed to change password. Please try again.',
-      type: 'error',
-      duration: 2000,
-    })
+
+    // Extract error message from various possible locations
+    const errorMessage =
+      error?.response?.data?.responseMessage ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'Failed to change password. Please try again.'
+
+    const errorMessageLower = errorMessage.toLowerCase()
+
+    // Handle authentication errors (401) - redirect to login
+    if (
+      error?.response?.status === 401 ||
+      errorMessageLower.includes('authentication failed') ||
+      errorMessageLower.includes('please login again') ||
+      errorMessageLower.includes('session has expired') ||
+      errorMessageLower.includes('token expired') ||
+      errorMessageLower.includes('invalid token') ||
+      errorMessageLower.includes('unauthorized')
+    ) {
+      // Clear auth state
+      authStore.logout()
+
+      ElNotification({
+        title: 'Authentication Required',
+        message: 'Your session has expired. Please login again.',
+        type: 'error',
+        duration: 3000,
+      })
+      setTimeout(() => {
+        router.push('/login')
+      }, 1500)
+      return
+    }
+
+    // Handle validation errors - show field-specific errors
+    if (errorMessage.toLowerCase().includes('current password')) {
+      errors.value.currentPassword = errorMessage
+    } else if (errorMessage.toLowerCase().includes('new password')) {
+      errors.value.newPassword = errorMessage
+    } else if (errorMessage.toLowerCase().includes('password')) {
+      // Generic password error - show in current password field
+      errors.value.currentPassword = errorMessage
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: errorMessage,
+        type: 'error',
+        duration: 3000,
+      })
+    }
   } finally {
     isLoading.value = false
   }

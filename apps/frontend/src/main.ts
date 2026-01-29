@@ -10,6 +10,23 @@ import router from './router'
 import { useAuthStore } from './stores/auth'
 import { setupErrorHandler } from './plugins/errorHandler'
 
+// Suppress extension-related console errors
+const originalError = console.error
+console.error = function (...args: any[]) {
+  const errorMessage = String(args[0] || '').toLowerCase()
+  
+  // Ignore browser extension message errors
+  if (
+    errorMessage.includes('a listener indicated an asynchronous response') ||
+    errorMessage.includes('message channel closed') ||
+    errorMessage.includes('the message port closed')
+  ) {
+    return
+  }
+
+  originalError.apply(console, args)
+}
+
 const app = createApp(App)
 const pinia = createPinia()
 

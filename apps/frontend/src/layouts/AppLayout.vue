@@ -1,19 +1,16 @@
-﻿<template>
+<template>
   <div class="app-layout">
-    <div class="header">
+    <div class="header" :class="{ expanded: isSidebarCollapsed }">
       <div class="header-content">
         <div class="page-title">
           <h1>{{ pageTitle }}</h1>
-          <div class="breadcrumb">
-            <span class="breadcrumb-text">Notification</span>
-            <span class="breadcrumb-separator">></span>
-            <span class="breadcrumb-current">{{ breadcrumbCurrent }}</span>
-          </div>
+          <Breadcrumb />
         </div>
         <div class="header-actions">
           <el-button
             type="primary"
             class="create-notification-btn"
+            :disabled="!canCreateNotification"
             @click="handleCreateNotification"
           >
             Create Notification
@@ -25,87 +22,102 @@
           </el-button>
           <div class="user-avatar">
             <img
-              :src="avatarImage"
+              :src="avatarUrl"
               alt="User Avatar"
               class="user-image"
               @click="handleGoToSettings"
+              @error="handleImageError"
             />
           </div>
         </div>
       </div>
     </div>
 
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <img :src="nbcLogo" alt="NBC Logo" class="logo-image" />
+    <div class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-content" :class="{ collapsed: isSidebarCollapsed }">
+        <div class="sidebar-header">
+          <div class="logo">
+            <img :src="nbcLogo" alt="NBC Logo" class="logo-image" />
+          </div>
         </div>
+        <nav class="sidebar-nav">
+          <div class="nav-section">
+            <div class="nav-section-title">Notification</div>
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'home' }"
+              @click="$router.push('/')"
+            >
+              <img :src="homeIcon" alt="Home" class="nav-icon" />
+              <span>Home</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'schedule' }"
+              @click="$router.push('/schedule')"
+            >
+              <img :src="calendarIcon" alt="Schedule" class="nav-icon" />
+              <span>Schedule</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'types' }"
+              @click="$router.push('/types')"
+            >
+              <img :src="typeIcon" alt="Type" class="nav-icon" />
+              <span>Type</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-section-title">Tools</div>
+            <div
+              v-if="showUserManagement"
+              class="nav-item"
+              :class="{ active: $route.name === 'user-management' }"
+              @click="handleUserManagementClick"
+            >
+              <img :src="userIcon" alt="User Management" class="nav-icon" />
+              <span>User Management</span>
+            </div>
+            <!-- Test page - only visible in development environment -->
+            <!-- <div
+              v-if="isDevelopment"
+              class="nav-item"
+              :class="{ active: $route.name === 'test' }"
+              @click="$router.push('/test')"
+            >
+              <el-icon class="nav-icon"><Tools /></el-icon>
+              <span>Test</span>
+            </div> -->
+            <div
+              class="nav-item"
+              :class="{ active: $route.name === 'settings' }"
+              @click="$router.push('/settings')"
+            >
+              <img :src="settingsIcon" alt="Setting" class="nav-icon" />
+              <span>Setting</span>
+            </div>
+          </div>
+        </nav>
       </div>
-      <nav class="sidebar-nav">
-        <div class="nav-section">
-          <div class="nav-section-title">Notification</div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'home' }"
-            @click="$router.push('/')"
-          >
-            <img :src="homeIcon" alt="Home" class="nav-icon" />
-            <span>Home</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'schedule' }"
-            @click="$router.push('/schedule')"
-          >
-            <img :src="calendarIcon" alt="Schedule" class="nav-icon" />
-            <span>Schedule</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'templates' }"
-            @click="$router.push('/templates')"
-          >
-            <img :src="typeIcon" alt="Type" class="nav-icon" />
-            <span>Type</span>
-          </div>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-section-title">Tools</div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'insight' }"
-            @click="handleInsightClick"
-          >
-            <img :src="chartIcon" alt="Insight" class="nav-icon" />
-            <span>Insight</span>
-          </div>
-          <div
-            class="nav-item"
-            :class="{ active: $route.name === 'settings' }"
-            @click="$router.push('/settings')"
-          >
-            <img :src="settingsIcon" alt="Setting" class="nav-icon" />
-            <span>Setting</span>
-          </div>
-        </div>
-      </nav>
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" @click="toggleSidebar">
         <div class="collapse-btn">
           <el-icon class="collapse-icon">
-            <ArrowLeft />
+            <ArrowRight v-if="isSidebarCollapsed" />
+            <ArrowLeft v-else />
           </el-icon>
         </div>
       </div>
     </div>
 
-    <div class="main-content">
+    <div class="main-content" :class="{ expanded: isSidebarCollapsed }">
       <router-view />
     </div>
 
@@ -135,30 +147,87 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
 import { useRouter, useRoute } from 'vue-router'
 import { ElNotification, ElDialog } from 'element-plus'
-import { Plus, ArrowLeft, Warning, CirclePlus } from '@element-plus/icons-vue'
+import {
+  Plus,
+  ArrowLeft,
+  ArrowRight,
+  Warning,
+  CirclePlus,
+  Tools,
+  User,
+} from '@element-plus/icons-vue'
+import Breadcrumb from '@/components/common/Breadcrumb.vue'
 
 // Import images properly for production builds
-import nbcLogo from '@/assets/image/NBC-logo.png'
-import homeIcon from '@/assets/image/home.jpg'
-import calendarIcon from '@/assets/image/calendar--heat-map.jpg'
-import typeIcon from '@/assets/image/type-pattern.jpg'
-import chartIcon from '@/assets/image/chart--bar-target.jpg'
-import settingsIcon from '@/assets/image/settings_16.jpg'
-import avatarImage from '@/assets/image/avatar.png'
+// Use fallback to public folder if LogoNBC.svg is missing (handled at build time)
+import nbcLogoImg from '@/assets/image/LogoNBC.svg'
+import homeIconImg from '@/assets/image/Home.svg'
+import calendarIconImg from '@/assets/image/Schedule.svg'
+import typeIconImg from '@/assets/image/type-pattern.svg'
+import chartIconImg from '@/assets/image/chart--bar-target.svg'
+import settingsIconImg from '@/assets/image/settings_16.svg'
+import avatarImageImg from '@/assets/image/avatar.svg'
+import userIconImg from '@/assets/image/user--multiple.svg'
 
+// Explicitly declare const variables for TypeScript
+const nbcLogo = nbcLogoImg
+const homeIcon = homeIconImg
+const calendarIcon = calendarIconImg
+const typeIcon = typeIconImg
+const chartIcon = chartIconImg
+const settingsIcon = settingsIconImg
+const avatarImage = avatarImageImg
+const userIcon = userIconImg
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
 const { user } = authStore
 const logoutDialogVisible = ref(false)
+const isSidebarCollapsed = ref(false)
+const avatarLoadError = ref(false)
 
-const userAvatar = ref(
-  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face',
+const toggleSidebar = () => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
+}
+
+const avatarUrl = computed(() => {
+  // If there was an error loading the avatar, use default
+  if (avatarLoadError.value) {
+    return avatarImage
+  }
+  return authStore.userAvatar || avatarImage
+})
+
+const handleImageError = (event: Event) => {
+  try {
+    const img = event.target as HTMLImageElement | null
+    if (!img) return
+
+    console.warn('Avatar image failed to load:', img.src)
+    // Set error flag to trigger computed property update
+    avatarLoadError.value = true
+    // Clear the invalid URL from store
+    const currentAvatar = authStore.userAvatar
+    if (currentAvatar) {
+      authStore.updateUserAvatar(null)
+    }
+  } catch (error) {
+    console.error('Error in handleImageError:', error)
+  }
+}
+
+// Reset error flag when avatar changes
+watch(
+  () => authStore.userAvatar,
+  () => {
+    avatarLoadError.value = false
+  },
 )
 
 const pageTitle = computed(() => {
@@ -169,8 +238,8 @@ const pageTitle = computed(() => {
       return 'Notifications'
     case 'schedule':
       return 'Schedule'
-    case 'templates':
-      return 'Templates'
+    case 'types':
+      return 'Types'
     case 'users':
       return 'Users'
     default:
@@ -178,28 +247,32 @@ const pageTitle = computed(() => {
   }
 })
 
-const breadcrumbCurrent = computed(() => {
-  switch (route.name) {
-    case 'home':
-      return 'Home'
-    case 'notifications':
-      return 'Notifications'
-    case 'create-notification':
-      return 'Create notification'
-    case 'edit-notification':
-      return 'Edit notification'
-    case 'schedule':
-      return 'Schedule'
-    case 'templates':
-      return 'Templates'
-    case 'users':
-      return 'Users'
-    default:
-      return 'Home'
-  }
+// Check if we're in development environment (not production/SIT)
+const isDevelopment = computed(() => {
+  // In Vite, import.meta.env.DEV is true in development mode
+  // import.meta.env.PROD is true in production/SIT builds
+  return import.meta.env.DEV || import.meta.env.MODE === 'development'
+})
+
+// Check if user has admin role (ADMINISTRATOR has full access)
+const isAdmin = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
+})
+
+// Show User Management menu only for ADMINISTRATOR role
+const showUserManagement = computed(() => {
+  return authStore.user?.role === UserRole.ADMINISTRATOR
+  return isDevelopment.value && isAdmin.value
+})
+
+// Check if user can create notifications (disabled for Viewer and Approver)
+const canCreateNotification = computed(() => {
+  const role = authStore.user?.role as any
+  return role !== UserRole.VIEW_ONLY && role !== UserRole.APPROVAL
 })
 
 const handleCreateNotification = () => {
+  if (!canCreateNotification.value) return
   router.push('/notifications/create')
 }
 
@@ -207,11 +280,13 @@ const handleGoToSettings = () => {
   router.push('/settings')
 }
 
-const handleInsightClick = () => {
-  ElNotification({
-    title: 'Info',
-    type: 'info',
-    message: 'This feature is coming soon!',
+const handleUserManagementClick = () => {
+  // Use route name instead of path for better reliability
+  router.push({ name: 'user-management' }).catch((err) => {
+    // Ignore navigation errors (e.g., already on the same route)
+    if (err.name !== 'NavigationDuplicated') {
+      console.error('Navigation error:', err)
+    }
   })
 }
 
@@ -254,6 +329,14 @@ const confirmLogout = () => {
   border-bottom: 1px solid rgba(0, 19, 70, 0.05);
   background: #fff;
   z-index: 1000;
+  transition:
+    left 0.3s ease,
+    width 0.3s ease;
+}
+
+.header.expanded {
+  left: 64px;
+  width: calc(100vw - 64px);
 }
 
 .header-content {
@@ -268,29 +351,6 @@ const confirmLogout = () => {
   font-weight: 700;
   color: #001346;
   margin: 0;
-}
-
-.breadcrumb {
-  font-size: 14px;
-  color: #666;
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.breadcrumb-text {
-  color: #666;
-}
-
-.breadcrumb-separator {
-  font-weight: bold;
-  color: #666;
-}
-
-.breadcrumb-current {
-  font-weight: bold;
-  color: #001346;
 }
 
 .header-actions {
@@ -323,8 +383,42 @@ const confirmLogout = () => {
   transition: all 0.3s ease;
 }
 
-.create-notification-btn:hover {
-  background: rgba(0, 19, 70, 0.1);
+.create-notification-btn:disabled,
+.create-notification-btn.is-disabled {
+  background: #d6d7d8 !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.create-notification-btn:disabled:hover,
+.create-notification-btn.is-disabled:hover {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+}
+
+.create-notification-btn:disabled .plus-icon .el-icon,
+.create-notification-btn.is-disabled .plus-icon .el-icon {
+  color: #6b7280 !important;
+}
+
+/* Override Element Plus button disabled styles */
+.create-notification-btn:deep(.el-button.is-disabled),
+.create-notification-btn:deep(.el-button:disabled) {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  border-color: #9ca3af !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  pointer-events: none !important;
+}
+
+.create-notification-btn:deep(.el-button.is-disabled:hover),
+.create-notification-btn:deep(.el-button:disabled:hover) {
+  background: #9ca3af !important;
+  color: #6b7280 !important;
+  border-color: #9ca3af !important;
 }
 
 .plus-icon {
@@ -384,6 +478,25 @@ const confirmLogout = () => {
   border-right: 1px solid rgba(0, 19, 70, 0.1);
   background: #fff;
   z-index: 999;
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 48px;
+}
+
+.sidebar-content {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s ease;
+}
+
+.sidebar-content.collapsed {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .sidebar-header {
@@ -489,6 +602,16 @@ const confirmLogout = () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  cursor: pointer;
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  justify-content: center;
+  padding: 16px;
 }
 
 .collapse-btn {
@@ -520,6 +643,14 @@ const confirmLogout = () => {
   padding: 25px 25px 0px 32px;
   overflow: hidden;
   background: #fff;
+  transition:
+    left 0.3s ease,
+    width 0.3s ease;
+}
+
+.main-content.expanded {
+  left: 64px;
+  width: calc(100vw - 64px);
 }
 
 .dialog-footer {

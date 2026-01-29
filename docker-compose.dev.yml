@@ -1,0 +1,127 @@
+services:
+  # Database Service (same as production)
+  db:
+    image: postgres:14-alpine
+    container_name: bakong-notification-services-db-dev
+    environment:
+      POSTGRES_DB: bakong_notification_services_dev
+      POSTGRES_USER: bkns_dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_INITDB_ARGS: '--encoding=UTF-8 --lc-collate=C --lc-ctype=C'
+    command: ['postgres', '-p', '5432']
+    healthcheck: 
+      test: ['CMD-SHELL', 'pg_isready -U bkns_dev -d bakong_notification_services_dev -p 5432']
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    ports:
+      - '5437:5432'
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./apps/backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    restart: unless-stopped
+    networks:
+      - bakong-network
+
+  # Backend API Service - Development Mode with Hot Reload
+  backend:
+    build:
+      context: .
+      dockerfile: ./apps/backend/Dockerfile.dev
+    container_name: bakong-notification-services-api-dev
+    ports:
+      - '4004:8080'
+      - '9229:9229' # Node.js debugger port
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=bakong_notification_services_dev
+      - POSTGRES_USER=bkns_dev
+      - POSTGRES_PASSWORD=dev
+      - API_PORT=8080
+      - API_BASE_URL=http://localhost:4004
+      - HOSTING_BASE_URL=http://localhost:4004
+      - NODE_ENV=development
+      - CORS_ORIGIN=http://localhost:3001
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/bk_notification_service/firebase-service-account.json
+      - TYPEORM_SYNCHRONIZE=false
+    volumes:
+      # Mount source code for hot-reload (rw for potential temp files)
+      - ./apps/backend/src:/opt/bk_notification_service/apps/backend/src:rw
+      - ./apps/backend/tsconfig.json:/opt/bk_notification_service/apps/backend/tsconfig.json:ro
+      - ./apps/backend/nest-cli.json:/opt/bk_notification_service/apps/backend/nest-cli.json:ro
+      - ./apps/backend/package.json:/opt/bk_notification_service/apps/backend/package.json:ro
+      - ./apps/packages/shared/src:/opt/bk_notification_service/apps/packages/shared/src:rw
+      - ./apps/packages/shared/package.json:/opt/bk_notification_service/apps/packages/shared/package.json:ro
+      - ./apps/packages/shared/tsconfig.json:/opt/bk_notification_service/apps/packages/shared/tsconfig.json:ro
+      - ./package.json:/opt/bk_notification_service/package.json:ro
+      - ./tsconfig.json:/opt/bk_notification_service/tsconfig.json:ro
+      # Mount config files
+      - ./firebase-service-account.json:/opt/bk_notification_service/firebase-service-account.json:ro
+      - ./apps/backend/env.development:/opt/bk_notification_service/env.development:ro
+      # Exclude node_modules (use container's installed modules)
+      - /opt/bk_notification_service/apps/backend/node_modules
+      - /opt/bk_notification_service/apps/packages/shared/node_modules
+      - /opt/bk_notification_service/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bakong-network
+    # Use npx to run ts-node-dev directly (NODE_ENV is already set in environment)
+    # Using absolute path to ensure correct directory regardless of starting location
+    command: sh -c "cd /opt/bk_notification_service/apps/backend && npx ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/main.ts"
+
+  # Frontend Service - Development Mode with Vite HMR
+  frontend:
+    build:
+      context: .
+      dockerfile: ./apps/frontend/Dockerfile.dev
+    container_name: bakong-notification-services-frontend-dev
+    ports:
+      - '3001:3000' # Vite dev server port
+    environment:
+      # VITE_API_BASE_URL is used by the browser (needs localhost)
+      # VITE_API_BASE_URL_DOCKER is used by Vite proxy (can use service name)
+      - VITE_API_BASE_URL=http://localhost:4004
+      - VITE_API_BASE_URL_DOCKER=http://backend:8080
+      - NODE_ENV=development
+    volumes:
+      # Mount source code for hot-reload
+      - ./apps/frontend/src:/app/apps/frontend/src:rw
+      - ./apps/frontend/Data:/app/apps/frontend/Data:ro
+      - ./apps/frontend/public:/app/apps/frontend/public:ro
+      - ./apps/frontend/index.html:/app/apps/frontend/index.html:ro
+      - ./apps/frontend/vite.config.ts:/app/apps/frontend/vite.config.ts:ro
+      # Mount Tailwind and PostCSS config files (critical for styling)
+      - ./apps/frontend/tailwind.config.js:/app/apps/frontend/tailwind.config.js:ro
+      - ./apps/frontend/postcss.config.js:/app/apps/frontend/postcss.config.js:ro
+      - ./apps/frontend/package.json:/app/apps/frontend/package.json:ro
+      - ./apps/frontend/tsconfig.json:/app/apps/frontend/tsconfig.json:ro
+      - ./apps/frontend/tsconfig.app.json:/app/apps/frontend/tsconfig.app.json:ro
+      - ./apps/frontend/tsconfig.node.json:/app/apps/frontend/tsconfig.node.json:ro
+      - ./apps/frontend/tsconfig.vitest.json:/app/apps/frontend/tsconfig.vitest.json:ro
+      - ./apps/packages/shared/src:/app/apps/packages/shared/src:ro
+      - ./apps/packages/shared/package.json:/app/apps/packages/shared/package.json:ro
+      - ./apps/packages/shared/tsconfig.json:/app/apps/packages/shared/tsconfig.json:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      # Exclude node_modules (use container's installed modules)
+      - /app/apps/frontend/node_modules
+      - /app/apps/packages/shared/node_modules
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - bakong-network
+    command: npm run dev
+
+volumes:
+  postgres_data_dev:
+
+networks:
+  bakong-network:
+    driver: bridge

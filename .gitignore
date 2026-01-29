@@ -84,6 +84,7 @@ public
 # Temporary folders
 tmp/
 temp/
+z/
 
 # Editor directories and files
 .vscode/
@@ -175,3 +176,24 @@ test-report.xml
 
 # TypeScript build info
 *.tsbuildinfo
+
+#.cursor
+.cursor/
+.cursor/rules/
+.cursor/scripts/
+.cursor/templates/
+
+
+# Ps1
+*.ps1/
+
+# md
+*.md
+# Exception: Track migration guides and documentation
+!apps/backend/scripts/*.md
+
+# scripts (root level only)
+scripts/
+# Exception: Track backend migration scripts
+!apps/backend/scripts/
+

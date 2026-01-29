@@ -12,7 +12,7 @@
         <div class="info-item">
           <span class="info-label">Role</span>
           <span class="info-value" :class="{ loading: loading }">
-            {{ loading ? 'Loading...' : userInfo.role }}
+            {{ loading ? 'Loading...' : formatUserRole(userInfo.role) }}
           </span>
         </div>
         <div v-if="error" class="error-message">
@@ -62,12 +62,14 @@ import { UserRole } from '@/stores/auth'
 
 const formatUserRole = (role: string) => {
   switch (role) {
-    case 'ADMIN_USER':
-      return 'Admin User'
-    case 'NORMAL_USER':
-      return 'Normal User'
-    case 'API_USER':
-      return 'API User'
+    case 'ADMINISTRATOR':
+      return 'Administrator'
+    case UserRole.VIEW_ONLY:
+      return 'Viewer Only'
+    case UserRole.APPROVAL:
+      return 'Approval'
+    case UserRole.EDITOR:
+      return 'Editor'
     default:
       return role || 'Unknown'
   }
@@ -182,7 +184,7 @@ onMounted(() => {
   line-height: 150%;
   color: #001346;
   text-align: right;
-}
+} 
 
 .profile-action-section {
   display: flex;

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore, UserRole } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
+import { UserRole } from '@bakong/shared'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.VITE_BASE_URL || '/'),
@@ -26,64 +27,216 @@ const router = createRouter({
     {
       path: '/',
       component: () => import('../layouts/AppLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, breadcrumb: { label: 'Notification' } },
       children: [
         {
           path: '',
           name: 'home',
           component: () => import('../views/HomeView.vue'),
+          meta: { breadcrumb: { label: 'Home' } },
         },
         {
           path: 'schedule',
           name: 'schedule',
           component: () => import('../views/ScheduleView.vue'),
+          meta: { breadcrumb: { label: 'Schedule' } },
         },
         {
           path: 'schedule/:id',
           name: 'schedule-detail',
           component: () => import('../views/ScheduleDetailView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Schedule Detail',
+              parent: { name: 'schedule', label: 'Schedule' },
+            },
+          },
         },
         {
-          path: 'templates',
-          name: 'templates',
+          path: 'types',
+          name: 'types',
           component: () => import('../views/TypeView.vue'),
+          meta: { breadcrumb: { label: 'Types' } },
+        },
+        {
+          path: 'types/create',
+          name: 'create-type',
+          component: () => import('../views/CreateNewType.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Create Type',
+              parent: { name: 'types', label: 'Types' },
+            },
+          },
+        },
+        // {
+        //   path: 'types/edit',
+        //   name: 'create-type',
+        //   component: () => import('../views/CreateNewType.vue'),
+        //   meta: {
+        //     breadcrumb: {
+        //       label: 'Create Type',
+        //       parent: { name: 'types', label: 'Types' },
+        //     },
+        //   },
+        // },
+        {
+          path: 'types/view/:id',
+          name: 'view-type',
+          component: () => import('../views/CreateNewType.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'View Type',
+              parent: { name: 'types', label: 'Types' },
+            },
+          },
+        },
+        {
+          path: 'types/edit/:id',
+          name: 'edit-type',
+          component: () => import('../views/CreateNewType.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Edit Type',
+              parent: { name: 'types', label: 'Types' },
+            },
+          },
         },
         {
           path: 'notifications/create',
           name: 'create-notification',
           component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Create Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
+        },
+        {
+          path: 'notifications/view/:id',
+          name: 'view-notification',
+          component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'View Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
         },
         {
           path: 'notifications/edit/:id',
           name: 'edit-notification',
           component: () => import('../views/CreateNotificationView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Edit Notification',
+              parent: { name: 'home', label: 'Home' },
+            },
+          },
         },
         {
           path: 'users',
           name: 'users',
           component: () => import('../views/UsersView.vue'),
-          meta: { requiredRole: UserRole.ADMIN_USER },
+          meta: {
+            requiredRole: UserRole.ADMINISTRATOR,
+            breadcrumb: { label: 'Users' },
+          },
+        },
+        {
+          path: 'users/create',
+          name: 'create-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMINISTRATOR,
+            breadcrumb: {
+              label: 'Create User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'users/view/:id',
+          name: 'view-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMINISTRATOR,
+            breadcrumb: {
+              label: 'View User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'users/edit/:id',
+          name: 'edit-user',
+          component: () => import('../views/CreateUserView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMINISTRATOR,
+            breadcrumb: {
+              label: 'Edit User',
+              parent: { name: 'user-management', label: 'Users' },
+            },
+          },
+        },
+        {
+          path: 'user-management',
+          name: 'user-management',
+          component: () => import('../views/UserManagementView.vue'),
+          meta: {
+            requiredRole: UserRole.ADMINISTRATOR,
+            breadcrumb: { label: 'User Management' },
+          },
         },
         {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingView.vue'),
+          meta: { breadcrumb: { label: 'Settings' } },
         },
         {
           path: 'settings/change-password',
           name: 'settings-change-password',
           component: () => import('../views/SettingChangePasswordView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Change Password',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
         {
           path: 'settings/change-profile',
           name: 'settings-change-profile',
           component: () => import('../views/SettingChangeProfileView.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Change Profile',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
         {
           path: 'profile-notification-setup',
           name: 'profile-notification-setup',
           component: () => import('../views/ProfileNotificationSetup.vue'),
+          meta: {
+            breadcrumb: {
+              label: 'Profile Notification Setup',
+              parent: { name: 'settings', label: 'Settings' },
+            },
+          },
         },
+        // {
+        //   path: 'test',
+        //   name: 'test',
+        //   component: () => import('../views/TestView.vue'),
+        //   meta: {
+        //     breadcrumb: { label: 'Testing Tools' },
+        //     devOnly: true, // Only available in development environment
+        //   },
+        // },
       ],
     },
   ],
@@ -92,29 +245,63 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
-  if (to.meta.requiresAuth) {
-    const storedToken = localStorage.getItem('auth_token')
-    if (!storedToken) {
-      // No token found
+  // Always initialize auth state if there's a token in localStorage
+  // This ensures token validation happens before any route navigation
+  const storedToken = localStorage.getItem('auth_token')
+  if (storedToken && (!authStore.token || !authStore.user)) {
+    try {
+      await authStore.initializeAuth()
+    } catch (error) {
+      console.error('Auth initialization failed:', error)
+      // If initialization fails, clear invalid token
+      authStore.logout()
     }
-
-    if (!authStore.token || !authStore.user) {
-      try {
-        await authStore.initializeAuth()
-      } catch (error) {
-        console.error('Auth initialization failed:', error)
-        next('/login')
-      }
+  } else if (!storedToken) {
+    // If no token exists, ensure auth state is cleared
+    if (authStore.token || authStore.user) {
+      authStore.logout()
     }
   }
 
   const isAuthenticated = authStore.isAuthenticated
 
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    if (authStore.token && !authStore.user) {
+  // Enforce mandatory password change
+  if (isAuthenticated && authStore.user?.mustChangePassword) {
+    // Only allow access to the 'change-password' route
+    if (to.name !== 'change-password') {
+      next({ name: 'change-password' })
+      return
+    }
+  }
+
+  // Prevent accessing change-password if not required
+  if (isAuthenticated && !authStore.user?.mustChangePassword && to.name === 'change-password') {
+    next('/')
+    return
+  }
+
+  // Check if route requires auth (check current route and all matched parent routes)
+  const requiresAuth =
+    to.meta.requiresAuth || to.matched.some((route) => route.meta.requiresAuth === true)
+
+  if (requiresAuth && !isAuthenticated) {
+    // Clear any stale auth state
+    if (authStore.token || authStore.user) {
       authStore.logout()
     }
-    next('/login')
+    // Redirect to login, but avoid infinite redirect loop
+    if (to.name !== 'login' && to.name !== 'register') {
+      next('/login')
+      return
+    }
+  }
+
+  // Check if route is dev-only and redirect if not in development
+  const isDevOnly = to.meta.devOnly || to.matched.find((route) => route.meta.devOnly)?.meta.devOnly
+  if (isDevOnly && import.meta.env.PROD) {
+    // In production/SIT, redirect dev-only routes to home
+    console.log('Router guard - dev-only route accessed in production, redirecting to home')
+    next('/')
     return
   }
 
@@ -130,7 +317,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if ((to.name === 'login' || to.name === 'register') && isAuthenticated) {
-    next('/')
+    // If they were trying to go to login while authenticated but must change password, 
+    // the first block above already handled it, but let's be safe:
+    if (authStore.user?.mustChangePassword) {
+      next({ name: 'change-password' })
+    } else {
+      next('/')
+    }
     return
   }
 

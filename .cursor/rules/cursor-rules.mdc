@@ -1,0 +1,112 @@
+---
+alwaysApply: false
+---
+# Cursor Rules Location
+
+How to add new cursor rules to the project
+
+## Available Cursor Rules
+
+- **`project-structure.mdc`**: Complete directory structure and file organization
+- **`tech-stack.mdc`**: Technology stack, dependency versions, and best practices
+- **`docker-setup.mdc`**: Complete guide for Docker setup, deployment, and configuration
+- **`self-improvement.mdc`**: Guidelines for improving cursor rules
+
+## Auto-Update Project Structure
+
+The `project-structure.mdc` file is automatically kept up-to-date with the current project structure.
+
+### To Update Project Structure Documentation
+
+**Option 1: Run the npm script (Recommended)**
+```bash
+npm run update:project-structure
+```
+
+**Option 2: Run the script directly**
+```bash
+node .cursor/scripts/update-project-structure.js
+```
+
+**When to update:**
+- After adding new modules, components, or directories
+- After restructuring the project
+- After adding new configuration files
+- Before committing major changes
+- When you reference `@cursor-rules.mdc` and want to ensure structure is current
+
+The script will:
+- Scan the entire project structure
+- Update `.cursor/rules/project-structure.mdc` with current files and folders
+- Preserve custom sections (Important Files Reference, Architecture Patterns, etc.)
+- Maintain the frontmatter and formatting
+
+**Note:** The script automatically ignores:
+- `node_modules/`
+- `.git/`
+- `dist/`, `build/`
+- Log files and temporary files
+- Lock files (`package-lock.json`, `yarn.lock`)
+
+---
+
+How to add new cursor rules to the project
+
+1. Always place rule files in PROJECT_ROOT/.cursor/rules/:
+    ```
+    .cursor/rules/
+    ├── your-rule-name.mdc
+    ├── another-rule.mdc
+    └── ...
+    ```
+
+2. Follow the naming convention:
+    - Use kebab-case for filenames
+    - Always use .mdc extension
+    - Make names descriptive of the rule's purpose
+
+3. Directory structure:
+    ```
+    PROJECT_ROOT/
+    ├── .cursor/
+    │   └── rules/
+    │       ├── your-rule-name.mdc
+    │       └── ...
+    └── ...
+    ```
+
+4. Never place rule files:
+    - In the project root
+    - In subdirectories outside .cursor/rules
+    - In any other location
+
+5. Cursor rules have the following structure:
+
+```
+---
+description: Short description of the rule's purpose
+globs: optional/path/pattern/**/*
+alwaysApply: false
+---
+# Rule Title
+
+Main content explaining the rule with markdown formatting.
+
+1. Step-by-step instructions
+2. Code examples
+3. Guidelines
+
+Example:
+
+```typescript
+// Good example
+function goodExample() {
+  // Implementation following guidelines
+}
+
+// Bad example
+function badExample() {
+  // Implementation not following guidelines
+}
+```
+

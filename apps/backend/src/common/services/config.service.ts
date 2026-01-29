@@ -6,6 +6,12 @@ import { existsSync } from 'fs'
 const nodeEnv = process.env.NODE_ENV || 'development'
 
 const possiblePaths = [
+  // Check for .env.development (with dot) first (common convention)
+  resolve(process.cwd(), `.env.${nodeEnv}`),
+  resolve(process.cwd(), `apps/backend/.env.${nodeEnv}`),
+  resolve(__dirname, `../../../.env.${nodeEnv}`),
+  resolve(__dirname, `../../.env.${nodeEnv}`),
+  // Also check for env.development (without dot) for backward compatibility
   resolve(process.cwd(), `env.${nodeEnv}`),
   resolve(process.cwd(), `apps/backend/env.${nodeEnv}`),
   resolve(__dirname, `../../../env.${nodeEnv}`),
@@ -40,6 +46,7 @@ export interface AppConfig {
     adminUsername: string
     adminPassword: string
     mobileApiKey: string
+    defaultUserPassword: string
   }
 
   database: {
@@ -77,14 +84,14 @@ export class ConfigService {
     const defaultApiBaseUrl = isDev
       ? 'http://localhost:4005'
       : isStaging
-        ? 'http://10.20.6.57:4002'
-        : 'https://10.20.6.58:8080'
+      ? 'http://10.20.6.57:4002'
+      : 'https://10.20.6.58:8080'
     const defaultDbPort = isDev ? 5437 : isStaging ? 5434 : 5433
     const defaultDbName = isDev
       ? 'bakong_notification_services_dev'
       : isStaging
-        ? 'bakong_notification_services_sit'
-        : 'bakong_notification_services'
+      ? 'bakong_notification_services_sit'
+      : 'bakong_notification_services'
     const defaultDbUser = isDev ? 'bkns_dev' : isStaging ? 'bkns_sit' : 'bkns'
     const defaultDbPassword = isDev ? 'dev' : isStaging ? '0101bkns_sit' : '010110bkns'
 
@@ -105,6 +112,7 @@ export class ConfigService {
         adminUsername: process.env.API_ADMIN_USERNAME || 'admin',
         adminPassword: process.env.API_ADMIN_PASSWORD || 'admin123',
         mobileApiKey: process.env.API_MOBILE_KEY || 'BAKONG',
+        defaultUserPassword: process.env.DEFAULT_USER_PASSWORD || 'DefaultPassword123!',
       },
 
       database: {
@@ -177,6 +185,10 @@ export class ConfigService {
 
   get mobileApiKey(): string {
     return this.config.api.mobileApiKey
+  }
+
+  get defaultUserPassword(): string {
+    return this.config.api.defaultUserPassword
   }
 
   get databaseHost(): string {

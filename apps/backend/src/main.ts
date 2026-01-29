@@ -1,5 +1,8 @@
+import 'reflect-metadata'
 import { HttpAdapterHost, NestFactory, Reflector } from '@nestjs/core'
+import { VersioningType } from '@nestjs/common'
 import helmet from 'helmet'
+import express from 'express'
 import { AllExceptionsFilter } from './common/middleware/exception.filter'
 import { ResponseFormatInterceptor } from './common/middleware/response-format.interceptor'
 import { GlobalValidationPipe } from './common/middleware/validator.pipe'
@@ -28,7 +31,14 @@ async function bootstrap() {
     console.log(`✅ Initialized apps: ${FirebaseManager.getInitializedApps().join(', ')}`)
   }
 
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false, // Disable default body parser to configure custom limits
+  })
+
+  // Increase JSON body size limit to 50MB for large template updates
+  const expressApp = app.getHttpAdapter().getInstance()
+  expressApp.use(express.json({ limit: '50mb' }))
+  expressApp.use(express.urlencoded({ limit: '50mb', extended: true }))
 
   // Parse CORS origins - support comma-separated values
   const corsOrigins = configService.corsOrigin
@@ -59,7 +69,14 @@ async function bootstrap() {
   })
 
   app.use(helmet())
-  app.setGlobalPrefix('/api/v1')
+  app.setGlobalPrefix('/api')
+  
+  // Enable versioning: v1 and v2
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  })
+  
   app.useGlobalPipes(GlobalValidationPipe)
   app.useGlobalInterceptors(
     new ResponseFormatInterceptor(),

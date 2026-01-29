@@ -10,13 +10,16 @@ describe('UserService', () => {
   let service: UserService
 
   const userId = 1
-  const failLoginAttempt = 0
   const oneUser: User = plainToClass(User, {
     id: userId,
     username: 'admin',
     password: 'admin@123',
-    failLoginAttempt: failLoginAttempt,
-    role: UserRole.ADMIN_USER,
+    syncStatus: {
+      failLoginAttempt: 0,
+      login_at: null,
+      changePassword_count: 0,
+    },
+    role: UserRole.ADMINISTRATOR,
     displayName: 'Theany',
   })
 
@@ -25,7 +28,12 @@ describe('UserService', () => {
     create: jest.fn().mockResolvedValue(oneUser),
     save: jest.fn().mockResolvedValue(oneUser),
     update: jest.fn().mockResolvedValue(oneUser),
-    increment: jest.fn().mockResolvedValue(failLoginAttempt + 1),
+    createQueryBuilder: jest.fn(() => ({
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    })),
   }
 
   beforeEach(async () => {
@@ -59,9 +67,11 @@ describe('UserService', () => {
   describe('function createUser', () => {
     const createUserDto: CreateUserDto = {
       username: 'test',
+      email: 'test@example.com',
       password: 'test@123',
       displayName: 'Test User',
-      role: UserRole.NORMAL_USER,
+      role: UserRole.EDITOR,
+      phoneNumber: '+855 00 000 000',
     }
 
     it('should success and return User', async () => {
@@ -74,15 +84,15 @@ describe('UserService', () => {
     it('should success and increase by 1', async () => {
       const result = await service.increementFailLoginAttempt(userId)
 
-      expect(result).toEqual(1)
+      expect(result.affected).toEqual(1)
     })
   })
 
   describe('function resetFailLoginAttempt', () => {
-    it('should success and set failLoginAttempt to 0', async () => {
+    it('should success and reset failLoginAttempt to 0', async () => {
       const result = await service.resetFailLoginAttempt(userId)
 
-      expect(result['failLoginAttempt']).toEqual(0)
+      expect(result.affected).toEqual(1)
     })
   })
 })

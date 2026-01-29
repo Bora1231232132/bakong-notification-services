@@ -11,7 +11,10 @@
         <div class="version-text">Notification Center version 1.3</div>
         <div class="title-section">
           <h1 class="main-title">Change password</h1>
-          <p class="main-description">You can change your password to the new one here.</p>
+          <p class="main-description">
+            This is your first login. For security reasons, you must change your temporary password 
+            before accessing the system.
+          </p>
         </div>
         <form
           ref="changePasswordFormRef"
@@ -59,12 +62,12 @@
             <div class="input-container password-container">
               <input
                 :type="showConfirmPassword ? 'text' : 'password'"
-                v-model="formData.confirmPassword"
+                v-model="formData.confirmNewPassword"
                 class="form-input"
-                :class="{ error: errors.confirmPassword }"
+                :class="{ error: errors.confirmNewPassword }"
                 placeholder="********"
                 autocomplete="new-password"
-                @input="clearFieldError('confirmPassword')"
+                @input="clearFieldError('confirmNewPassword')"
               />
               <button
                 type="button"
@@ -80,8 +83,8 @@
                 </el-icon>
               </button>
             </div>
-            <div v-if="errors.confirmPassword" class="error-message">
-              {{ errors.confirmPassword }}
+            <div v-if="errors.confirmNewPassword" class="error-message">
+              {{ errors.confirmNewPassword }}
             </div>
           </div>
           <button type="submit" class="submit-button" :disabled="isLoading">
@@ -97,27 +100,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { View, Hide, ArrowRight } from '@element-plus/icons-vue'
+import { userApi } from '@/services/userApi'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const formData = ref({
   newPassword: '',
-  confirmPassword: '',
+  confirmNewPassword: '',
 })
 
 const showNewPassword = ref(false)
 const showConfirmPassword = ref(false)
 const isLoading = ref(false)
+const passwordChangeComplete = ref(false)
+const isHandlingNavigation = ref(false) // Flag to prevent duplicate notifications
 
 const changePasswordFormRef = ref()
 
 const errors = ref({
   newPassword: '',
-  confirmPassword: '',
+  confirmNewPassword: '',
 })
 
 const clearFieldError = (field: string) => {
@@ -134,25 +142,59 @@ const toggleConfirmPasswordVisibility = () => {
   showConfirmPassword.value = !showConfirmPassword.value
 }
 
+// Centralized logout and redirect function is now inlined in the guard for better performance
+
+// Handle browser back button and other navigation attempts - logout and redirect to login
+onBeforeRouteLeave((to, from, next) => {
+  // If password change is complete, allow normal navigation
+  if (passwordChangeComplete.value) {
+    next()
+    return
+  }
+
+  // If already handling navigation, don't trigger again
+  if (isHandlingNavigation.value) {
+    next() // Allow the redirect to /login that we initiated
+    return
+  }
+
+  // Set flag to prevent loop
+  isHandlingNavigation.value = true
+
+  // Logout user immediately
+  authStore.logout()
+  
+  // Show notification
+  ElNotification({
+    title: 'Password Change Required',
+    message: 'You have been logged out. You can login again with your temporary password, but you must change it to access the system.',
+    type: 'warning',
+    duration: 5000,
+  })
+  
+  // Redirect to login immediately using replace to avoid history pollution
+  next({ name: 'login', replace: true })
+})
+
 const handleChangePassword = async () => {
   errors.value.newPassword = ''
-  errors.value.confirmPassword = ''
+  errors.value.confirmNewPassword = ''
 
   let hasErrors = false
 
   if (!formData.value.newPassword) {
     errors.value.newPassword = 'Please enter your new password'
     hasErrors = true
-  } else if (formData.value.newPassword.length < 6) {
-    errors.value.newPassword = 'Password must be at least 6 characters long'
+  } else if (formData.value.newPassword.length < 8) {
+    errors.value.newPassword = 'Password must be at least 8 characters long'
     hasErrors = true
   }
 
-  if (!formData.value.confirmPassword) {
-    errors.value.confirmPassword = 'Please confirm your new password'
+  if (!formData.value.confirmNewPassword) {
+    errors.value.confirmNewPassword = 'Please confirm your new password'
     hasErrors = true
-  } else if (formData.value.newPassword !== formData.value.confirmPassword) {
-    errors.value.confirmPassword = 'Passwords do not match'
+  } else if (formData.value.newPassword !== formData.value.confirmNewPassword) {
+    errors.value.confirmNewPassword = 'Passwords do not match'
     hasErrors = true
   }
 
@@ -160,35 +202,73 @@ const handleChangePassword = async () => {
     return
   }
 
+  // Get userId from auth store
+  if (!authStore.user?.id) {
+    ElNotification({
+      title: 'Error',
+      message: 'User information not found. Please login again.',
+      type: 'error',
+      duration: 2000,
+    })
+    return
+  }
+
   try {
     isLoading.value = true
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    const mockResponse = {
-      success: true,
-      message: 'Password changed successfully',
-    }
-    if (mockResponse.success) {
+
+    const result = await userApi.setupInitialPassword(
+      authStore.user.id,
+      formData.value.newPassword,
+      formData.value.confirmNewPassword,
+    )
+
+    if (result.success) {
+      // Mark password change as complete to allow navigation
+      passwordChangeComplete.value = true
+      
+      // Update auth store with new token and user data if available
+      // This allows immediate access without re-login
+      if (result.data && result.data.accessToken) {
+        authStore.token = result.data.accessToken
+        if (result.data.user) {
+          authStore.user = result.data.user
+        }
+        localStorage.setItem('auth_token', result.data.accessToken)
+      } else {
+        // Fallback: If no new token is returned, we must still update the state
+        if (authStore.user) {
+          authStore.user.mustChangePassword = false
+        }
+      }
+      
       ElNotification({
         title: 'Success',
-        message: 'Password changed successfully!',
+        message: result.message || 'Password set successfully!',
         type: 'success',
         duration: 2000,
       })
 
       formData.value.newPassword = ''
-      formData.value.confirmPassword = ''
+      formData.value.confirmNewPassword = ''
       showNewPassword.value = false
       showConfirmPassword.value = false
 
       setTimeout(() => {
-        router.push('/')
+        router.replace('/')
       }, 2000)
+    } else {
+      ElNotification({
+        title: 'Error',
+        message: result.message || 'Failed to set password. Please try again.',
+        type: 'error',
+        duration: 2000,
+      })
     }
-  } catch (error) {
-    console.error('Change password error:', error)
+  } catch (error: any) {
+    console.error('Setup initial password error:', error)
     ElNotification({
       title: 'Error',
-      message: 'Failed to change password. Please try again.',
+      message: error.message || 'Failed to set password. Please try again.',
       type: 'error',
       duration: 2000,
     })

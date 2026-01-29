@@ -66,11 +66,14 @@ export class TimezoneUtils {
   }
 
   static formatCambodiaTime(date: Date | string): string {
-    const cambodiaDate = this.toCambodiaTime(date)
-    return cambodiaDate.toLocaleTimeString('en-GB', {
+    // Use timeZone parameter directly instead of manually adding hours
+    // This ensures correct timezone conversion
+    const dateObj = date instanceof Date ? date : new Date(date)
+    return dateObj.toLocaleTimeString('en-GB', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
+      timeZone: 'Asia/Phnom_Penh',
     })
   }
 

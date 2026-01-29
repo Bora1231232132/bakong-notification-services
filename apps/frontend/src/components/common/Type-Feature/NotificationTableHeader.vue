@@ -2,26 +2,125 @@
   <div
     class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 pt-2 pb-0 min-h-14 w-full"
   >
-    <button
-      class="flex items-center justify-center gap-2 text-[#0D1C50] text-[16px] font-semibold transition-all duration-200 w-full sm:w-[104px] h-14 bg-[#0013460D] rounded-[32px] px-4 py-2 shadow-[0_0_128px_rgba(0,19,70,0.08)]"
-      @click="$emit('filter')"
-      aria-label="Open filter"
-    >
-      Filter
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        class="w-[27px] h-[27px]"
-        fill="none"
-        viewBox="0 0 23 23"
-        stroke="currentColor"
+    <div class="flex items-center gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap" style="min-width: 0;">
+      <label
+        class="text-[#001346] text-[16px] font-medium whitespace-nowrap underline shrink-0"
+        style="flex-shrink: 0 !important;"
       >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1"
-          d="M3 4h18v2l-7 8v4l-4-2v-2L3 6z"
-        />
-      </svg>
-    </button>
+        {{ labelText }}
+      </label>
+
+      <input
+        v-model="searchValue"
+        type="text"
+        :placeholder="searchPlaceholder || getDefaultPlaceholder()"
+        class="h-[56px] px-4 border border-[#0013461A] focus:border-[#0013460D] outline-blue-500/50 rounded-[8px] text-[#001346] text-[14px]"
+        style="padding-left: 16px !important; flex: 1 1 0; min-width: 200px; max-width: 313px; box-sizing: border-box;"
+        @input="handleSearch"
+      />
+
+      <button
+        v-if="showAddNew !== false"
+        :disabled="adminOnlyAdd && !isAdmin"
+        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-14 px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        style="width: 140px; flex-shrink: 0 !important; box-sizing: border-box;"
+        @click="handleAddNew"
+        aria-label="Add new"
+      >
+        <span>Add new</span>
+        <img src="@/assets/image/add--alt.svg" alt="Add" class="w-5 h-5" />
+      </button>
+
+      <button
+        v-if="showRefresh"
+        class="flex items-center justify-center text-[#001346] transition-all duration-200 shadow-[0_0_128px_rgba(0,19,70,0.08)] whitespace-nowrap shrink-0"
+        style="
+          width: 40px;
+          height: 40px;
+          gap: 5.71px;
+          border-radius: 22.86px;
+          padding: 8.57px;
+          opacity: 1;
+          flex-shrink: 0 !important;
+          box-sizing: border-box;
+        "
+        @click="$emit('refresh')"
+        aria-label="Refresh table"
+      >
+        <img src="@/assets/image/rotate--360.svg" alt="Refresh" class="w-full h-full" />
+      </button>
+    </div>
+
+    <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
+      <button
+        class="flex items-center justify-center gap-2 text-[#001346] text-[16px] font-semibold transition-all duration-200 h-[56px] w-[110px] px-4 bg-[#0013460D] rounded-[32px] shadow-[0_0_128px_rgba(0,19,70,0.08)]"
+        @click="$emit('filter')"
+        aria-label="Open filter"
+      >
+        Filter
+        <img src="@/assets/image/filter.svg" alt="Filter" class="w-5 h-5" />
+      </button>
+    </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { useAuthStore, UserRole } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.user?.role === UserRole.ADMINISTRATOR)
+
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string
+    showRefresh?: boolean
+    showAddNew?: boolean
+    adminOnlyAdd?: boolean
+    labelText?: string
+    searchPlaceholder?: string
+  }>(),
+  {
+    showRefresh: true,
+    showAddNew: true,
+    adminOnlyAdd: false,
+    labelText: 'Category type',
+    searchPlaceholder: '',
+  },
+)
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+  search: [value: string]
+  addNew: []
+  filter: []
+  refresh: []
+}>()
+
+const searchValue = ref(props.modelValue || '')
+
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+
+const getDefaultPlaceholder = () => {
+  if (props.labelText?.toLowerCase() === 'user') return 'Search by username or email...'
+  return 'Search by name...'
+}
+
+const handleSearch = () => {
+  emit('update:modelValue', searchValue.value)
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => emit('search', searchValue.value), 300)
+}
+
+const handleAddNew = () => {
+  if (props.adminOnlyAdd && !isAdmin.value) return
+  emit('addNew')
+}
+
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    if (newValue !== searchValue.value) searchValue.value = newValue || ''
+  },
+)
+</script>

@@ -10,6 +10,14 @@ const mockUsers = [
     password: 'admin123',
   },
   {
+    id: 1,
+    username: 'admin',
+    email: 'admin@bakong.com',
+    displayName: 'Administrator',
+    role: 'ADMIN_USER' as UserRole,
+    password: 'admin123',
+  },
+  {
     id: 2,
     username: 'user',
     email: 'user@bakong.com',
@@ -150,6 +158,11 @@ export const mockAuthApi = {
   },
 }
 
+/**
+ * Mock authentication is disabled.
+ * This function always returns false to use the real API.
+ * To re-enable mock mode, change this to return true.
+ */
 export const isMockMode = (): boolean => {
   return false
 }
