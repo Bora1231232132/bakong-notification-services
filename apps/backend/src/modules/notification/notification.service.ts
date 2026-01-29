@@ -2021,7 +2021,7 @@ export class NotificationService {
         androidTitle, // Use truncated title
         body,
         notificationIdStr,
-        extraData as Record<string, string>,
+        extraData as any,
       )
 
       // Check payload size before sending (FCM has 4KB limit for Android too)
@@ -2061,7 +2061,7 @@ export class NotificationService {
             title,
             body,
             notificationIdStr,
-            extraData as Record<string, string>,
+            extraData as any,
           )
 
           // Recalculate size

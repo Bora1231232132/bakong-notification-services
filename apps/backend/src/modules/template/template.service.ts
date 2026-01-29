@@ -2868,12 +2868,13 @@ export class TemplateService implements OnModuleInit {
   }
 
   async pickPendingSchedule() {
-    const pendingTemplate = await this.repo.find({
-      where: {
-        isSent: false,
-        sendSchedule: MoreThanOrEqual(moment().utc().toDate()),
-      },
-    })
+    const pendingTemplate = await this.repo
+      .createQueryBuilder('template')
+      .where('template.isSent = :isSent', { isSent: false })
+      .andWhere('template.sendSchedule >= :now', { now: moment().utc().toDate() })
+      .select(['template.id', 'template.sendType', 'template.isSent', 'template.sendSchedule'])
+      .getMany()
+    
     if (pendingTemplate && pendingTemplate.length > 0) {
       for (const template of pendingTemplate) {
         switch (template.sendType) {

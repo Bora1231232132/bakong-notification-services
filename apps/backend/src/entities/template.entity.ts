@@ -20,7 +20,6 @@ export class Template {
   id: number
 
   @OneToMany(() => TemplateTranslation, (translation) => translation.template, {
-    eager: true,
     cascade: ['insert'],
   })
   translations: TemplateTranslation[]
