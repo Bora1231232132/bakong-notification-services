@@ -24,7 +24,7 @@ import { UpdateCategoryTypeDto } from './dto/update-category-type.dto'
 import { BaseResponseDto } from '../../common/base-response.dto'
 import { ErrorCode, ResponseMessage } from '@bakong/shared'
 
-@Controller('category-type')
+@Controller({ path: 'category-type', version: ['1', '2'] })
 @UseInterceptors(ClassSerializerInterceptor)
 export class CategoryTypeController {
   constructor(private readonly categoryTypeService: CategoryTypeService) {}
