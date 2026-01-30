@@ -30,19 +30,19 @@
         </div>
       </div>
         <div class="form-group">
-          <ImageUpload
-            :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
-            v-model="currentImageFile"
-            accept-types="image/png,image/jpeg"
-            :max-size="3 * 1024 * 1024"
-            format-text="Supported format: PNG, JPG (2:1 W:H or 880:440)"
-            size-text="Maximum size: 3MB"
-            :existing-image-url="currentImageUrl || undefined"
-            :disabled="isReadOnly"
-            @file-selected="handleLanguageImageSelected"
-            @file-removed="handleLanguageImageRemoved"
-            @error="handleUploadError"
-          />
+            <ImageUpload
+              :key="`image-upload-${activeLanguage}-${existingImageIds[activeLanguage] || 'new'}`"
+              v-model="currentImageFile"
+              accept-types="image/png,image/jpeg"
+              :max-size="3 * 1024 * 1024"
+              format-text="Supported format: PNG, JPG (2:1 W:H or 880:440)"
+              size-text="Maximum size: 3MB"
+              :existing-image-url="currentImageUrlFallback || undefined"
+              :disabled="isReadOnly"
+              @file-selected="handleLanguageImageSelected"
+              @file-removed="handleLanguageImageRemoved"
+              @error="handleUploadError"
+            />
         </div>
         <div class="form-fields">
           <div class="form-group">
@@ -495,7 +495,7 @@
       <MobilePreview
         :title="currentTitle"
         :description="currentDescription"
-        :image="currentImageUrl || ''"
+        :image="currentImageUrlFallback || ''"
         :categoryType="
           categoryTypes.find((ct: CategoryTypeData) => ct.id === formData.categoryTypeId)?.name ||
           ''
@@ -906,7 +906,16 @@ onMounted(() => {
 })
 
 const currentTitle = computed({
-  get: () => languageFormData[activeLanguage.value]?.title || '',
+  get: () => {
+    const active = languageFormData[activeLanguage.value]?.title
+    if (active) return active
+    // fallback: first available translation title
+    for (const langKey of Object.keys(languageFormData)) {
+      const val = (languageFormData as any)[langKey]?.title
+      if (val) return val
+    }
+    return ''
+  },
   set: (value: string) => {
     if (languageFormData[activeLanguage.value]) {
       languageFormData[activeLanguage.value].title = value
@@ -917,7 +926,16 @@ const currentTitle = computed({
 })
 
 const currentDescription = computed({
-  get: () => languageFormData[activeLanguage.value]?.description || '',
+  get: () => {
+    const active = languageFormData[activeLanguage.value]?.description
+    if (active) return active
+    // fallback: first available translation description
+    for (const langKey of Object.keys(languageFormData)) {
+      const val = (languageFormData as any)[langKey]?.description
+      if (val) return val
+    }
+    return ''
+  },
   set: (value: string) => {
     if (languageFormData[activeLanguage.value]) {
       languageFormData[activeLanguage.value].description = value
@@ -928,13 +946,40 @@ const currentDescription = computed({
 })
 
 const currentLinkToSeeMore = computed({
-  get: () => languageFormData[activeLanguage.value]?.linkToSeeMore || '',
+  get: () => {
+    const active = languageFormData[activeLanguage.value]?.linkToSeeMore
+    if (active) return active
+    // fallback: first available translation link
+    for (const langKey of Object.keys(languageFormData)) {
+      const val = (languageFormData as any)[langKey]?.linkToSeeMore
+      if (val) return val
+    }
+    return ''
+  },
   set: (value: string) => {
     if (languageFormData[activeLanguage.value]) {
       languageFormData[activeLanguage.value].linkToSeeMore = value
     }
   },
 })
+
+// Fallbacks: when the active language has no text, use the first available
+// translation from other languages so editors/approvers can see content.
+const findFirstAvailableText = (field: 'title' | 'description' | 'linkToSeeMore') => {
+  const activeVal = (languageFormData[activeLanguage.value] as any)?.[field]
+  if (activeVal) return activeVal
+  for (const langKey of Object.keys(languageFormData)) {
+    const val = (languageFormData as any)[langKey]?.[field]
+    if (val) return val
+  }
+  return ''
+}
+
+const currentTitleFallback = computed(() => findFirstAvailableText('title'))
+
+const currentDescriptionFallback = computed(() => findFirstAvailableText('description'))
+
+const currentLinkFallback = computed(() => findFirstAvailableText('linkToSeeMore'))
 
 const currentImageFile = computed({
   get: () => languageFormData[activeLanguage.value]?.imageFile || null,
@@ -952,6 +997,20 @@ const currentImageUrl = computed({
       languageFormData[activeLanguage.value].imageUrl = value
     }
   },
+})
+
+// Fallback image URL: if the active language has no image, use the first
+// available translation image so editors/approvers can still see the image.
+const currentImageUrlFallback = computed((): string | null => {
+  const active = currentImageUrl.value
+  if (active) return active
+
+  // Look for any other language that has an imageUrl
+  for (const langKey of Object.keys(languageFormData)) {
+    const maybe = (languageFormData as any)[langKey]?.imageUrl
+    if (maybe) return maybe
+  }
+  return null
 })
 
 // Detect Khmer content for dynamic font application
