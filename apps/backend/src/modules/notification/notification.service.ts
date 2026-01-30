@@ -457,11 +457,19 @@ export class NotificationService {
       return { successfulCount: 0, failedCount: 0, failedUsers: [] }
     }
 
-    // Always use Khmer (KM) translation for FCM push notifications (banner/background)
-    // This ensures all users see notifications in Khmer regardless of their language preference
-    let defaultTranslation = this.templateService.findBestTranslation(template, Language.KM)
+    // Default translation selection for FCM push notifications
+    // - For BAKONG_TOURIST templates: prefer English (EN)
+    // - Otherwise: prefer Khmer (KM)
+    // Normalize requested language (if any) and coerce for tourist templates
+    let requestedLang: Language | undefined = undefined
+    try {
+      // dto not available here; but we still prefer EN for tourist templates
+    } catch (e) {}
+
+    let preferredLangForPush: Language = template.bakongPlatform === BakongApp.BAKONG_TOURIST ? Language.EN : Language.KM
+    let defaultTranslation = this.templateService.findBestTranslation(template, preferredLangForPush)
     if (!defaultTranslation) {
-      console.warn('⚠️ [sendWithTemplate] No Khmer translation found, trying fallback')
+      console.warn(`⚠️ [sendWithTemplate] No ${preferredLangForPush} translation found, trying fallback`)
       // Fallback: try to find any available translation
       defaultTranslation = this.templateService.findBestTranslation(template, undefined)
       if (!defaultTranslation) {
@@ -470,8 +478,22 @@ export class NotificationService {
       }
       // Use fallback but log warning
       console.warn(
-        `⚠️ [sendWithTemplate] Using fallback translation (${defaultTranslation.language}) instead of Khmer`,
+        `⚠️ [sendWithTemplate] Using fallback translation (${defaultTranslation.language}) instead of ${preferredLangForPush}`,
       )
+    }
+
+    // If template is for BAKONG_TOURIST, ensure the translation's language is treated as EN
+    // (in-memory adjustment) so payloads and records use EN even when DB lacks an EN row.
+    if (template.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+      if (defaultTranslation && defaultTranslation.language !== Language.EN) {
+        console.log(`🔄 [sendWithTemplate] Temporarily coercing translation.language -> EN for template ${template.id}`)
+        try {
+          // mutate in-memory only
+          ;(defaultTranslation as any).language = Language.EN
+        } catch (e) {
+          console.warn('⚠️ [sendWithTemplate] Failed to coerce translation language in-memory:', e?.message || e)
+        }
+      }
     }
 
     // Track users with empty/invalid tokens BEFORE filtering
@@ -791,24 +813,51 @@ export class NotificationService {
 
       if (!template) throw new Error(ResponseMessage.TEMPLATE_NOT_FOUND)
 
-      // Always use Khmer (KM) translation for FCM push notifications (banner/background)
-      // This ensures all users see notifications in Khmer regardless of their language preference
-      const kmTranslationValidation = ValidationHelper.validateTranslation(template, Language.KM)
+      // Determine preferred translation for FCM push notifications.
+      // Priority:
+      // 1) If template is for BAKONG_TOURIST -> force EN
+      // 2) Else if request provided a valid language -> use it
+      // 3) Otherwise prefer KM
+      let requestedLang: Language | undefined = undefined
+      try {
+        if (typeof (dto as any).language === 'string' && (dto as any).language.trim()) {
+          const lv = ValidationHelper.validateLanguage((dto as any).language)
+          if (lv.isValid) requestedLang = lv.normalizedValue
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      const preferredForSend: Language = template.bakongPlatform === BakongApp.BAKONG_TOURIST
+        ? Language.EN
+        : requestedLang || Language.KM
+
+      let translationValidation = ValidationHelper.validateTranslation(template, preferredForSend)
       let translation: TemplateTranslation
-      if (!kmTranslationValidation.isValid) {
+      if (!translationValidation.isValid) {
         // Fallback: try to find any available translation
         const fallbackValidation = ValidationHelper.validateTranslation(template, undefined)
         if (!fallbackValidation.isValid) {
-          throw new Error('No Khmer translation found and no fallback translation available')
+          throw new Error('No translation found and no fallback translation available')
         }
         console.warn(
-          `⚠️ [sendNow] No Khmer translation found, using fallback translation (${fallbackValidation.translation.language})`,
+          `⚠️ [sendNow] No ${preferredForSend} translation found, using fallback translation (${fallbackValidation.translation.language})`,
         )
-        // Use fallback translation for FCM
         translation = fallbackValidation.translation
       } else {
-        // Use KM translation for FCM push
-        translation = kmTranslationValidation.translation
+        translation = translationValidation.translation
+      }
+
+      // If template is BAKONG_TOURIST, ensure translation is treated as EN in-memory
+      if (template.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+        if (translation && translation.language !== Language.EN) {
+          console.log(`🔄 [sendNow] Temporarily coercing translation.language -> EN for template ${template.id}`)
+          try {
+            ;(translation as any).language = Language.EN
+          } catch (e) {
+            console.warn('⚠️ [sendNow] Failed to coerce translation language in-memory:', e?.message || e)
+          }
+        }
       }
 
       // For flash notifications: If user doesn't have bakongPlatform, infer it from template
@@ -1288,12 +1337,27 @@ export class NotificationService {
           // No need to skip - send FCM push for all notification types
 
           console.log('📨 [sendFCM] Calling sendFCMPayloadToPlatform for user:', user.accountId)
+
+          // Choose translation for this specific user: prefer user's language when available
+          let usedTranslation = translation
+          try {
+            if (user.language) {
+              const candidate = this.templateService.findBestTranslation(template, user.language)
+              if (candidate) usedTranslation = candidate
+            }
+          } catch (e) {
+            // Ignore errors and use default translation
+          }
+
+          const userTitle = this.baseFunctionHelper.truncateText('title', usedTranslation.title)
+          const userBody = this.baseFunctionHelper.truncateText('content', usedTranslation.content)
+
           const response = await this.sendFCMPayloadToPlatform(
             user,
             template,
-            translation,
-            title,
-            body,
+            usedTranslation,
+            userTitle,
+            userBody,
             notificationIdStr,
             imageUrlString,
             mode,
@@ -2526,7 +2590,7 @@ export class NotificationService {
     const whatNews = InboxResponseDto.buildSendApiNotificationData(
       selectedTemplate,
       selectedTranslation,
-      language,
+      language as Language,
       typeof imageUrl === 'string' ? imageUrl : '',
       saved.id,
       saved.sendCount,
@@ -2695,6 +2759,20 @@ export class NotificationService {
       // Get user's bakongPlatform from database (stored when user called API)
       const userPlatform = user.bakongPlatform
 
+      // Determine effective language to use for inbox responses.
+      // Priority: enforced user.language from DB (syncUser may have coerced it),
+      // then request DTO `language`, then default to EN.
+      // Additionally, if user's bakongPlatform is BAKONG_TOURIST, force EN.
+      let effectiveLanguage: Language = (user.language as Language) || (language as Language) || Language.EN
+      try {
+        if (user.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+          effectiveLanguage = Language.EN
+          console.log(`🔒 [getNotificationCenter] Forcing effective language to EN for BAKONG_TOURIST user ${accountId}`)
+        }
+      } catch (e) {
+        // ignore
+      }
+
       // SYNC FLOW: Return sync response without notifications
       if (isSyncFlow) {
         const isNewUser = 'isNewUser' in syncResult ? (syncResult as any).isNewUser : false
@@ -2760,6 +2838,34 @@ export class NotificationService {
             }
           }
 
+          // If template is for BAKONG_TOURIST, ensure translations are treated as English.
+          // If there is no explicit EN translation in DB, mutate in-memory so UI will display EN.
+          try {
+            const tmpl = notification.template as any
+            if (tmpl && tmpl.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+              const hasEN = Array.isArray(tmpl.translations) && tmpl.translations.some((t: any) => t.language === 'EN')
+              if (!hasEN && Array.isArray(tmpl.translations) && tmpl.translations.length > 0) {
+                tmpl.translations.forEach((t: any) => {
+                  t.language = String(Language.EN)
+                })
+                console.log(`🔄 [getNotificationCenter] Temporarily marking translations as EN for tourist template ${tmpl.id}`)
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+          // Also ensure the notification record's language is treated as EN for tourist users
+          try {
+            if (notification && notification.template && notification.template.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+              if (!notification.language || String(notification.language) !== String(Language.EN)) {
+                ;(notification as any).language = String(Language.EN)
+                console.log(`🔒 [getNotificationCenter] Temporarily setting notification.language -> EN for notification ${notification.id}`)
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+
           // Filter: only include if template exists and bakongPlatform matches user's platform
           // OR if template has no bakongPlatform (backward compatibility)
           if (
@@ -2786,12 +2892,12 @@ export class NotificationService {
       const isNewUser = 'isNewUser' in syncResult ? (syncResult as any).isNewUser : false
       const filteredCount = filteredNotifications.length
 
-      return InboxResponseDto.getNotificationCenterResponse(
+        return InboxResponseDto.getNotificationCenterResponse(
         filteredNotifications.map(
           (notif) =>
             new InboxResponseDto(
               notif as Notification,
-              language as Language,
+              effectiveLanguage,
               this.baseFunctionHelper.getBaseUrl(req),
               this.templateService,
               this.imageService,

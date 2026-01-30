@@ -13,14 +13,6 @@
           <el-icon class="reject-reason-icon"><WarningFilled /></el-icon>
           <div class="reject-reason-label ">Reject Reason: <span class="reject-reason-text">{{ rejectReasonText }}</span></div>
         </div>
-        <!-- <el-input
-          v-model="rejectReasonText"
-          type="textarea"
-          :rows="2"
-          :readonly="true"
-          class="reject-reason-textarea"
-          resize="vertical"
-        /> -->
       </div>
       <!-- Expired Time Display: Only show for expired templates in draft tab -->
       <div 
@@ -53,6 +45,90 @@
           />
         </div>
         <div class="form-fields">
+          <div class="form-group">
+            <label class="form-label">Bakong Platform <span class="required">*</span></label>
+            <el-dropdown
+              @command="(command: BakongApp) => {
+                if (!isReadOnly && !isEditingRestrictedFields) {
+                  formData.platform = command
+                  // Immediately force English tab when selecting Bakong Tourist
+                  if (command === BakongApp.BAKONG_TOURIST) {
+                    activeLanguage = Language.EN as Language
+                  }
+                }
+              }"
+              trigger="click"
+              class="custom-dropdown full-width-dropdown"
+              :class="{ 'is-disabled': isReadOnly || isEditingRestrictedFields }"
+              :disabled="isReadOnly || isEditingRestrictedFields"
+            >
+              <span 
+                class="dropdown-trigger full-width-trigger"
+                @click.stop="(e) => {
+                  if (isReadOnly || isEditingRestrictedFields) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }
+                }"
+              >
+                {{ formatBakongApp(formData.platform) }}
+                <el-icon class="dropdown-icon">
+                  <ArrowDown />
+                </el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="app in Object.values(BakongApp)"
+                    :key="app"
+                    :command="app"
+                  >
+                    {{ formatBakongApp(app) }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title <span class="required">*</span></label>
+            <input
+              v-model="currentTitle"
+              type="text"
+              class="form-input-title"
+              :class="{ 'lang-khmer': titleHasKhmer }"
+              :data-content-lang="titleHasKhmer ? 'km' : ''"
+              placeholder="Attractive title"
+              :disabled="isReadOnly"
+              :readonly="isReadOnly"
+              @blur="validateTitle()"
+            />
+            <span
+              v-if="titleError"
+              style="color: #ef4444; font-size: 12px; margin-top: 2px; display: block"
+              >{{ titleError }}</span
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label"
+              >Description (Support HTML) <span class="required">*</span></label
+            >
+            <textarea
+              v-model="currentDescription"
+              class="form-textarea"
+              :class="{ 'lang-khmer': descriptionHasKhmer }"
+              :data-content-lang="descriptionHasKhmer ? 'km' : ''"
+              placeholder="Description of the title <bold>input</bold>"
+              rows="4"
+              :disabled="isReadOnly"
+              :readonly="isReadOnly"
+              @blur="validateDescription()"
+            ></textarea>
+            <span
+              v-if="descriptionError"
+              style="color: #ef4444; font-size: 12px; margin-top: 2px; display: block"
+              >{{ descriptionError }}</span
+            >
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Type <span class="required">*</span></label>
@@ -140,86 +216,6 @@
                 </template>
               </el-dropdown>
             </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Title <span class="required">*</span></label>
-            <input
-              v-model="currentTitle"
-              type="text"
-              class="form-input-title"
-              :class="{ 'lang-khmer': titleHasKhmer }"
-              :data-content-lang="titleHasKhmer ? 'km' : ''"
-              placeholder="Attractive title"
-              :disabled="isReadOnly"
-              :readonly="isReadOnly"
-              @blur="validateTitle()"
-            />
-            <span
-              v-if="titleError"
-              style="color: #ef4444; font-size: 12px; margin-top: 2px; display: block"
-              >{{ titleError }}</span
-            >
-          </div>
-          <div class="form-group">
-            <label class="form-label"
-              >Description (Support HTML) <span class="required">*</span></label
-            >
-            <textarea
-              v-model="currentDescription"
-              class="form-textarea"
-              :class="{ 'lang-khmer': descriptionHasKhmer }"
-              :data-content-lang="descriptionHasKhmer ? 'km' : ''"
-              placeholder="Description of the title <bold>input</bold>"
-              rows="4"
-              :disabled="isReadOnly"
-              :readonly="isReadOnly"
-              @blur="validateDescription()"
-            ></textarea>
-            <span
-              v-if="descriptionError"
-              style="color: #ef4444; font-size: 12px; margin-top: 2px; display: block"
-              >{{ descriptionError }}</span
-            >
-          </div>
-          <div class="form-group">
-            <label class="form-label">Bakong Platform <span class="required">*</span></label>
-            <el-dropdown
-              @command="(command: BakongApp) => {
-                if (!isReadOnly && !isEditingRestrictedFields) {
-                  formData.platform = command
-                }
-              }"
-              trigger="click"
-              class="custom-dropdown full-width-dropdown"
-              :class="{ 'is-disabled': isReadOnly || isEditingRestrictedFields }"
-              :disabled="isReadOnly || isEditingRestrictedFields"
-            >
-              <span 
-                class="dropdown-trigger full-width-trigger"
-                @click.stop="(e) => {
-                  if (isReadOnly || isEditingRestrictedFields) {
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }
-                }"
-              >
-                {{ formatBakongApp(formData.platform) }}
-                <el-icon class="dropdown-icon">
-                  <ArrowDown />
-                </el-icon>
-              </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-for="app in Object.values(BakongApp)"
-                    :key="app"
-                    :command="app"
-                  >
-                    {{ formatBakongApp(app) }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
           </div>
           <div class="form-group">
             <label class="form-label">Link to see more (optional)</label>
@@ -723,12 +719,8 @@ const languages = [
   { code: Language.JP, name: 'Japan' },
 ]
 
-const languageTabs = languages.map((lang) => ({
-  value: lang.code,
-  label: lang.name,
-}))
-
-const activeLanguage = ref<Language>(Language.KM)
+// `languageTabs` is defined after `formData` so it can react to platform selection
+let activeLanguage = ref<Language>(Language.KM)
 
 const handleLanguageChanged = (tab: { value: string; label: string }) => {
   activeLanguage.value = tab.value as Language
@@ -860,6 +852,30 @@ const formData = reactive({
   scheduleTime: getCurrentTimePlaceholder() as string | null, // Default to current time
   splashEnabled: false,
 })
+
+// Recompute languageTabs to hide non-English options when BAKONG_TOURIST is selected
+const languageTabs = computed(() => {
+  try {
+    if (formData.platform === BakongApp.BAKONG_TOURIST) {
+      return languages
+        .filter((l) => l.code === Language.EN)
+        .map((lang) => ({ value: lang.code, label: lang.name }))
+    }
+  } catch (e) {
+    console.error('Error computing languageTabs:', e)
+  }
+  return languages.map((lang) => ({ value: lang.code, label: lang.name }))
+})
+
+// When platform changes to BAKONG_TOURIST, force active language to English
+watch(
+  () => formData.platform,
+  (newPlatform) => {
+    if (newPlatform === BakongApp.BAKONG_TOURIST) {
+      activeLanguage.value = Language.EN
+    }
+  },
+)
 
 // Initialize category types from store
 const initializeCategoryTypes = async () => {
@@ -2394,6 +2410,14 @@ const handlePublishNowInternal = async () => {
     const translations = []
 
     for (const [langKey, langData] of Object.entries(languageFormData)) {
+      // If Bakong Tourist platform is selected, only include English translations
+      try {
+        if (formData.platform === BakongApp.BAKONG_TOURIST && langKey !== Language.EN) {
+          continue
+        }
+      } catch (e) {
+        // ignore and proceed normally
+      }
       // For edit mode, include ALL translations (even if title/description are empty) to preserve data
       // For create mode, only include translations with both title and description
       const shouldInclude = isEditMode.value
@@ -2404,9 +2428,10 @@ const handlePublishNowInternal = async () => {
         if (langData.linkToSeeMore && !isValidUrl(langData.linkToSeeMore)) {
           ElNotification({
             title: 'Error',
-            message: `Invalid URL for ${langKey}. Must start with http(s)://`,
+            message: `Please enter a valid URL for <strong>Link to see more</strong> in ${langKey} with correct format <strong>(e.g., https://example.com)</strong>`,
             type: 'error',
             duration: 2000,
+            dangerouslyUseHTMLString: true,
           })
           loadingNotification.close()
           isSavingOrPublishing.value = false
@@ -2657,6 +2682,21 @@ const handlePublishNowInternal = async () => {
 
     let result
     try {
+      // Final frontend-only validation: ensure any provided linkPreview values are valid URLs
+      for (const t of (templateData.translations || [])) {
+        if (t.linkPreview && !isValidUrl(String(t.linkPreview))) {
+          ElNotification({
+            title: 'Error',
+            message: 'Please enter a valid URL starting with http:// or https://',
+            type: 'error',
+            duration: 2000,
+          })
+          if (loadingNotification) loadingNotification.close()
+          isSavingOrPublishing.value = false
+          return
+        }
+      }
+
     if (isEditMode.value) {
       result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
     } else {
@@ -3316,6 +3356,22 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
     duration: 0,
   })
 
+  // Final pre-check: if any language has an invalid link, block and show frontend error
+  for (const [langKey, langData] of Object.entries(languageFormData)) {
+    if (langData.linkToSeeMore && !isValidUrl(String(langData.linkToSeeMore))) {
+      ElNotification({
+        title: 'Error',
+        message: `Please enter a valid URL for <strong>Link to see more</strong> in ${langKey} with correct format <strong>(e.g., https://example.com)</strong>`,
+        type: 'error',
+        duration: 2000,
+        dangerouslyUseHTMLString: true,
+      })
+      if (loadingNotification) loadingNotification.close()
+      isSavingOrPublishing.value = false
+      return
+    }
+  }
+
   try {
     const imagesToUpload: { file: File; language: string }[] = []
     const translations: any[] = []
@@ -3472,6 +3528,20 @@ const handleSaveDraft = async (forceDraft: boolean = false, suppressNotification
 
     // 4. Create or Update Template
     let result
+    // Final frontend-only validation: ensure any provided linkPreview values are valid URLs
+    for (const t of (templateData.translations || [])) {
+      if (t.linkPreview && !isValidUrl(String(t.linkPreview))) {
+        ElNotification({
+          title: 'Error',
+          message: 'Please enter a valid URL starting with http:// or https://',
+          type: 'error',
+          duration: 2000,
+        })
+        isSavingOrPublishing.value = false
+        return
+      }
+    }
+
     if (isEditMode.value) {
       result = await notificationApi.updateTemplate(parseInt(notificationId.value), templateData)
     } else {

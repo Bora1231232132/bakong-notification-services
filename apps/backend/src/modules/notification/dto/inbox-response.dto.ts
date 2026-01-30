@@ -1,4 +1,4 @@
-import { DateFormatter, PaginationMeta, Language, NotificationType } from '@bakong/shared'
+import { DateFormatter, PaginationMeta, Language, NotificationType, BakongApp } from '@bakong/shared'
 import { BaseResponseDto } from 'src/common/base-response.dto'
 import { Message, ApnsConfig } from 'firebase-admin/messaging'
 import { ImageService } from '../../image/image.service'
@@ -77,16 +77,34 @@ export class InboxResponseDto implements NotificationData {
     // For categoryType and date: Use user's preferred language (with KM fallback)
     // This ensures users see labels in their preferred language even if content is KM
     let displayLanguage: Language = language
-    // Check if template has translation in user's language
-    if (template?.translations && Array.isArray(template.translations)) {
-      const userLangExists = template.translations.some((t: any) => t.language === language)
-      if (!userLangExists) {
-        // User's language not available, fallback to KM
-        displayLanguage = Language.KM
+        // Check if template has translation in user's language
+        if (template?.translations && Array.isArray(template.translations)) {
+          const userLangExists = template.translations.some((t: any) => t.language === language)
+          if (!userLangExists) {
+            // User's language not available, fallback to KM
+            displayLanguage = Language.KM
+          }
+        } else {
+          // No translations available, use KM as fallback
+          displayLanguage = Language.KM
+        }
+
+    // If the stored notification language is EN, prefer English for display
+    try {
+      if (storedLanguage === Language.EN) {
+        displayLanguage = Language.EN
       }
-    } else {
-      // No translations available, use KM as fallback
-      displayLanguage = Language.KM
+    } catch (e) {
+      // ignore
+    }
+
+    // If template is for Bakong Tourist, force display language to EN (highest priority)
+    try {
+      if ((template as any)?.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+        displayLanguage = Language.EN
+      }
+    } catch (e) {
+      // ignore
     }
 
     // Find best translation for user's language (for content display)
@@ -109,9 +127,14 @@ export class InboxResponseDto implements NotificationData {
         : undefined
     } else {
       // ✅ V1: categoryType MUST be translated display string using the notification's STORED language (storedLanguage)
-      // This ensures if a notification is in KM, the category type is also in KM, regardless of user's preferred language
-      this.categoryType =
-        InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, storedLanguage) || 'Other'
+      // For Bakong Tourist, always display categoryType in English
+      if ((template as any)?.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+        this.categoryType =
+          InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, Language.EN) || 'Other'
+      } else {
+        this.categoryType =
+          InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, storedLanguage) || 'Other'
+      }
 
       // ✅ V1: No categoryIcon field
       this.categoryIcon = undefined
@@ -255,6 +278,20 @@ export class InboxResponseDto implements NotificationData {
       displayLanguage = Language.KM
     }
 
+    // If the stored translation language is EN, prefer English for display
+    try {
+      if (storedLanguage === Language.EN) displayLanguage = Language.EN
+    } catch (e) {
+      // ignore
+    }
+
+    // If template is for Bakong Tourist, force display language to EN (highest priority)
+    try {
+      if ((template as any)?.bakongPlatform === BakongApp.BAKONG_TOURIST) displayLanguage = Language.EN
+    } catch (e) {
+      // ignore
+    }
+
     let categoryType: string
     let finalCategoryIcon: string | undefined
 
@@ -268,12 +305,17 @@ export class InboxResponseDto implements NotificationData {
         ? (categoryIcon || InboxResponseDto.buildCategoryIconUrl(baseUrl, template?.categoryTypeId))
         : undefined
     } else {
-      // ✅ V1: categoryType is raw enum value from database, converted to UPPERCASE (e.g., "NEWS", "OTHER", "EVENT", "PRODUCT_AND_FEATURE")
-      const rawName = template?.categoryTypeEntity?.name || 'Other'
-      let upperName = rawName.toUpperCase()
-      upperName = upperName.replace(/\s+&\s+/g, '_AND_')
-      upperName = upperName.replace(/\s+/g, '_')
-      categoryType = upperName
+      // ✅ V1: Normally categoryType is raw enum value from database, converted to UPPERCASE
+      // However for Bakong Tourist, force English translated display string (single source of truth)
+      if ((template as any)?.bakongPlatform === BakongApp.BAKONG_TOURIST) {
+        categoryType = InboxResponseDto.getCategoryDisplayName(template?.categoryTypeEntity, Language.EN) || 'Other'
+      } else {
+        const rawName = template?.categoryTypeEntity?.name || 'Other'
+        let upperName = rawName.toUpperCase()
+        upperName = upperName.replace(/\s+&\s+/g, '_AND_')
+        upperName = upperName.replace(/\s+/g, '_')
+        categoryType = upperName
+      }
 
       // ✅ V1: No categoryIcon field
       finalCategoryIcon = undefined

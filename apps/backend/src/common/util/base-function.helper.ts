@@ -29,7 +29,7 @@ export class BaseFunctionHelper {
   truncateText(field: 'title' | 'content', text: string): string {
     const length = field === 'title' ? 60 : 90
     if (!text) return ''
-    return text.length > length ? text.substring(0, length) + '...' : text
+      return text.length > length ? text.substring(0, length) + '...' : text
   }
 
   getBaseUrl(req?: any): string {
@@ -197,6 +197,22 @@ export class BaseFunctionHelper {
         console.log(
           `⏭️ [syncUser] Skipping bakongPlatform update for user ${accountId} (null or empty - preserving existing value)`,
         )
+      }
+
+      // Enforce English for BAKONG_TOURIST: if the user's bakongPlatform (existing or incoming)
+      // indicates BAKONG_TOURIST, coerce language to EN for the sync update.
+      try {
+        const isTouristPlatform =
+          updatesToApply.bakongPlatform === BakongApp.BAKONG_TOURIST ||
+          user?.bakongPlatform === BakongApp.BAKONG_TOURIST ||
+          updateData.bakongPlatform === BakongApp.BAKONG_TOURIST
+
+        if (isTouristPlatform) {
+          updatesToApply.language = this.normalizeLanguage('EN')
+          console.log(`🔒 [syncUser] Coerced language to EN for BAKONG_TOURIST user ${accountId}`)
+        }
+      } catch (e) {
+        console.error(`❌ [syncUser] Error coercing language for ${accountId}:`, e)
       }
 
       console.log(`🔍 [syncUser] About to call updateUserFields with updatesToApply:`, {
@@ -436,7 +452,10 @@ export class BaseFunctionHelper {
         fcmToken: updateData.fcmToken || '', // Use empty string as placeholder if not provided
         participantCode: updateData.participantCode,
         platform: this.normalizePlatform(updateData.platform),
-        language: this.normalizeLanguage(updateData.language),
+        language:
+          updateData.bakongPlatform === BakongApp.BAKONG_TOURIST
+            ? this.normalizeLanguage('EN')
+            : this.normalizeLanguage(updateData.language),
         bakongPlatform: updateData.bakongPlatform, // Only set if explicitly provided
         syncStatus: {
           status: 'SUCCESS',

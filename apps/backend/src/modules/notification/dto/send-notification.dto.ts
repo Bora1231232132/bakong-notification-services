@@ -80,6 +80,7 @@ export default class SentNotificationDto {
   @IsEnum(Platform)
   platform?: Platform
 
+  @IsOptional()
   @IsString()
   @Transform(({ value }) => {
     if (typeof value === 'string') {
@@ -88,8 +89,8 @@ export default class SentNotificationDto {
     }
     return value
   })
-  @IsEnum(Language, { message: 'Language must be one of: EN, KM, JP' })
-  language: Language
+  // Allow any string here and let service logic decide/coerce for special platforms
+  language?: string
 
   @IsOptional()
   @IsNumber()
