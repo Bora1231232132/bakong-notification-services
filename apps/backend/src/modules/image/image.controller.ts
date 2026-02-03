@@ -8,6 +8,7 @@ import {
   Res,
   UploadedFiles,
   UseInterceptors,
+  Query,
 } from '@nestjs/common'
 import { AnyFilesInterceptor } from '@nestjs/platform-express'
 import { Body } from '@nestjs/common'
@@ -91,8 +92,20 @@ export class ImageController {
   async findByFileId(
     @Res({ passthrough: false }) res: Response,
     @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Query('w') width?: string,
+    @Query('h') height?: string,
+    @Query('fit') fit?: string,
   ) {
-    const image = await this.imageService.findByFileId(fileId)
+    const resizeOptions =
+      width && height
+        ? {
+            width: Number(width),
+            height: Number(height),
+            fit: fit,
+          }
+        : undefined
+
+    const image = await this.imageService.findByFileId(fileId, resizeOptions)
 
     res.set({
       'Content-Type': image.mimeType,

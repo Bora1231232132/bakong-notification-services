@@ -304,7 +304,7 @@ export const processFile = (
   file: File,
   onSuccess: (file: File, previewUrl: string) => void,
   onError: (error: string) => void,
-  validateAspectRatio: boolean = true,
+  validateAspectRatio: boolean = true, // kept for backward compatibility, but no longer enforced
   acceptTypes: string = 'image/*',
   maxSize: number = 5 * 1024 * 1024,
 ) => {
@@ -320,38 +320,20 @@ export const processFile = (
   }
   if (file.size > maxSize) {
     onError(
-      `File size ${(file.size / 1024 / 1024).toFixed(2)}MB exceeds the maximum limit of ${(maxSize / 1024 / 1024).toFixed(2)}MB.`,
+      `File size ${(file.size / 1024 / 1024).toFixed(2)}MB exceeds the maximum limit of ${(
+        maxSize /
+        1024 /
+        1024
+      ).toFixed(2)}MB.`,
     )
     return
   }
-  if (validateAspectRatio && file.type.startsWith('image/')) {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        const aspectRatio = img.width / img.height
-        const acceptableRatios = [4 / 3, 3 / 2, 16 / 9, 2 / 1, 21 / 9]
-        const tolerance = 0.1
-        const isAcceptable = acceptableRatios.some(
-          (ratio) => Math.abs(aspectRatio - ratio) <= tolerance,
-        )
-        if (!isAcceptable) {
-          const errorMsg = `Image aspect ratio ${aspectRatio.toFixed(2)}:1 is not supported. Please use images with common ratios like 16:9, 3:2, or 2:1.`
-          onError(errorMsg)
-          return
-        }
-        onSuccess(file, e.target?.result as string)
-      }
-      img.src = e.target?.result as string
-    }
-    reader.readAsDataURL(file)
-  } else {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      onSuccess(file, e.target?.result as string)
-    }
-    reader.readAsDataURL(file)
+  // No aspect ratio validation - accept any image, backend will resize to fit notification frame
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    onSuccess(file, e.target?.result as string)
   }
+  reader.readAsDataURL(file)
 }
 
 export const compressImage = async (

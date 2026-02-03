@@ -66,8 +66,14 @@ export class InboxResponseDto implements NotificationData {
     this.title = userTranslation?.title || ''
     this.content = userTranslation?.content || ''
     this.imageUrl =
-      imageService?.buildImageUrl(userTranslation?.imageId, undefined, baseUrl) ||
-      (userTranslation?.imageId ? `${baseUrl}/api/v1/image/${userTranslation.imageId}` : '')
+      imageService?.buildImageUrl(userTranslation?.imageId, undefined, baseUrl, {
+        width: 654,
+        height: 330,
+        fit: 'cover',
+      }) ||
+      (userTranslation?.imageId
+        ? `${baseUrl}/api/v1/image/${userTranslation.imageId}?w=654&h=330&fit=cover`
+        : '')
     this.linkPreview = userTranslation?.linkPreview || ''
   }
 
@@ -287,9 +293,13 @@ export class InboxResponseDto implements NotificationData {
       alert: { title, body },
       sound: 'default',
       badge: 1,
+      'mutable-content': 1, // Required for iOS rich notifications with images
       type: 'NOTIFICATION',
       notification: notification || {},
     }
+
+    // Extract imageUrl from notification data if available
+    const imageUrl = notification?.imageUrl ? String(notification.imageUrl) : undefined
 
     const apns: ApnsConfig = {
       headers: {
@@ -299,7 +309,22 @@ export class InboxResponseDto implements NotificationData {
       payload: { aps },
     }
 
-    return { token, apns }
+    // Build the message with FCM options for image
+    const message: Message = {
+      token,
+      apns,
+    }
+
+    // Add image URL to FCM notification options (iOS 10+)
+    if (imageUrl) {
+      message.data = {
+        imageUrl: imageUrl,
+        notificationId: notificationId,
+        type: 'NOTIFICATION',
+      }
+    }
+
+    return message
   }
 
   static buildIOSPayload(

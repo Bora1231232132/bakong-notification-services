@@ -89,8 +89,8 @@ export class NotificationService {
           template.bakongPlatform === 'BAKONG_TOURIST'
             ? 'Bakong Tourist'
             : template.bakongPlatform === 'BAKONG_JUNIOR'
-              ? 'Bakong Junior'
-              : 'Bakong'
+            ? 'Bakong Junior'
+            : 'Bakong'
         throw new Error(
           `No users found for ${platformName} app. Please ensure there are registered users for this platform before sending notifications.`,
         )
@@ -187,7 +187,7 @@ export class NotificationService {
         // Mobile app fetching specific notification (e.g., after clicking flash notification)
         const notification = await this.notiRepo.findOne({
           where: { id: dto.notificationId },
-          relations: ['template', 'template.translations'],
+          relations: ['template', 'template.translations', 'template.translations.image'],
         })
         if (!notification) throw new Error('Notification not found')
 
@@ -215,7 +215,13 @@ export class NotificationService {
         }
 
         const trans = this.templateService.findBestTranslation(notification.template, dto.language)
-        const imageUrl = trans?.imageId ? this.imageService.buildImageUrl(trans.imageId, req) : ''
+        const imageUrl = trans?.imageId
+          ? this.imageService.buildImageUrl(trans.imageId, req, undefined, {
+              width: 654,
+              height: 330,
+              fit: 'cover',
+            })
+          : ''
 
         const result = InboxResponseDto.buildSendApiNotificationData(
           notification.template,
@@ -238,18 +244,18 @@ export class NotificationService {
       if (dto.accountId && dto.notificationType === NotificationType.FLASH_NOTIFICATION) {
         // Always sync user data again to ensure all fields are up to date
         const user = await this.baseFunctionHelper.findUserByAccountId(dto.accountId)
-        
+
         console.log(`📤 [sendNow] Syncing user data for ${dto.accountId}`, {
           existingBakongPlatform: user?.bakongPlatform || 'NULL',
           providedBakongPlatform: dto.bakongPlatform || 'NULL',
           accountId: dto.accountId,
           participantCode: dto.participantCode || 'N/A',
         })
-        
+
         // Mobile app ALWAYS provides bakongPlatform in the request
         // This is the primary path - mobile provides all data including bakongPlatform
         let bakongPlatformToSync = dto.bakongPlatform
-        
+
         // Fallback logic (shouldn't normally happen since mobile always provides bakongPlatform):
         // Only used for edge cases like:
         // - Old mobile app versions that don't send bakongPlatform
@@ -268,7 +274,9 @@ export class NotificationService {
             if (inferred) {
               bakongPlatformToSync = inferred
               console.warn(
-                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${dto.accountId}, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
+                `⚠️ [sendNow] Mobile did not provide bakongPlatform (unexpected), inferred from accountId: ${
+                  dto.accountId
+                }, participantCode: ${dto.participantCode || 'N/A'} -> ${inferred}`,
               )
             } else {
               console.error(
@@ -288,15 +296,19 @@ export class NotificationService {
           participantCode: dto.participantCode,
           bakongPlatform: bakongPlatformToSync, // Mobile always provides this
         }
-        
-        console.log(`📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`, {
-          accountId: syncData.accountId,
-          language: syncData.language || 'N/A',
-          platform: syncData.platform || 'N/A',
-          participantCode: syncData.participantCode || 'N/A',
-          bakongPlatform: syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
-        })
-        
+
+        console.log(
+          `📤 [sendNow] Syncing ALL user data from mobile (always includes bakongPlatform):`,
+          {
+            accountId: syncData.accountId,
+            language: syncData.language || 'N/A',
+            platform: syncData.platform || 'N/A',
+            participantCode: syncData.participantCode || 'N/A',
+            bakongPlatform:
+              syncData.bakongPlatform || 'NULL (unexpected - mobile should always provide)',
+          },
+        )
+
         // Always sync all user data - mobile provides all fields including bakongPlatform
         await this.baseFunctionHelper.updateUserData(syncData)
 
@@ -409,8 +421,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -461,8 +473,8 @@ export class NotificationService {
             template.bakongPlatform === 'BAKONG_TOURIST'
               ? 'Bakong Tourist'
               : template.bakongPlatform === 'BAKONG_JUNIOR'
-                ? 'Bakong Junior'
-                : 'Bakong'
+              ? 'Bakong Junior'
+              : 'Bakong'
 
           // Mark template as draft if templateId is provided
           if (dto.templateId) {
@@ -541,7 +553,11 @@ export class NotificationService {
 
       const responseTranslation = this.templateService.findBestTranslation(template, dto.language)
       const imageUrl = responseTranslation?.imageId
-        ? this.imageService.buildImageUrl(responseTranslation.imageId, req)
+        ? this.imageService.buildImageUrl(responseTranslation.imageId, req, undefined, {
+            width: 654,
+            height: 330,
+            fit: 'cover',
+          })
         : ''
 
       // Only mark as published if FCM send was successful
@@ -593,7 +609,11 @@ export class NotificationService {
       let sharedFailedCount = 0
 
       const imageUrl = translation.imageId
-        ? this.imageService.buildImageUrl(translation.imageId, req)
+        ? this.imageService.buildImageUrl(translation.imageId, req, undefined, {
+            width: 654,
+            height: 330,
+            fit: 'cover',
+          })
         : ''
       const imageUrlString = typeof imageUrl === 'string' ? imageUrl : ''
       const title = this.baseFunctionHelper.truncateText('title', translation.title)
@@ -790,8 +810,13 @@ export class NotificationService {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
+          imageUrl: imageUrlString || 'NO IMAGE',
           bakongPlatform: user.bakongPlatform || 'NULL',
         })
+        console.log(
+          '📱 [sendFCMPayloadToPlatform] iOS Payload:',
+          JSON.stringify(iosPayloadResponse, null, 2),
+        )
         const sendResponse = await fcm.send(iosPayloadResponse)
         console.log('✅ [sendFCMPayloadToPlatform] iOS FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
@@ -830,7 +855,7 @@ export class NotificationService {
         notification_body: body,
       }
 
-      const msg = InboxResponseDto.buildAndroidDataOnlyPayload(
+      const msg = InboxResponseDto.buildAndroidPayload(
         user.fcmToken,
         title,
         body,
@@ -851,8 +876,10 @@ export class NotificationService {
           token: user.fcmToken ? `${user.fcmToken.substring(0, 30)}...` : 'NO TOKEN',
           title: title?.substring(0, 50),
           body: body ? `${body.substring(0, 50)}...` : 'NO BODY',
+          imageUrl: imageUrlString || 'NO IMAGE',
           bakongPlatform: user.bakongPlatform || 'NULL',
         })
+        console.log('📱 [sendFCMPayloadToPlatform] Android Payload:', JSON.stringify(msg, null, 2))
         const sendResponse = await fcm.send(msg)
         console.log('✅ [sendFCMPayloadToPlatform] Android FCM send successful:', {
           response: sendResponse ? `${String(sendResponse).substring(0, 50)}...` : 'NO RESPONSE',
@@ -987,15 +1014,12 @@ export class NotificationService {
           return createdAt >= last24Hours && createdAt <= now
         })
 
-        const templateCounts = todayNotifications.reduce(
-          (acc, notif) => {
-            if (notif.templateId) {
-              acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
-            }
-            return acc
-          },
-          {} as Record<number, number>,
-        )
+        const templateCounts = todayNotifications.reduce((acc, notif) => {
+          if (notif.templateId) {
+            acc[notif.templateId] = (acc[notif.templateId] || 0) + 1
+          }
+          return acc
+        }, {} as Record<number, number>)
 
         const templatesAtLimit = Object.entries(templateCounts)
           .filter(([_, count]) => count >= 2)
@@ -1033,7 +1057,9 @@ export class NotificationService {
       selectedTranslation = bestTemplate.translation
 
       console.log(
-        `📤 [handleFlashNotification] Found template ${selectedTemplate.id} for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
+        `📤 [handleFlashNotification] Found template ${
+          selectedTemplate.id
+        } for user ${accountId} with bakongPlatform: ${selectedTemplate.bakongPlatform || 'NULL'}`,
       )
     }
 
@@ -1094,7 +1120,11 @@ export class NotificationService {
     await this.templateService.markAsPublished(selectedTemplate.id, req?.user)
 
     const imageUrl = selectedTranslation?.imageId
-      ? this.imageService.buildImageUrl(selectedTranslation.imageId, req)
+      ? this.imageService.buildImageUrl(selectedTranslation.imageId, req, undefined, {
+          width: 654,
+          height: 330,
+          fit: 'cover',
+        })
       : ''
     const whatNews = InboxResponseDto.buildSendApiNotificationData(
       selectedTemplate,
@@ -1169,7 +1199,7 @@ export class NotificationService {
         if (notification.templateId) {
           notification.template = await this.templateRepo.findOne({
             where: { id: notification.templateId },
-            relations: ['translations'],
+            relations: ['translations', 'translations.image'],
           })
 
           if (notification.template && !notification.template.translations) {
